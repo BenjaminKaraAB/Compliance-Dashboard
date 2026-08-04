@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance Dashboard — Administratiebox</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
+<style>
+  :root{
+    --navy:#0b1220; --navy2:#141f38; --navy3:#1c2a4a;
+    --bg:#f2f4f8; --card:#ffffff; --border:#e4e8f0;
+    --text:#16213a; --muted:#65708a; --muted2:#94a0bb;
+    --primary:#2f5dfc; --primary-dark:#1e46e0; --primary-bg:#e9eefe;
+    --red:#dc2626; --red-bg:#fdeaea; --red-brd:#f6c9c9;
+    --amber:#c9770a; --amber-bg:#fdf1de; --amber-brd:#f3d9a8;
+    --green:#15884f; --green-bg:#e5f6ee; --green-brd:#bfe6d2;
+    --blue:#0e7fa3; --blue-bg:#e5f5fa; --blue-brd:#bfe4ee;
+    --gray-bg:#eef0f4; --gray-brd:#dde1ea;
+    --radius:12px;
+    --shadow:0 1px 2px rgba(16,24,50,.04), 0 4px 16px rgba(16,24,50,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px; -webkit-font-smoothing:antialiased;
+  }
+  #app{display:flex; min-height:100vh;}
+
+  /* SIDEBAR */
+  .sidebar{
+    width:250px; flex:0 0 250px; background:linear-gradient(180deg,var(--navy),var(--navy2) 60%, var(--navy3));
+    color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
+  }
+  .brand{padding:22px 20px 16px; border-bottom:1px solid rgba(255,255,255,.08);}
+  .brand-name{font-size:16px; font-weight:700; letter-spacing:.2px;}
+  .brand-sub{font-size:11.5px; color:#93a0c4; margin-top:3px; letter-spacing:.3px; text-transform:uppercase;}
+  .nav{flex:1; padding:14px 12px; display:flex; flex-direction:column; gap:2px;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px;
+    color:#c4cde6; font-size:13.5px; font-weight:500; cursor:pointer; border:none; background:none; text-align:left; width:100%;
+  }
+  .nav-item svg{flex:0 0 17px; width:17px; height:17px; opacity:.85;}
+  .nav-item:hover{background:rgba(255,255,255,.06); color:#fff;}
+  .nav-item.active{background:var(--primary); color:#fff;}
+  .nav-item.active svg{opacity:1;}
+  .nav-foot{padding:14px 20px 18px; border-top:1px solid rgba(255,255,255,.08); font-size:11.5px; color:#7c88ab;}
+  .nav-foot b{color:#c4cde6;}
+
+  /* MAIN */
+  .main{flex:1; min-width:0; display:flex; flex-direction:column;}
+  .topbar{
+    background:var(--card); border-bottom:1px solid var(--border); padding:14px 28px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px; position:sticky; top:0; z-index:5;
+  }
+  .page-title{font-size:18px; font-weight:700;}
+  .page-sub{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .search-wrap{position:relative; width:280px;}
+  .search-wrap input{
+    width:100%; padding:9px 12px 9px 32px; border:1px solid var(--border); border-radius:9px; font-size:13px;
+    background:var(--bg); outline:none;
+  }
+  .search-wrap input:focus{border-color:var(--primary); background:#fff;}
+  .search-wrap svg{position:absolute; left:10px; top:9px; width:15px; height:15px; color:var(--muted2);}
+  .topbar-right{display:flex; align-items:center; gap:14px;}
+  .today-pill{font-size:12px; color:var(--muted); background:var(--bg); border:1px solid var(--border); padding:7px 12px; border-radius:20px;}
+
+  .content{padding:24px 28px 60px; flex:1;}
+
+  /* KPI cards */
+  .kpi-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px;}
+  .kpi-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow);}
+  .kpi-label{font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.3px;}
+  .kpi-value{font-size:26px; font-weight:800; margin-top:6px; letter-spacing:-.3px;}
+  .kpi-sub{font-size:11.5px; margin-top:4px; font-weight:600;}
+  .kpi-card.red .kpi-value{color:var(--red);} .kpi-card.amber .kpi-value{color:var(--amber);}
+  .kpi-card.green .kpi-value{color:var(--green);} .kpi-card.blue .kpi-value{color:var(--primary);}
+
+  .section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:20px; overflow:hidden;}
+  .section-head{padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;}
+  .section-head h3{margin:0; font-size:14.5px; font-weight:700;}
+  .section-head .hint{font-size:12px; color:var(--muted);}
+  .section-body{padding:6px 0;}
+  .section-body.pad{padding:18px 20px;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted);
+    padding:10px 20px; border-bottom:1px solid var(--border); font-weight:700; white-space:nowrap;
+  }
+  tbody td{padding:11px 20px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr.row-click{cursor:pointer;}
+  tbody tr.row-click:hover{background:#f7f9fd;}
+  .klant-name{font-weight:700; color:var(--text);}
+  .klant-meta{font-size:11.5px; color:var(--muted); margin-top:1px;}
+
+  .badge{
+    display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:20px; font-size:11.5px; font-weight:700;
+    border:1px solid transparent; white-space:nowrap;
+  }
+  .badge .dot{width:6px; height:6px; border-radius:50%; flex:none;}
+  .badge.red{background:var(--red-bg); color:var(--red); border-color:var(--red-brd);}
+  .badge.amber{background:var(--amber-bg); color:var(--amber); border-color:var(--amber-brd);}
+  .badge.green{background:var(--green-bg); color:var(--green); border-color:var(--green-brd);}
+  .badge.blue{background:var(--blue-bg); color:var(--blue); border-color:var(--blue-brd);}
+  .badge.gray{background:var(--gray-bg); color:var(--muted); border-color:var(--gray-brd);}
+  .badge .dot.red{background:var(--red);} .badge .dot.amber{background:var(--amber);}
+  .badge .dot.green{background:var(--green);} .badge .dot.blue{background:var(--blue);} .badge .dot.gray{background:var(--muted2);}
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:12.5px; font-weight:700;
+    border:1px solid var(--border); background:#fff; color:var(--text); cursor:pointer;
+  }
+  .btn:hover{background:var(--bg);}
+  .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+  .btn.primary:hover{background:var(--primary-dark);}
+  .btn.ghost{border-color:transparent; background:transparent;}
+  .btn.ghost:hover{background:var(--bg);}
+  .btn.sm{padding:6px 10px; font-size:11.5px;}
+  .btn.danger{color:var(--red); border-color:var(--red-brd); background:var(--red-bg);}
+  .btn:disabled{opacity:.5; cursor:not-allowed;}
+
+  .filters{display:flex; gap:10px; padding:14px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center;}
+  select, .txt-input{
+    padding:8px 11px; border:1px solid var(--border); border-radius:8px; font-size:12.5px; background:#fff; color:var(--text); outline:none;
+  }
+  select:focus, .txt-input:focus{border-color:var(--primary);}
+
+  /* boekhouder cards */
+  .bh-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px;}
+  .bh-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; cursor:pointer; transition:transform .1s;}
+  .bh-card:hover{border-color:var(--primary);}
+  .bh-top{display:flex; align-items:center; gap:12px;}
+  .avatar{width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:14px; flex:none;}
+  .bh-name{font-weight:700; font-size:14.5px;}
+  .bh-role{font-size:11.5px; color:var(--muted);}
+  .bh-stats{display:flex; gap:8px; margin-top:16px;}
+  .bh-stat{flex:1; text-align:center; background:var(--bg); border-radius:8px; padding:8px 4px;}
+  .bh-stat b{display:block; font-size:16px;}
+  .bh-stat span{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px;}
+  .bh-foot{margin-top:14px; display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted);}
+
+  /* status dist bars */
+  .distbar{display:flex; align-items:center; gap:10px; padding:9px 20px;}
+  .distbar .label{width:150px; font-size:12.5px; font-weight:600; flex:none;}
+  .distbar .track{flex:1; height:9px; border-radius:6px; background:var(--gray-bg); overflow:hidden; display:flex;}
+  .distbar .seg{height:100%;}
+  .distbar .nums{width:150px; text-align:right; font-size:11.5px; color:var(--muted); flex:none;}
+
+  /* Slide over */
+  .overlay{position:fixed; inset:0; background:rgba(11,18,32,.45); opacity:0; pointer-events:none; transition:opacity .18s; z-index:40;}
+  .overlay.open{opacity:1; pointer-events:auto;}
+  .panel{
+    position:fixed; top:0; right:0; height:100vh; width:560px; max-width:92vw; background:var(--bg);
+    transform:translateX(100%); transition:transform .22s ease; z-index:41; display:flex; flex-direction:column;
+    box-shadow:-8px 0 30px rgba(0,0,0,.15);
+  }
+  .panel.open{transform:translateX(0);}
+  .panel-head{background:var(--navy); color:#fff; padding:22px 24px; flex:none;}
+  .panel-head-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  .panel-close{background:rgba(255,255,255,.1); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:15px;}
+  .panel-close:hover{background:rgba(255,255,255,.2);}
+  .panel-klant-name{font-size:19px; font-weight:800; margin-top:2px;}
+  .panel-klant-meta{font-size:12px; color:#a9b4d4; margin-top:5px; display:flex; gap:14px; flex-wrap:wrap;}
+  .panel-body{flex:1; overflow-y:auto; padding:20px 24px 80px;}
+  .panel-section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden;}
+  .panel-section h4{margin:0; padding:13px 16px; border-bottom:1px solid var(--border); font-size:12.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700;}
+  .panel-section .inner{padding:14px 16px;}
+
+  .deadline-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:14px 16px;}
+  .dl-card{border:1px solid var(--border); border-radius:9px; padding:11px 12px;}
+  .dl-card .dl-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .dl-card .dl-name{font-weight:700; font-size:12.5px;}
+  .dl-card .dl-date{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .dl-card .dl-days{font-size:11px; margin-top:4px; font-weight:600;}
+  .dl-card .dl-actions{margin-top:8px; display:flex; gap:6px;}
+  .dl-na{color:var(--muted2); font-size:12px; padding:14px 16px;}
+
+  .overige-row{display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-top:1px solid var(--border);}
+  .overige-row:first-child{border-top:none;}
+  .overige-left b{font-size:12.5px;} .overige-left div{font-size:11.5px; color:var(--muted); margin-top:1px;}
+
+  .field-row{display:flex; gap:10px; align-items:center; margin-bottom:10px;}
+  .field-row label{width:150px; font-size:12.5px; color:var(--muted); flex:none;}
+  .field-row input[type=text], .field-row input[type=number]{
+    flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;
+  }
+  .checklist-item{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dashed var(--border); font-size:12.5px;}
+  .checklist-item:last-child{border-bottom:none;}
+  .checklist-item.done label{text-decoration:line-through; color:var(--muted2);}
+  .checklist-item input[type=checkbox]{width:15px; height:15px;}
+  .add-item-row{display:flex; gap:6px; margin-top:8px;}
+  .add-item-row input{flex:1; padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;}
+
+  .chan-row{display:flex; gap:14px; margin-bottom:10px; font-size:12.5px;}
+  .chan-row label{display:flex; align-items:center; gap:6px;}
+  .rem-actions{display:flex; gap:8px; margin-top:6px;}
+  .rem-log{margin-top:10px; border-top:1px solid var(--border); padding-top:10px;}
+  .rem-log-item{font-size:11.5px; color:var(--muted); padding:4px 0; display:flex; gap:8px;}
+  .rem-log-empty{font-size:12px; color:var(--muted2); font-style:italic;}
+
+  .banner{background:var(--primary-bg); border:1px solid #cddbff; color:var(--primary-dark); border-radius:9px; padding:10px 13px; font-size:11.5px; margin-bottom:14px; line-height:1.5;}
+  textarea{width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; padding:9px; font-size:12.5px; font-family:inherit; resize:vertical;}
+
+  .toast-wrap{position:fixed; bottom:22px; right:22px; z-index:60; display:flex; flex-direction:column; gap:8px;}
+  .toast{background:var(--navy); color:#fff; padding:12px 16px; border-radius:9px; font-size:12.5px; box-shadow:var(--shadow); max-width:320px; animation:slidein .18s ease;}
+  @keyframes slidein{from{transform:translateY(10px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+
+  .empty-state{padding:40px 20px; text-align:center; color:var(--muted); font-size:13px;}
+  .saldo-edit{display:inline-flex; align-items:center; gap:6px;}
+  .saldo-edit input{width:100px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;}
+
+  @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} .bh-grid{grid-template-columns:repeat(2,1fr);} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ============================= DATA ============================= */
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+
+/* Geen voorbeeld-/demodata: dit bestand wordt publiek gehost (GitHub Pages), dus er staan bewust geen
+   klant- of boekhoudernamen in de broncode — ook geen fictieve. Voeg klanten/boekhouders toe via de
+   knoppen in het dashboard, of koppel de Microsoft-sync (zie Instellingen) om echte data op te halen. */
+let BOEKHOUDERS = [];
+
+function d(offsetDays){ const dt=new Date(TODAY); dt.setDate(dt.getDate()+offsetDays); return dt.toISOString().slice(0,10); }
+function DL(datum, status=null){ return {datum, status}; }
+function NA(){ return {na:true}; }
+
+let RAW_KLANTEN = [];
+
+/* Nieuw toegevoegde klanten/boekhouders (lokaal, per browser) worden hier bovenop de voorbeelddata geladen. */
+const META_KEY = 'compliance_dashboard_meta_v1';
+function loadMeta(){
+  try{
+    const raw = localStorage.getItem(META_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed.boekhouders && parsed.boekhouders.length) BOEKHOUDERS = parsed.boekhouders;
+      if(parsed.klanten && parsed.klanten.length) RAW_KLANTEN = parsed.klanten;
+    }
+  }catch(e){}
+}
+function persistMeta(){
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN})); }catch(e){}
+  pushRemoteDebounced();
+}
+loadMeta();
+
+function nextId(list, prefix){ let n=list.length+1; while(list.some(x=>x.id===prefix+n)) n++; return prefix+n; }
+function addKlant(data){
+  const id = nextId(RAW_KLANTEN,'k');
+  const dateOrNa = (v)=> v ? DL(v) : NA();
+  const klant = {
+    id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
+    contact:data.contact||'', email:data.email||'', tel:data.tel||'',
+    dl:{
+      OB:dateOrNa(data.ob),
+      VPB:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.vpb),
+      LH:dateOrNa(data.lh),
+      JR:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.jr),
+      overige:[]
+    }
+  };
+  RAW_KLANTEN.push(klant);
+  STORE[id] = {
+    dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, txn:0, sync:new Date().toISOString().slice(0,10),
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:''
+  };
+  persistMeta(); persist();
+  return klant;
+}
+function addBoekhouder(data){
+  const id = nextId(BOEKHOUDERS,'bh');
+  const kleuren = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
+  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', kleur:kleuren[BOEKHOUDERS.length % kleuren.length]};
+  BOEKHOUDERS.push(b); persistMeta();
+  return b;
+}
+
+/* Geen voorbeeld-financiële data om dezelfde reden als hierboven. */
+const FIN_SEED = {};
+
+/* load persisted state (saldo edits, checklist, reminder log, notities) from localStorage, seeded from above */
+const STORE_KEY = 'compliance_dashboard_v1';
+function loadStore(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  const seed = {};
+  RAW_KLANTEN.forEach(k=>{
+    const f = FIN_SEED[k.id] || {saldo:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[]};
+    seed[k.id] = {
+      dl: JSON.parse(JSON.stringify(k.dl)),
+      saldo:f.saldo, txn:f.txn, sync:f.sync,
+      items:f.items.map(([naam,done])=>({naam,done})),
+      kanalen:[...f.kanalen], dagen1:f.dagen1, dagen2:f.dagen2,
+      log:[...f.log], notities:''
+    };
+  });
+  return seed;
+}
+let STORE = loadStore();
+function persist(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){} pushRemoteDebounced(); }
+
+/* ============================= CLOUD SYNC (Microsoft-login via Graph API) =============================
+   Dit dashboard werkt standaard lokaal (per browser). Om data live te delen tussen collega's koppel je
+   het rechtstreeks aan een SharePoint-lijst via je eigen Microsoft-account (MSAL-login) en de Microsoft
+   Graph API — gratis, geen Power Automate nodig. Zie de handleidingen "Dashboard hosten op GitHub Pages"
+   en "Azure AD app-registratie". Werkt alléén als het dashboard vanaf een echte https-URL wordt geopend
+   (niet als lokaal dubbelgeklikt bestand) — dat is een vereiste van Microsoft's inlogscherm. */
+const SYNC_KEY = 'compliance_dashboard_sync_v1';
+let SYNC = {
+  clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
+  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null
+};
+let msalInstance = null;
+const GRAPH_SCOPES = ['Sites.ReadWrite.All'];
+
+function loadSync(){
+  try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
+  if(SYNC.enabled && SYNC.clientId) initMsal();
+}
+function saveSyncConfig(cfg){
+  SYNC = Object.assign(SYNC, cfg);
+  try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){}
+}
+function persistSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){} updateSyncIndicator(); }
+
+function initMsal(){
+  if(typeof msal === 'undefined'){ SYNC.lastError = 'Kon de Microsoft-inlogbibliotheek niet laden (geen internetverbinding?).'; persistSync(); return null; }
+  if(msalInstance) return msalInstance;
+  if(!SYNC.clientId) return null;
+  msalInstance = new msal.PublicClientApplication({
+    auth:{
+      clientId: SYNC.clientId,
+      authority: 'https://login.microsoftonline.com/' + (SYNC.tenantId || 'organizations'),
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache:{ cacheLocation:'localStorage' }
+  });
+  return msalInstance;
+}
+async function signIn(){
+  const app = initMsal();
+  if(!app){ toast('Vul eerst een geldig App ID in.'); return false; }
+  try{
+    const res = await app.loginPopup({ scopes: GRAPH_SCOPES });
+    SYNC.account = { username: res.account.username, name: res.account.name };
+    SYNC.lastError = null;
+    persistSync();
+    toast('Ingelogd als ' + res.account.username);
+    return true;
+  }catch(e){
+    SYNC.lastError = e.errorMessage || e.message || 'Inloggen mislukt';
+    persistSync();
+    toast('Inloggen mislukt: ' + SYNC.lastError);
+    return false;
+  }
+}
+function signOutOfMsal(){
+  if(msalInstance){
+    const accounts = msalInstance.getAllAccounts();
+    if(accounts[0]) msalInstance.logoutPopup({ account: accounts[0] }).catch(()=>{});
+  }
+  SYNC.account = null; SYNC.siteId = null; SYNC.listId = null;
+  persistSync();
+}
+async function getGraphToken(){
+  const app = initMsal();
+  if(!app) throw new Error('Geen App ID geconfigureerd');
+  const accounts = app.getAllAccounts();
+  if(!accounts.length) throw new Error('Niet ingelogd — klik eerst op "Inloggen met Microsoft".');
+  try{
+    const res = await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: accounts[0] });
+    return res.accessToken;
+  }catch(e){
+    const res = await app.acquireTokenPopup({ scopes: GRAPH_SCOPES });
+    return res.accessToken;
+  }
+}
+async function graphFetch(url, opts={}){
+  const token = await getGraphToken();
+  const res = await fetch(url, Object.assign({}, opts, {
+    headers: Object.assign({ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, opts.headers||{})
+  }));
+  if(!res.ok){ const text = await res.text().catch(()=>''); throw new Error('Graph-fout '+res.status+': '+text.slice(0,200)); }
+  if(res.status === 204) return null;
+  return res.json();
+}
+async function resolveSiteAndList(){
+  if(SYNC.siteId && SYNC.listId) return;
+  if(!SYNC.siteUrl) throw new Error('Vul eerst het SharePoint site-adres in bij Instellingen.');
+  const u = new URL(SYNC.siteUrl);
+  const siteRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${u.hostname}:${u.pathname}`);
+  SYNC.siteId = siteRes.id;
+  const filter = encodeURIComponent(`displayName eq '${SYNC.listName}'`);
+  const listsRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists?$filter=${filter}`);
+  if(!listsRes.value || !listsRes.value.length) throw new Error(`Lijst '${SYNC.listName}' niet gevonden op deze site.`);
+  SYNC.listId = listsRes.value[0].id;
+  persistSync();
+}
+let pushTimer = null;
+function pushRemoteDebounced(){
+  if(!SYNC.enabled || !SYNC.account) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushRemote, 900);
+}
+async function pushRemote(){
+  if(!SYNC.enabled || !SYNC.account) return;
+  try{
+    await resolveSiteAndList();
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, store: STORE });
+    await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
+      method:'PATCH', body: JSON.stringify({ Data: dataStr })
+    });
+    SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
+  }catch(e){
+    SYNC.lastError = e.message || 'Onbekende fout';
+  }
+  persistSync();
+}
+async function fetchRemoteAndMerge(showFeedback){
+  if(!SYNC.enabled || !SYNC.account) return;
+  try{
+    await resolveSiteAndList();
+    const itemRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1?expand=fields`);
+    let json = itemRes && itemRes.fields ? itemRes.fields.Data : null;
+    if(typeof json === 'string'){ try{ json = JSON.parse(json); }catch(e){ json = null; } }
+    if(json && json.klanten){
+      BOEKHOUDERS = json.boekhouders && json.boekhouders.length ? json.boekhouders : BOEKHOUDERS;
+      RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
+      STORE = json.store || STORE;
+      try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN})); }catch(e){}
+      try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
+      SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
+      if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) render(); else updateSyncIndicator();
+      if(showFeedback) toast('Gesynchroniseerd met gedeelde data.');
+    }
+  }catch(e){
+    SYNC.lastError = e.message || 'Onbekende fout';
+    if(showFeedback) toast('Synchroniseren mislukt: '+SYNC.lastError);
+  }
+  persistSync();
+}
+function updateSyncIndicator(){
+  const el = document.getElementById('syncIndicator');
+  if(!el) return;
+  if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '☁️ Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
+  if(SYNC.lastError){ el.innerHTML = '⚠️ Sync mislukt'; el.style.color = 'var(--red)'; return; }
+  el.innerHTML = '☁️ '+SYNC.account.username+(SYNC.lastSync ? ' · '+new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '');
+  el.style.color = 'var(--green)';
+}
+
+/* ============================= HELPERS ============================= */
+function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
+function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
+function daysDiff(str){ const dt=new Date(str+'T00:00:00'); return Math.round((dt-TODAY)/86400000); }
+
+function statusOf(entry){
+  if(!entry || entry.na) return {key:'na'};
+  if(entry.status==='ingediend') return {key:'ingediend'};
+  const dd = daysDiff(entry.datum);
+  if(dd<=7) return {key:'actie', dagen:dd};
+  if(dd<=30) return {key:'nadert', dagen:dd};
+  return {key:'schema', dagen:dd};
+}
+const STATUS_META = {
+  actie:{label:'Actie vereist', cls:'red'},
+  nadert:{label:'Deadline nadert', cls:'amber'},
+  schema:{label:'Op schema', cls:'green'},
+  ingediend:{label:'Ingediend', cls:'blue'},
+  na:{label:'N.v.t.', cls:'gray'},
+};
+function badge(entry, opts){
+  const st = statusOf(entry); const meta = STATUS_META[st.key];
+  let extra = '';
+  if(opts && opts.days && st.dagen!==undefined){
+    extra = st.dagen<0 ? ` · ${Math.abs(st.dagen)}d te laat` : ` · nog ${st.dagen}d`;
+  }
+  return `<span class="badge ${meta.cls}"><span class="dot ${meta.cls}"></span>${meta.label}${extra}</span>`;
+}
+function worstStatus(klant){
+  const order = {actie:0, nadert:1, ingediend:2, schema:3, na:4};
+  let worst = 'na';
+  ['OB','VPB','LH','JR'].forEach(t=>{
+    const s = statusOf(effDL(klant,t)).key;
+    if(order[s] < order[worst]) worst = s;
+  });
+  (klant.dl.overige||[]).forEach(o=>{
+    const s = statusOf(o).key;
+    if(order[s] < order[worst]) worst = s;
+  });
+  if(worst==='na') worst='schema';
+  return worst;
+}
+function effDL(klant, type){ return STORE[klant.id].dl[type]; }
+function bh(id){ return BOEKHOUDERS.find(b=>b.id===id); }
+function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
+function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+function toast(msg){
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div'); el.className='toast'; el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .25s'; setTimeout(()=>el.remove(),250); }, 3200);
+}
+
+/* ============================= STATE ============================= */
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, showAddKlant:false, showAddBh:false };
+
+/* ============================= ICONS ============================= */
+const ICONS = {
+  dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.5 14.3c2.7.4 4.5 2.5 4.5 5.7"/></svg>',
+  building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="11" height="18" rx="1"/><path d="M15 8h5v13h-5"/><path d="M7.5 7h1M11 7h1M7.5 10.5h1M11 10.5h1M7.5 14h1M11 14h1"/></svg>',
+  bank:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-6 9 6"/><path d="M4 10v9M9 10v9M15 10v9M20 10v9"/><path d="M2.5 21h19"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  whats:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.3-.5.1-.2 0-.4 0-.5C10 9 9.4 7.6 9.1 7c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3 4.8 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3z"/><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.2-.4-4.5-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+  upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+};
+
+/* ============================= RENDER ROOT ============================= */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="sidebar">
+      <div class="brand">
+        <div class="brand-name">Administratiebox</div>
+        <div class="brand-sub">Compliance Dashboard</div>
+      </div>
+      <div class="nav">
+        ${navItem('dashboard','dash','Overzicht')}
+        ${navItem('boekhouders','building','Boekhouders')}
+        ${navItem('klanten','users','Klanten')}
+        ${navItem('aanlevering','bank','Aanlevering & Saldo')}
+        ${navItem('instellingen','gear','Instellingen')}
+      </div>
+      <div class="nav-foot">Ingelogd als<br><b>Benjamin</b> · administratiebox.nl</div>
+    </div>
+    <div class="main">
+      <div class="topbar">
+        <div>
+          <div class="page-title">${pageTitle()}</div>
+          <div class="page-sub">${pageSub()}</div>
+        </div>
+        <div class="topbar-right">
+          <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/></div>
+          <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
+          <div class="today-pill">📅 ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
+        </div>
+      </div>
+      <div class="content" id="contentArea"></div>
+    </div>
+    <div class="overlay" id="overlay"></div>
+    <div class="panel" id="panel"></div>
+  `;
+  document.getElementById('contentArea').innerHTML = viewHTML();
+  if(STATE.panelKlant) openPanel(STATE.panelKlant, true);
+  else if(STATE.showAddKlant) openAddKlantPanel(true);
+  else if(STATE.showAddBh) openAddBhPanel(true);
+  else closePanelDom();
+  attachHandlers();
+  updateSyncIndicator();
+}
+function navItem(view, icon, label){
+  return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span></button>`;
+}
+function pageTitle(){
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', instellingen:'Instellingen'}[STATE.view];
+}
+function pageSub(){
+  return {
+    dashboard:'Status van alle deadlines in één oogopslag',
+    boekhouders:'Klantportefeuille per boekhouder',
+    klanten:'Alle klanten met deadlinestatus per categorie',
+    aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
+    instellingen:'Live synchronisatie tussen collega\'s'
+  }[STATE.view];
+}
+
+/* ============================= VIEW: DASHBOARD ============================= */
+function viewHTML(){
+  if(STATE.view==='dashboard') return dashboardHTML();
+  if(STATE.view==='boekhouders') return boekhoudersHTML();
+  if(STATE.view==='klanten') return klantenHTML();
+  if(STATE.view==='aanlevering') return aanleveringHTML();
+  if(STATE.view==='instellingen') return instellingenHTML();
+  return '';
+}
+
+function allDeadlineRows(){
+  const rows = [];
+  RAW_KLANTEN.forEach(k=>{
+    ['OB','VPB','LH','JR'].forEach(type=>{
+      const entry = effDL(k,type);
+      if(entry.na) return;
+      rows.push({klant:k, type, entry, st:statusOf(entry)});
+    });
+    (k.dl.overige||[]).forEach(o=>{
+      rows.push({klant:k, type:'Overige', entry:o, st:statusOf(o)});
+    });
+  });
+  return rows;
+}
+const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
+
+function dashboardHTML(){
+  const rows = allDeadlineRows();
+  const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
+  rows.forEach(r=>cnt[r.st.key]++);
+  const totalSaldo = RAW_KLANTEN.reduce((s,k)=>s+STORE[k.id].saldo,0);
+
+  const urgent = rows.filter(r=>r.st.key==='actie' || r.st.key==='nadert')
+    .sort((a,b)=> (a.entry.status==='ingediend'?9999:daysDiff(a.entry.datum)) - (b.entry.status==='ingediend'?9999:daysDiff(b.entry.datum)))
+    .slice(0,8);
+
+  const types = ['OB','VPB','LH','JR','Overige'];
+  const distRows = types.map(t=>{
+    const trows = rows.filter(r=>r.type===t);
+    const c = {actie:0,nadert:0,schema:0,ingediend:0};
+    trows.forEach(r=>c[r.st.key]++);
+    const total = trows.length || 1;
+    return `<div class="distbar">
+      <div class="label">${TYPE_LABEL[t]}</div>
+      <div class="track">
+        ${c.actie?`<div class="seg" style="width:${c.actie/total*100}%; background:var(--red)"></div>`:''}
+        ${c.nadert?`<div class="seg" style="width:${c.nadert/total*100}%; background:var(--amber)"></div>`:''}
+        ${c.ingediend?`<div class="seg" style="width:${c.ingediend/total*100}%; background:var(--blue)"></div>`:''}
+        ${c.schema?`<div class="seg" style="width:${c.schema/total*100}%; background:var(--green)"></div>`:''}
+      </div>
+      <div class="nums">${c.actie} rood · ${c.nadert} oranje · ${c.schema} groen</div>
+    </div>`;
+  }).join('');
+
+  const remindDue = RAW_KLANTEN.filter(k=>{
+    const f = STORE[k.id];
+    return f.saldo>0 || f.items.some(i=>!i.done);
+  }).slice(0,6);
+
+  return `
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-label">Totaal klanten</div><div class="kpi-value">${RAW_KLANTEN.length}</div><div class="kpi-sub" style="color:var(--muted)">Verdeeld over ${BOEKHOUDERS.length} boekhouders</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Actie vereist</div><div class="kpi-value">${cnt.actie}</div><div class="kpi-sub" style="color:var(--red)">Deadlines verlopen of ≤ 7 dagen</div></div>
+    <div class="kpi-card amber"><div class="kpi-label">Deadline nadert</div><div class="kpi-value">${cnt.nadert}</div><div class="kpi-sub" style="color:var(--amber)">Binnen 8–30 dagen</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Op schema</div><div class="kpi-value">${cnt.schema}</div><div class="kpi-sub" style="color:var(--green)">Ruim op tijd</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Open banksaldo</div><div class="kpi-value" style="font-size:22px;">${fmtEUR(totalSaldo)}</div><div class="kpi-sub" style="color:var(--muted)">Over alle klanten</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h3>Urgente acties</h3><span class="hint">Gesorteerd op resterende tijd</span></div>
+    <div class="section-body">
+      ${urgent.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Type</th><th>Deadline</th><th>Status</th><th></th></tr></thead><tbody>
+        ${urgent.map(r=>`<tr class="row-click" data-open-klant="${r.klant.id}">
+          <td><div class="klant-name">${r.klant.naam}</div><div class="klant-meta">${r.klant.vorm}</div></td>
+          <td>${bh(r.klant.bh).naam}</td>
+          <td>${typeof r.type==='string' && TYPE_LABEL[r.type] ? TYPE_LABEL[r.type] : (r.entry.naam||r.type)}</td>
+          <td>${fmtDate(r.entry.datum)}</td>
+          <td>${badge(r.entry,{days:true})}</td>
+          <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${r.klant.id}">Bekijk →</button></td>
+        </tr>`).join('')}
+      </tbody></table>` : `<div class="empty-state">Geen urgente acties — alles op schema. 🎉</div>`}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h3>Status per deadlinecategorie</h3><span class="hint">${rows.length} deadlines totaal</span></div>
+    <div class="section-body" style="padding:10px 0;">${distRows}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h3>Aanlevering & banksaldo — aandachtspunten</h3><span class="hint">Klanten met openstaand saldo of ontbrekende stukken</span></div>
+    <div class="section-body">
+      ${remindDue.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Open saldo</th><th>Aan te leveren</th><th></th></tr></thead><tbody>
+      ${remindDue.map(k=>{ const f=STORE[k.id]; const open=f.items.filter(i=>!i.done).length;
+        return `<tr class="row-click" data-open-klant="${k.id}">
+          <td><div class="klant-name">${k.naam}</div></td>
+          <td>${bh(k.bh).naam}</td>
+          <td>${fmtEUR(f.saldo)}</td>
+          <td>${open? `<span class="badge amber"><span class="dot amber"></span>${open} item(s) open</span>` : `<span class="badge green"><span class="dot green"></span>Compleet</span>`}</td>
+          <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
+        </tr>`; }).join('')}
+      </tbody></table>` : `<div class="empty-state">Niets openstaand.</div>`}
+    </div>
+  </div>
+  `;
+}
+
+/* ============================= VIEW: BOEKHOUDERS ============================= */
+function boekhoudersHTML(){
+  const cards = BOEKHOUDERS.map(b=>{
+    const klanten = klantsOf(b.id);
+    const c = {actie:0, nadert:0, schema:0};
+    klanten.forEach(k=>{ const w = worstStatus(k); if(c[w]!==undefined) c[w]++; else c.schema++; });
+    return `<div class="bh-card" data-nav-bh="${b.id}">
+      <div class="bh-top">
+        <div class="avatar" style="background:${b.kleur}">${initials(b.naam)}</div>
+        <div><div class="bh-name">${b.naam}</div><div class="bh-role">${b.rol}</div></div>
+      </div>
+      <div class="bh-stats">
+        <div class="bh-stat"><b style="color:var(--red)">${c.actie}</b><span>Actie</span></div>
+        <div class="bh-stat"><b style="color:var(--amber)">${c.nadert}</b><span>Nadert</span></div>
+        <div class="bh-stat"><b style="color:var(--green)">${c.schema}</b><span>Op schema</span></div>
+      </div>
+      <div class="bh-foot"><span>${klanten.length} klanten</span><span>Bekijk klanten →</span></div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="section-head" style="padding:0 0 14px; border-bottom:none;">
+    <h3 style="font-size:15px;">Boekhouders</h3>
+    <button class="btn sm primary" data-add-bh-btn>+ Nieuwe boekhouder</button>
+  </div>
+  ${BOEKHOUDERS.length ? `<div class="bh-grid">${cards}</div>` : `<div class="section"><div class="empty-state">Nog geen boekhouders toegevoegd. Klik op "+ Nieuwe boekhouder" om te beginnen, of koppel Microsoft-sync bij Instellingen om bestaande gegevens op te halen.</div></div>`}`;
+}
+
+/* ============================= VIEW: KLANTEN ============================= */
+function klantenHTML(){
+  let list = RAW_KLANTEN.slice();
+  if(STATE.bhFilter) list = list.filter(k=>k.bh===STATE.bhFilter);
+  if(STATE.statusFilter) list = list.filter(k=>worstStatus(k)===STATE.statusFilter);
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
+  }
+  const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${STATE.bhFilter===b.id?'selected':''}>${b.naam}</option>`).join('');
+
+  return `
+  <div class="section">
+    <div class="section-head">
+      <h3>Klantenlijst</h3>
+      <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
+    </div>
+    <div class="filters">
+      <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
+      <select id="filterStatus">
+        <option value="">Alle statussen</option>
+        <option value="actie" ${STATE.statusFilter==='actie'?'selected':''}>Actie vereist</option>
+        <option value="nadert" ${STATE.statusFilter==='nadert'?'selected':''}>Deadline nadert</option>
+        <option value="schema" ${STATE.statusFilter==='schema'?'selected':''}>Op schema</option>
+      </select>
+      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${list.length} van ${RAW_KLANTEN.length} klanten</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
+        <tbody>
+          ${list.map(k=>{
+            const ov = k.dl.overige||[];
+            const ovWorst = ov.length ? ov.map(o=>statusOf(o).key).sort((a,b)=>({actie:0,nadert:1,ingediend:2,schema:3}[a]-{actie:0,nadert:1,ingediend:2,schema:3}[b]))[0] : null;
+            return `<tr class="row-click" data-open-klant="${k.id}">
+            <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm} · ${bh(k.bh).naam}</div></td>
+            <td>${bh(k.bh).naam}</td>
+            <td>${badge(effDL(k,'OB'))}</td>
+            <td>${badge(effDL(k,'VPB'))}</td>
+            <td>${badge(effDL(k,'LH'))}</td>
+            <td>${badge(effDL(k,'JR'))}</td>
+            <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
+            <td>${fmtEUR(STORE[k.id].saldo)}</td>
+            <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>
+      ${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}
+    </div>
+  </div>`;
+}
+
+/* ============================= VIEW: AANLEVERING & SALDO ============================= */
+function aanleveringHTML(){
+  let list = RAW_KLANTEN.slice();
+  if(STATE.bhFilter) list = list.filter(k=>k.bh===STATE.bhFilter);
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(k=>k.naam.toLowerCase().includes(q));
+  }
+  const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${STATE.bhFilter===b.id?'selected':''}>${b.naam}</option>`).join('');
+
+  return `
+  <div class="banner">
+    💡 <b>Bankkoppeling:</b> upload hier een CSV-export uit jullie banktool (kolommen: <code>klant,saldo,transacties</code>) om openstaande saldi in bulk bij te werken, of pas een klant handmatig aan. Automatische e-mail/WhatsApp-herinneringen worden per klant ingesteld — klik op een klant om ze te versturen of te plannen.
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h3>Bulk-upload banksaldo</h3>
+      <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} CSV uploaden<input type="file" id="csvUpload" accept=".csv" style="display:none;"></label>
+    </div>
+    <div class="section-body pad" style="font-size:12px; color:var(--muted);">
+      Verwacht formaat per regel: <code>Klantnaam,Openstaand saldo,Aantal transacties</code>. Klanten worden gematcht op naam.
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="filters">
+      <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
+      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${list.length} klanten</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Klant</th><th>Boekhouder</th><th>Open saldo</th><th>Transacties</th><th>Laatste sync</th><th>Aan te leveren</th><th>Herinneringen</th><th></th></tr></thead>
+        <tbody>
+          ${list.map(k=>{
+            const f = STORE[k.id];
+            const open = f.items.filter(i=>!i.done).length;
+            return `<tr>
+              <td class="row-click" data-open-klant="${k.id}"><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm}</div></td>
+              <td>${bh(k.bh).naam}</td>
+              <td>
+                <span class="saldo-edit">
+                  <span id="saldoDisplay-${k.id}">${fmtEUR(f.saldo)}</span>
+                  <button class="btn sm ghost" data-edit-saldo="${k.id}" title="Bewerken">✎</button>
+                </span>
+              </td>
+              <td>${f.txn}</td>
+              <td>${fmtDate(f.sync)}</td>
+              <td>${open? `<span class="badge amber"><span class="dot amber"></span>${open} open</span>` : `<span class="badge green"><span class="dot green"></span>Compleet</span>`}</td>
+              <td>${f.log.length? `<span class="badge blue"><span class="dot blue"></span>${f.log.length}x verstuurd</span>` : `<span class="badge gray"><span class="dot gray"></span>Nog geen</span>`}</td>
+              <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Beheer →</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
+function instellingenHTML(){
+  const runningLocally = window.location.protocol === 'file:';
+  return `
+  <div class="banner">
+    ☁️ <b>Live delen met collega's:</b> dit dashboard werkt standaard lokaal in deze browser. Om ervoor te zorgen
+    dat alle boekhouders dezelfde, actuele data zien, koppel je hieronder aan een gedeelde SharePoint-lijst via
+    je eigen Microsoft-account — gratis, geen Power Automate nodig. Zie de handleidingen "Dashboard hosten op
+    GitHub Pages" en "Azure AD app-registratie" voor het volledige stappenplan.
+  </div>
+
+  ${runningLocally ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">
+    ⚠️ Je opent dit bestand nu lokaal (dubbelgeklikt). Microsoft-login werkt alleen als het dashboard vanaf een
+    echte https-link wordt geopend. Volg eerst de handleiding "Dashboard hosten op GitHub Pages" en open het
+    dashboard daarna via die link.
+  </div>` : ''}
+
+  <div class="section">
+    <div class="section-head"><h3>Microsoft-koppeling</h3><span class="hint">Wordt lokaal opgeslagen in deze browser</span></div>
+    <div class="section-body pad">
+      <div class="field-row"><label>App ID (client ID)</label><input type="text" id="syncClientId" value="${SYNC.clientId||''}" placeholder="bijv. 3f1a9c2e-1234-4a5b-8cde-9f0123456789"></div>
+      <div class="field-row"><label>Tenant ID</label><input type="text" id="syncTenantId" value="${SYNC.tenantId||''}" placeholder="optioneel — leeg = elk werk-/schoolaccount"></div>
+      <div class="field-row"><label>SharePoint site-adres</label><input type="text" id="syncSiteUrl" value="${SYNC.siteUrl||''}" placeholder="https://jullietenant.sharepoint.com/sites/Compliance-Dashboard"></div>
+      <div class="field-row"><label>Lijstnaam</label><input type="text" id="syncListName" value="${SYNC.listName||'ComplianceDashboardData'}"></div>
+      <div class="field-row"><label>Synchronisatie</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;"><input type="checkbox" id="syncEnabled" ${SYNC.enabled?'checked':''}> Inschakelen</label>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+        <button class="btn primary sm" data-save-sync>Instellingen opslaan</button>
+        ${SYNC.account
+          ? `<button class="btn sm" data-sign-out>Uitloggen (${SYNC.account.username})</button>`
+          : `<button class="btn sm" data-sign-in>🔑 Inloggen met Microsoft</button>`}
+        <button class="btn sm" data-sync-now>🔄 Nu synchroniseren</button>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--muted);">
+        Status: <b style="color:${SYNC.lastError?'var(--red)':'var(--green)'}">${!SYNC.enabled ? 'Uitgeschakeld' : (SYNC.lastError ? 'Fout — '+SYNC.lastError : (SYNC.account ? 'Ingelogd als '+SYNC.account.username : 'Nog niet ingelogd'))}</b>
+        ${SYNC.lastSync ? ' · laatst gelukt: '+new Date(SYNC.lastSync).toLocaleString('nl-NL') : ''}
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
+    <div class="section-body pad" style="font-size:12.5px; color:var(--text); line-height:1.7;">
+      1. Een SharePoint-lijst <code>ComplianceDashboardData</code> met kolom <code>Data</code> (tekst zonder opmaak) en één item (Id 1) — zie de handleiding "SharePoint-koppeling stap voor stap", Deel A.<br>
+      2. Een app-registratie in Entra ID (Azure AD) met API-permissie <code>Sites.ReadWrite.All</code> (delegated) — zie de handleiding "Azure AD app-registratie".<br>
+      3. Het dashboard gehost op een echte https-link (bijv. GitHub Pages) — zie de handleiding "Dashboard hosten op GitHub Pages".<br>
+      4. Vul hierboven het App ID (en eventueel Tenant ID) van de app-registratie in, plus het SharePoint site-adres, en klik op "Inloggen met Microsoft".
+    </div>
+  </div>`;
+}
+
+/* ============================= PANEL: KLANT DETAIL ============================= */
+function deadlineCard(type, entry){
+  if(entry.na){
+    return `<div class="dl-card"><div class="dl-top"><span class="dl-name">${TYPE_LABEL[type]}</span></div><div class="dl-na" style="padding:0;">Niet van toepassing</div></div>`;
+  }
+  const st = statusOf(entry); const meta = STATUS_META[st.key];
+  const daysTxt = entry.status==='ingediend' ? `Ingediend op ${fmtDate(entry.datum)}` : (st.dagen<0 ? `${Math.abs(st.dagen)} dagen te laat` : `Nog ${st.dagen} dagen`);
+  return `<div class="dl-card">
+    <div class="dl-top"><span class="dl-name">${TYPE_LABEL[type]}</span>${badge(entry)}</div>
+    <div class="dl-date">Deadline: ${fmtDate(entry.datum)}</div>
+    <div class="dl-days" style="color:var(--${meta.cls==='gray'?'muted':meta.cls})">${daysTxt}</div>
+    <div class="dl-actions">
+      ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}">Markeer als ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}">Ongedaan maken</button>`}
+    </div>
+  </div>`;
+}
+
+function reminderMessage(klant, ronde){
+  const f = STORE[klant.id];
+  const openItems = f.items.filter(i=>!i.done).map(i=>i.naam);
+  const lines = openItems.length ? openItems.map(i=>`- ${i}`).join('\n') : '- (zie portaal voor actuele lijst)';
+  const saldoLine = f.saldo>0 ? `Openstaand banksaldo dat nog toegelicht moet worden: ${fmtEUR(f.saldo)} (${f.txn} transacties).\n\n` : '';
+  const woord = ronde===1 ? 'Herinnering' : 'Tweede herinnering';
+  const body = `Beste ${klant.contact},\n\n${woord}: voor een tijdige verwerking van uw administratie ontvangen wij graag op korte termijn de volgende stukken:\n${lines}\n\n${saldoLine}Met vriendelijke groet,\n${bh(klant.bh).naam}\nAdministratiebox`;
+  return {subject:`${woord} — aanlevering stukken ${klant.naam}`, body};
+}
+
+function panelHTML(klant){
+  const f = STORE[klant.id];
+  const open = f.items.filter(i=>!i.done).length;
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div>
+        <div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${klant.vorm} · KvK ${klant.kvk}</div>
+        <div class="panel-klant-name">${klant.naam}</div>
+        <div class="panel-klant-meta">
+          <span>👤 ${klant.contact}</span>
+          <span>🧾 ${bh(klant.bh).naam}</span>
+        </div>
+      </div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section">
+      <h4>Contact</h4>
+      <div class="inner" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn sm" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
+        <a class="btn sm" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
+        <span class="btn sm ghost" style="cursor:default;">☎ ${klant.tel}</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Deadlines</h4>
+      <div class="deadline-grid">
+        ${deadlineCard('OB', effDL(klant,'OB'))}
+        ${deadlineCard('VPB', effDL(klant,'VPB'))}
+        ${deadlineCard('LH', effDL(klant,'LH'))}
+        ${deadlineCard('JR', effDL(klant,'JR'))}
+      </div>
+      <h4 style="border-top:1px solid var(--border);">Overige deadlines</h4>
+      ${(klant.dl.overige||[]).map((o,idx)=>`
+        <div class="overige-row">
+          <div class="overige-left"><b>${o.naam}</b><div>Deadline: ${fmtDate(o.datum)}</div></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${badge(o)}
+            ${o.status!=='ingediend' ? `<button class="btn sm ghost" data-mark-overige="${idx}">Markeer ingediend</button>` : `<button class="btn sm ghost" data-unmark-overige="${idx}">Herstel</button>`}
+          </div>
+        </div>`).join('') || '<div class="overige-row"><span style="color:var(--muted2); font-size:12px;">Geen overige deadlines.</span></div>'}
+      <div class="inner" style="padding-top:10px;">
+        <div class="add-item-row">
+          <input type="text" id="newOvNaam" placeholder="Naam deadline (bv. Intrastat)">
+          <input type="text" id="newOvDatum" placeholder="JJJJ-MM-DD" style="width:120px;">
+          <button class="btn sm primary" data-add-overige>Toevoegen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Banksaldo & aan te leveren stukken</h4>
+      <div class="inner">
+        <div class="field-row">
+          <label>Openstaand saldo</label>
+          <input type="number" step="0.01" id="saldoInput" value="${f.saldo}">
+        </div>
+        <div class="field-row">
+          <label>Aantal transacties</label>
+          <input type="number" id="txnInput" value="${f.txn}">
+        </div>
+        <div class="field-row"><label>Laatste sync</label><span style="font-size:12.5px;">${fmtDate(f.sync)}</span></div>
+        <button class="btn sm primary" data-save-financieel>Opslaan</button>
+
+        <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">
+          <b style="font-size:12.5px;">Aan te leveren (${open} open)</b>
+          ${f.items.map((i,idx)=>`
+            <div class="checklist-item ${i.done?'done':''}">
+              <input type="checkbox" data-toggle-item="${idx}" ${i.done?'checked':''}>
+              <label>${i.naam}</label>
+              <button class="btn sm ghost" style="margin-left:auto; padding:3px 7px;" data-remove-item="${idx}">✕</button>
+            </div>`).join('') || '<div style="font-size:12px; color:var(--muted2); padding:6px 0;">Geen items.</div>'}
+          <div class="add-item-row">
+            <input type="text" id="newItemNaam" placeholder="Nieuw item toevoegen…">
+            <button class="btn sm primary" data-add-item>+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Automatische herinneringen</h4>
+      <div class="inner">
+        <div class="chan-row">
+          <label><input type="checkbox" data-chan="email" ${f.kanalen.includes('email')?'checked':''}> E-mail</label>
+          <label><input type="checkbox" data-chan="whatsapp" ${f.kanalen.includes('whatsapp')?'checked':''}> WhatsApp</label>
+        </div>
+        <div class="field-row"><label>1e herinnering na</label><input type="number" id="dagen1Input" value="${f.dagen1}" style="max-width:70px;"><span style="font-size:12px; color:var(--muted);">dagen te laat</span></div>
+        <div class="field-row"><label>2e herinnering na</label><input type="number" id="dagen2Input" value="${f.dagen2}" style="max-width:70px;"><span style="font-size:12px; color:var(--muted);">dagen te laat</span></div>
+        <button class="btn sm" data-save-reminder-settings>Instellingen opslaan</button>
+
+        <div class="rem-actions">
+          <button class="btn sm primary" data-send-reminder="1">${ICONS.bell} Verstuur 1e herinnering</button>
+          <button class="btn sm" data-send-reminder="2">${ICONS.bell} Verstuur 2e herinnering</button>
+        </div>
+        <div class="banner" style="margin-top:10px;">Verstuurknoppen openen een vooringevulde e-mail (mailto) of WhatsApp-bericht (wa.me) — één klik om echt te versturen. Volledig automatisch versturen op basis van de dag-instellingen hierboven kan ingericht worden via een gekoppelde mailbox (Gmail/Outlook) en WhatsApp Business API; zeg het als je dat wilt laten opzetten.</div>
+
+        <div class="rem-log">
+          <b style="font-size:12px;">Verzendgeschiedenis</b>
+          ${f.log.length ? f.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${l.ronde}e herinnering via ${l.kanaal} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen herinneringen verstuurd.</div>'}
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Notities</h4>
+      <div class="inner">
+        <textarea id="notitiesInput" placeholder="Interne notities over deze klant…">${f.notities||''}</textarea>
+        <div style="margin-top:8px;"><button class="btn sm" data-save-notities>Opslaan</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function addKlantFormHTML(){
+  const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}">${b.naam}</option>`).join('');
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Klant toevoegen</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Klantgegevens</h4><div class="inner">
+      <div class="field-row"><label>Naam*</label><input type="text" id="newKlantNaam" placeholder="Bedrijfsnaam B.V."></div>
+      <div class="field-row"><label>Rechtsvorm</label><select id="newKlantVorm" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="BV">BV</option><option value="Eenmanszaak">Eenmanszaak</option></select></div>
+      <div class="field-row"><label>Boekhouder*</label><select id="newKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${bhOptions || '<option value="">Voeg eerst een boekhouder toe</option>'}</select></div>
+      <div class="field-row"><label>KvK-nummer</label><input type="text" id="newKlantKvk"></div>
+      <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
+      <div class="field-row"><label>E-mail</label><input type="text" id="newKlantEmail" placeholder="naam@bedrijf.nl"></div>
+      <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
+    </div></div>
+    <div class="panel-section"><h4>Eerstvolgende deadlines (optioneel)</h4><div class="inner">
+      <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="JJJJ-MM-DD"></div>
+      <div class="field-row"><label>VPB</label><input type="text" id="newKlantVpb" placeholder="JJJJ-MM-DD"></div>
+      <div class="field-row"><label>LH</label><input type="text" id="newKlantLh" placeholder="JJJJ-MM-DD"></div>
+      <div class="field-row"><label>JR/JA</label><input type="text" id="newKlantJr" placeholder="JJJJ-MM-DD"></div>
+      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD.</div>
+    </div></div>
+    <button class="btn primary" data-save-new-klant style="width:100%; justify-content:center; padding:11px;">Klant toevoegen</button>
+  </div>`;
+}
+function addBhFormHTML(){
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Boekhouder toevoegen</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Gegevens</h4><div class="inner">
+      <div class="field-row"><label>Naam*</label><input type="text" id="newBhNaam"></div>
+      <div class="field-row"><label>Rol</label><input type="text" id="newBhRol" placeholder="Boekhouder"></div>
+      <div class="field-row"><label>E-mail</label><input type="text" id="newBhEmail" placeholder="naam@administratiebox.nl"></div>
+    </div></div>
+    <button class="btn primary" data-save-new-bh style="width:100%; justify-content:center; padding:11px;">Boekhouder toevoegen</button>
+  </div>`;
+}
+function openAddKlantPanel(silent){
+  const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
+  panel.innerHTML = addKlantFormHTML();
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  document.querySelector('[data-save-new-klant]').addEventListener('click', ()=>{
+    const naam = document.getElementById('newKlantNaam').value.trim();
+    const bhId = document.getElementById('newKlantBh').value;
+    if(!naam){ toast('Vul een klantnaam in.'); return; }
+    if(!bhId){ toast('Voeg eerst een boekhouder toe.'); return; }
+    const dateOrEmpty = (v)=>{ v=(v||'').trim(); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; };
+    addKlant({
+      naam, vorm:document.getElementById('newKlantVorm').value, bh:bhId,
+      kvk:document.getElementById('newKlantKvk').value.trim(),
+      contact:document.getElementById('newKlantContact').value.trim(),
+      email:document.getElementById('newKlantEmail').value.trim(),
+      tel:document.getElementById('newKlantTel').value.trim(),
+      ob:dateOrEmpty(document.getElementById('newKlantOb').value),
+      vpb:dateOrEmpty(document.getElementById('newKlantVpb').value),
+      lh:dateOrEmpty(document.getElementById('newKlantLh').value),
+      jr:dateOrEmpty(document.getElementById('newKlantJr').value),
+    });
+    STATE.showAddKlant=false;
+    toast('Klant toegevoegd: '+naam);
+    render();
+  });
+}
+function openAddBhPanel(silent){
+  const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
+  panel.innerHTML = addBhFormHTML();
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  document.querySelector('[data-save-new-bh]').addEventListener('click', ()=>{
+    const naam = document.getElementById('newBhNaam').value.trim();
+    if(!naam){ toast('Vul een naam in.'); return; }
+    addBoekhouder({naam, rol:document.getElementById('newBhRol').value.trim(), email:document.getElementById('newBhEmail').value.trim()});
+    STATE.showAddBh=false;
+    toast('Boekhouder toegevoegd: '+naam);
+    render();
+  });
+}
+function openPanel(klantId, silent){
+  STATE.panelKlant = klantId;
+  const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+  const panel = document.getElementById('panel');
+  const overlay = document.getElementById('overlay');
+  panel.innerHTML = panelHTML(klant);
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  attachPanelHandlers(klant);
+}
+function closePanelDom(){
+  const panel = document.getElementById('panel');
+  const overlay = document.getElementById('overlay');
+  if(panel) panel.classList.remove('open');
+  if(overlay) overlay.classList.remove('open');
+}
+function closePanel(){ STATE.panelKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; closePanelDom(); }
+
+/* ============================= HANDLERS ============================= */
+function attachHandlers(){
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false;
+    render();
+  }));
+  document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
+  document.querySelectorAll('[data-add-bh-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddBh=true; render(); }));
+  document.querySelectorAll('[data-nav-bh]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render();
+  }));
+  document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); openPanel(el.getAttribute('data-open-klant'));
+  }));
+  const searchInput = document.getElementById('searchInput');
+  if(searchInput) searchInput.addEventListener('input', (e)=>{
+    STATE.search = e.target.value;
+    document.getElementById('contentArea').innerHTML = viewHTML();
+    attachHandlers();
+  });
+  const filterBh = document.getElementById('filterBh');
+  if(filterBh) filterBh.addEventListener('change', e=>{ STATE.bhFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  const filterStatus = document.getElementById('filterStatus');
+  if(filterStatus) filterStatus.addEventListener('change', e=>{ STATE.statusFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  const overlay = document.getElementById('overlay');
+  if(overlay) overlay.addEventListener('click', closePanel);
+
+  document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-edit-saldo');
+    const disp = document.getElementById('saldoDisplay-'+id);
+    const cur = STORE[id].saldo;
+    disp.innerHTML = `<input type="number" step="0.01" value="${cur}" id="inlineSaldo-${id}" style="width:90px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">`;
+    el.textContent='✓'; el.setAttribute('data-confirm-saldo', id); el.removeAttribute('data-edit-saldo');
+    document.getElementById('inlineSaldo-'+id).focus();
+  }));
+  document.querySelectorAll('[data-confirm-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-confirm-saldo');
+    const val = parseFloat(document.getElementById('inlineSaldo-'+id).value)||0;
+    STORE[id].saldo = val; persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast('Saldo bijgewerkt voor '+RAW_KLANTEN.find(k=>k.id===id).naam);
+  }));
+
+  const csvInput = document.getElementById('csvUpload');
+  if(csvInput) csvInput.addEventListener('change', handleCSVUpload);
+
+  document.querySelectorAll('[data-sync-now]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!SYNC.enabled || !SYNC.account){ toast('Stel eerst de Microsoft-koppeling in bij Instellingen en log in.'); return; }
+    fetchRemoteAndMerge(true);
+  }));
+  const saveSyncBtn = document.querySelector('[data-save-sync]');
+  if(saveSyncBtn) saveSyncBtn.addEventListener('click', ()=>{
+    saveSyncConfig({
+      enabled: document.getElementById('syncEnabled').checked,
+      clientId: document.getElementById('syncClientId').value.trim(),
+      tenantId: document.getElementById('syncTenantId').value.trim(),
+      siteUrl: document.getElementById('syncSiteUrl').value.trim(),
+      listName: document.getElementById('syncListName').value.trim() || 'ComplianceDashboardData',
+      siteId:null, listId:null, // opnieuw opzoeken na wijziging van site/lijst
+    });
+    msalInstance = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
+    toast('Instellingen opgeslagen.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); updateSyncIndicator();
+  });
+  const signInBtn = document.querySelector('[data-sign-in]');
+  if(signInBtn) signInBtn.addEventListener('click', async ()=>{
+    const ok = await signIn();
+    if(ok){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); fetchRemoteAndMerge(true); }
+  });
+  const signOutBtn = document.querySelector('[data-sign-out]');
+  if(signOutBtn) signOutBtn.addEventListener('click', ()=>{
+    signOutOfMsal();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
+}
+
+function handleCSVUpload(e){
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    const text = ev.target.result;
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    let updated=0, skipped=0;
+    lines.forEach(line=>{
+      const parts = line.split(',').map(p=>p.trim());
+      if(parts.length<2) return;
+      const [naam, saldoStr, txnStr] = parts;
+      if(/^klant/i.test(naam) && /saldo/i.test(saldoStr||'')) return; // header row
+      const match = RAW_KLANTEN.find(k=>k.naam.toLowerCase().includes(naam.toLowerCase()) || naam.toLowerCase().includes(k.naam.toLowerCase()));
+      if(match){
+        const saldo = parseFloat((saldoStr||'0').replace(',', '.')) || 0;
+        STORE[match.id].saldo = saldo;
+        if(txnStr!==undefined) STORE[match.id].txn = parseInt(txnStr)||0;
+        STORE[match.id].sync = new Date().toISOString().slice(0,10);
+        updated++;
+      } else skipped++;
+    });
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast(`CSV verwerkt: ${updated} klant(en) bijgewerkt${skipped?`, ${skipped} regel(s) niet herkend`:''}.`);
+  };
+  reader.readAsText(file);
+}
+
+function attachPanelHandlers(klant){
+  const f = STORE[klant.id];
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+
+  document.querySelectorAll('[data-mark-ingediend]').forEach(el=>el.addEventListener('click',()=>{
+    const type = el.getAttribute('data-mark-ingediend');
+    STORE[klant.id].dl[type].status='ingediend'; persist(); refreshPanel(klant);
+  }));
+  document.querySelectorAll('[data-unmark-ingediend]').forEach(el=>el.addEventListener('click',()=>{
+    const type = el.getAttribute('data-unmark-ingediend');
+    STORE[klant.id].dl[type].status=null; persist(); refreshPanel(klant);
+  }));
+  document.querySelectorAll('[data-mark-overige]').forEach(el=>el.addEventListener('click',()=>{
+    const idx = +el.getAttribute('data-mark-overige');
+    STORE[klant.id].dl.overige[idx].status='ingediend'; persist(); refreshPanel(klant);
+  }));
+  document.querySelectorAll('[data-unmark-overige]').forEach(el=>el.addEventListener('click',()=>{
+    const idx = +el.getAttribute('data-unmark-overige');
+    STORE[klant.id].dl.overige[idx].status=null; persist(); refreshPanel(klant);
+  }));
+  const addOv = document.querySelector('[data-add-overige]');
+  if(addOv) addOv.addEventListener('click', ()=>{
+    const naam = document.getElementById('newOvNaam').value.trim();
+    const datum = document.getElementById('newOvDatum').value.trim();
+    if(!naam || !/^\d{4}-\d{2}-\d{2}$/.test(datum)){ toast('Vul een geldige naam en datum (JJJJ-MM-DD) in.'); return; }
+    STORE[klant.id].dl.overige.push({naam, datum, status:null}); persist(); refreshPanel(klant);
+  });
+
+  const saveFin = document.querySelector('[data-save-financieel]');
+  if(saveFin) saveFin.addEventListener('click', ()=>{
+    STORE[klant.id].saldo = parseFloat(document.getElementById('saldoInput').value)||0;
+    STORE[klant.id].txn = parseInt(document.getElementById('txnInput').value)||0;
+    persist(); toast('Financiële gegevens opgeslagen.'); refreshPanel(klant);
+  });
+
+  document.querySelectorAll('[data-toggle-item]').forEach(el=>el.addEventListener('change',()=>{
+    const idx = +el.getAttribute('data-toggle-item');
+    STORE[klant.id].items[idx].done = el.checked; persist(); refreshPanel(klant);
+  }));
+  document.querySelectorAll('[data-remove-item]').forEach(el=>el.addEventListener('click',()=>{
+    const idx = +el.getAttribute('data-remove-item');
+    STORE[klant.id].items.splice(idx,1); persist(); refreshPanel(klant);
+  }));
+  const addItem = document.querySelector('[data-add-item]');
+  if(addItem) addItem.addEventListener('click', ()=>{
+    const val = document.getElementById('newItemNaam').value.trim();
+    if(!val) return;
+    STORE[klant.id].items.push({naam:val, done:false}); persist(); refreshPanel(klant);
+  });
+
+  document.querySelectorAll('[data-chan]').forEach(el=>el.addEventListener('change',()=>{
+    const chan = el.getAttribute('data-chan');
+    const set = new Set(STORE[klant.id].kanalen);
+    if(el.checked) set.add(chan); else set.delete(chan);
+    STORE[klant.id].kanalen = [...set]; persist();
+  }));
+  const saveRem = document.querySelector('[data-save-reminder-settings]');
+  if(saveRem) saveRem.addEventListener('click', ()=>{
+    STORE[klant.id].dagen1 = parseInt(document.getElementById('dagen1Input').value)||7;
+    STORE[klant.id].dagen2 = parseInt(document.getElementById('dagen2Input').value)||14;
+    persist(); toast('Herinneringsinstellingen opgeslagen.');
+  });
+  document.querySelectorAll('[data-send-reminder]').forEach(el=>el.addEventListener('click',()=>{
+    const ronde = +el.getAttribute('data-send-reminder');
+    const msg = reminderMessage(klant, ronde);
+    const kanalen = STORE[klant.id].kanalen;
+    if(kanalen.includes('email')){
+      window.open(`mailto:${klant.email}?subject=${encodeURIComponent(msg.subject)}&body=${encodeURIComponent(msg.body)}`, '_blank');
+    }
+    if(kanalen.includes('whatsapp')){
+      window.open(`https://wa.me/${klant.tel.replace(/[^\d]/g,'')}?text=${encodeURIComponent(msg.body)}`, '_blank');
+    }
+    if(!kanalen.length){ toast('Selecteer eerst een kanaal (e-mail of WhatsApp).'); return; }
+    STORE[klant.id].log.push({ts:new Date().toISOString().slice(0,10), ronde, kanaal:kanalen.join(' + ')});
+    persist(); toast(`${ronde}e herinnering klaargezet voor ${klant.naam}.`); refreshPanel(klant);
+  }));
+
+  const saveNot = document.querySelector('[data-save-notities]');
+  if(saveNot) saveNot.addEventListener('click', ()=>{
+    STORE[klant.id].notities = document.getElementById('notitiesInput').value; persist(); toast('Notitie opgeslagen.');
+  });
+}
+function refreshPanel(klant){
+  document.getElementById('panel').innerHTML = panelHTML(klant);
+  attachPanelHandlers(klant);
+  if(STATE.view!=='dashboard'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlersLite(); }
+}
+function attachHandlersLite(){
+  // reattach only nav-independent listeners needed after a background refresh (avoid full re-render to keep panel state)
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>{ STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; render(); }));
+  document.querySelectorAll('[data-nav-bh]').forEach(el=>el.addEventListener('click', ()=>{ STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render(); }));
+  document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); openPanel(el.getAttribute('data-open-klant')); }));
+  document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-edit-saldo');
+    const disp = document.getElementById('saldoDisplay-'+id);
+    const cur = STORE[id].saldo;
+    disp.innerHTML = `<input type="number" step="0.01" value="${cur}" id="inlineSaldo-${id}" style="width:90px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">`;
+    el.textContent='✓'; el.setAttribute('data-confirm-saldo', id); el.removeAttribute('data-edit-saldo');
+  }));
+  document.querySelectorAll('[data-confirm-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-confirm-saldo');
+    const val = parseFloat(document.getElementById('inlineSaldo-'+id).value)||0;
+    STORE[id].saldo = val; persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlersLite();
+    toast('Saldo bijgewerkt.');
+  }));
+}
+
+loadSync();
+render();
+if(SYNC.enabled) fetchRemoteAndMerge(false);
+setInterval(()=>{
+  if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) fetchRemoteAndMerge(false);
+}, 25000);
+</script>
+</body>
+</html>
