@@ -320,11 +320,12 @@ let SYNC = {
   enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null
 };
 let msalInstance = null;
+let msalInitPromise = null;
 const GRAPH_SCOPES = ['Sites.ReadWrite.All'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
-  if(SYNC.enabled && SYNC.clientId) initMsal();
+  if(SYNC.enabled && SYNC.clientId) getMsalInstance(); // warmt alvast op; consumenten wachten er zelf op
 }
 function saveSyncConfig(cfg){
   SYNC = Object.assign(SYNC, cfg);
@@ -332,10 +333,17 @@ function saveSyncConfig(cfg){
 }
 function persistSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){} updateSyncIndicator(); }
 
-function initMsal(){
-  if(typeof msal === 'undefined'){ SYNC.lastError = 'Kon de Microsoft-inlogbibliotheek niet laden (geen internetverbinding?).'; persistSync(); return null; }
-  if(msalInstance) return msalInstance;
-  if(!SYNC.clientId) return null;
+/* MSAL v3 vereist dat initialize() wordt aangeroepen en afgewacht vóórdat andere MSAL-API's gebruikt
+   mogen worden. getMsalInstance() geeft daarom altijd een Promise terug (nooit direct de instantie),
+   en cachet die Promise zodat meerdere gelijktijdige aanroepen niet twee keer initialiseren. */
+function getMsalInstance(){
+  if(msalInitPromise) return msalInitPromise;
+  if(!SYNC.clientId) return Promise.resolve(null);
+  if(typeof msal === 'undefined'){
+    SYNC.lastError = 'Kon de Microsoft-inlogbibliotheek niet laden (geen internetverbinding?).';
+    persistSync();
+    return Promise.resolve(null);
+  }
   msalInstance = new msal.PublicClientApplication({
     auth:{
       clientId: SYNC.clientId,
@@ -344,10 +352,16 @@ function initMsal(){
     },
     cache:{ cacheLocation:'localStorage' }
   });
-  return msalInstance;
+  msalInitPromise = msalInstance.initialize().then(()=>msalInstance).catch(e=>{
+    msalInitPromise = null;
+    SYNC.lastError = e.message || 'Initialiseren van Microsoft-login mislukt';
+    persistSync();
+    return null;
+  });
+  return msalInitPromise;
 }
 async function signIn(){
-  const app = initMsal();
+  const app = await getMsalInstance();
   if(!app){ toast('Vul eerst een geldig App ID in.'); return false; }
   try{
     const res = await app.loginPopup({ scopes: GRAPH_SCOPES });
@@ -372,7 +386,7 @@ function signOutOfMsal(){
   persistSync();
 }
 async function getGraphToken(){
-  const app = initMsal();
+  const app = await getMsalInstance();
   if(!app) throw new Error('Geen App ID geconfigureerd');
   const accounts = app.getAllAccounts();
   if(!accounts.length) throw new Error('Niet ingelogd — klik eerst op "Inloggen met Microsoft".');
@@ -1194,7 +1208,7 @@ function attachHandlers(){
       listName: document.getElementById('syncListName').value.trim() || 'ComplianceDashboardData',
       siteId:null, listId:null, // opnieuw opzoeken na wijziging van site/lijst
     });
-    msalInstance = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
+    msalInstance = null; msalInitPromise = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
     toast('Instellingen opgeslagen.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); updateSyncIndicator();
   });
