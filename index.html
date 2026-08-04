@@ -281,6 +281,41 @@ function addBoekhouder(data){
   BOEKHOUDERS.push(b); persistMeta();
   return b;
 }
+function deleteKlant(id){
+  const idx = RAW_KLANTEN.findIndex(k=>k.id===id);
+  if(idx===-1) return false;
+  RAW_KLANTEN.splice(idx,1);
+  delete STORE[id];
+  persistMeta(); persist();
+  return true;
+}
+function deleteBoekhouder(id){
+  if(RAW_KLANTEN.some(k=>k.bh===id)) return 'heeft-klanten';
+  const idx = BOEKHOUDERS.findIndex(b=>b.id===id);
+  if(idx===-1) return false;
+  BOEKHOUDERS.splice(idx,1);
+  persistMeta();
+  return true;
+}
+function confirmDeleteKlant(id){
+  const k = RAW_KLANTEN.find(x=>x.id===id);
+  if(!k) return;
+  if(!confirm(`Weet je zeker dat je "${k.naam}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  deleteKlant(id);
+  toast(`Klant "${k.naam}" verwijderd.`);
+  closePanel();
+  render();
+}
+function confirmDeleteBoekhouder(id){
+  const b = BOEKHOUDERS.find(x=>x.id===id);
+  if(!b) return;
+  const klanten = klantsOf(id);
+  if(klanten.length){ toast(`Kan "${b.naam}" niet verwijderen: heeft nog ${klanten.length} klant(en). Verplaats of verwijder deze eerst.`); return; }
+  if(!confirm(`Weet je zeker dat je "${b.naam}" wilt verwijderen?`)) return;
+  deleteBoekhouder(id);
+  toast(`Boekhouder "${b.naam}" verwijderd.`);
+  render();
+}
 
 /* Geen voorbeeld-financiële data om dezelfde reden als hierboven. */
 const FIN_SEED = {};
@@ -317,7 +352,8 @@ function persist(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE));
 const SYNC_KEY = 'compliance_dashboard_sync_v1';
 let SYNC = {
   clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
-  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null
+  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null,
+  adminEmails:['benjamin@administratiebox.nl']
 };
 let msalInstance = null;
 let msalInitPromise = null;
@@ -332,6 +368,12 @@ function saveSyncConfig(cfg){
   try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){}
 }
 function persistSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){} updateSyncIndicator(); }
+
+function isAdmin(){
+  if(!SYNC.account || !SYNC.account.username) return false;
+  const list = (SYNC.adminEmails||[]).map(e=>e.toLowerCase().trim());
+  return list.includes(SYNC.account.username.toLowerCase());
+}
 
 /* MSAL v3 vereist dat initialize() wordt aangeroepen en afgewacht vóórdat andere MSAL-API's gebruikt
    mogen worden. getMsalInstance() geeft daarom altijd een Promise terug (nooit direct de instantie),
@@ -714,7 +756,8 @@ function boekhoudersHTML(){
     const klanten = klantsOf(b.id);
     const c = {actie:0, nadert:0, schema:0};
     klanten.forEach(k=>{ const w = worstStatus(k); if(c[w]!==undefined) c[w]++; else c.schema++; });
-    return `<div class="bh-card" data-nav-bh="${b.id}">
+    return `<div class="bh-card" data-nav-bh="${b.id}" style="position:relative;">
+      ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="position:absolute; top:10px; right:10px; padding:4px 7px; color:var(--red);">🗑</button>` : ''}
       <div class="bh-top">
         <div class="avatar" style="background:${b.kleur}">${initials(b.naam)}</div>
         <div><div class="bh-name">${b.naam}</div><div class="bh-role">${b.rol}</div></div>
@@ -778,7 +821,10 @@ function klantenHTML(){
             <td>${badge(effDL(k,'JR'))}</td>
             <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
             <td>${fmtEUR(STORE[k.id].saldo)}</td>
-            <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
+            <td style="text-align:right; white-space:nowrap;">
+              ${isAdmin() ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);">🗑</button>` : ''}
+              <button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button>
+            </td>
           </tr>`;}).join('')}
         </tbody>
       </table>
@@ -870,6 +916,7 @@ function instellingenHTML(){
       <div class="field-row"><label>Tenant ID</label><input type="text" id="syncTenantId" value="${SYNC.tenantId||''}" placeholder="optioneel — leeg = elk werk-/schoolaccount"></div>
       <div class="field-row"><label>SharePoint site-adres</label><input type="text" id="syncSiteUrl" value="${SYNC.siteUrl||''}" placeholder="https://jullietenant.sharepoint.com/sites/Compliance-Dashboard"></div>
       <div class="field-row"><label>Lijstnaam</label><input type="text" id="syncListName" value="${SYNC.listName||'ComplianceDashboardData'}"></div>
+      <div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(SYNC.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>
       <div class="field-row"><label>Synchronisatie</label>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;"><input type="checkbox" id="syncEnabled" ${SYNC.enabled?'checked':''}> Inschakelen</label>
       </div>
@@ -1039,6 +1086,14 @@ function panelHTML(klant){
         <div style="margin-top:8px;"><button class="btn sm" data-save-notities>Opslaan</button></div>
       </div>
     </div>
+
+    ${isAdmin() ? `<div class="panel-section">
+      <h4>Gevarenzone</h4>
+      <div class="inner">
+        <button class="btn danger sm" data-delete-klant-panel="${klant.id}">🗑 Klant verwijderen</button>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Verwijdert deze klant en alle bijbehorende gegevens definitief. Dit kan niet ongedaan worden gemaakt.</div>
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -1160,6 +1215,12 @@ function attachHandlers(){
   document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); openPanel(el.getAttribute('data-open-klant'));
   }));
+  document.querySelectorAll('[data-delete-klant]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); confirmDeleteKlant(el.getAttribute('data-delete-klant'));
+  }));
+  document.querySelectorAll('[data-delete-bh]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); confirmDeleteBoekhouder(el.getAttribute('data-delete-bh'));
+  }));
   const searchInput = document.getElementById('searchInput');
   if(searchInput) searchInput.addEventListener('input', (e)=>{
     STATE.search = e.target.value;
@@ -1206,6 +1267,7 @@ function attachHandlers(){
       tenantId: document.getElementById('syncTenantId').value.trim(),
       siteUrl: document.getElementById('syncSiteUrl').value.trim(),
       listName: document.getElementById('syncListName').value.trim() || 'ComplianceDashboardData',
+      adminEmails: document.getElementById('syncAdminEmails').value.split(',').map(s=>s.trim()).filter(Boolean),
       siteId:null, listId:null, // opnieuw opzoeken na wijziging van site/lijst
     });
     msalInstance = null; msalInitPromise = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
