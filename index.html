@@ -219,6 +219,7 @@
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script>
+
 /* ============================= DATA ============================= */
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 
@@ -256,22 +257,24 @@ loadMeta();
 function nextId(list, prefix){ let n=list.length+1; while(list.some(x=>x.id===prefix+n)) n++; return prefix+n; }
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
-  const dateOrNa = (v)=> v ? DL(v) : NA();
+  const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
   const klant = {
     id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
+    doetLoonaangifte: !!data.doetLoonaangifte,
     dl:{
-      OB:dateOrNa(data.ob),
-      VPB:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.vpb),
-      LH:dateOrNa(data.lh),
-      JR:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.jr),
+      OB:dateOrNa(data.ob, data.obHerh),
+      VPB:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.vpb, data.vpbHerh),
+      LH:dateOrNa(data.lh, data.lhHerh),
+      JR:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.jr, data.jrHerh),
       overige:[]
     }
   };
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:''
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'',
+    lh:{ taken: nieuwLhTaken(), log:[] }
   };
   persistMeta(); persist();
   return klant;
@@ -380,6 +383,7 @@ function loadStore(){
   return seed;
 }
 let STORE = loadStore();
+migrateData();
 function persist(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){} pushRemoteDebounced(); }
 
 /* ============================= CLOUD SYNC (Microsoft-login via Graph API) =============================
@@ -532,6 +536,7 @@ async function fetchRemoteAndMerge(showFeedback){
       RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
       TEAMS = json.teams && json.teams.length ? json.teams : TEAMS;
       STORE = json.store || STORE;
+      migrateData();
       try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
       SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -623,6 +628,7 @@ const ICONS = {
   upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   team:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  loon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 12l2 2 4-4"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
@@ -640,6 +646,7 @@ function render(){
         ${navItem('teams','team','Teams')}
         ${navItem('klanten','users','Klanten')}
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
+        ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       <div class="nav-foot">Ingelogd als<br><b>Benjamin</b> · administratiebox.nl</div>
@@ -674,7 +681,7 @@ function navItem(view, icon, label){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span></button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', instellingen:'Instellingen'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', instellingen:'Instellingen'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -683,6 +690,7 @@ function pageSub(){
     teams:'Teamindeling en openstaande deadlines per team',
     klanten:'Alle klanten met deadlinestatus per categorie',
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
+    loonheffing:'Maandelijkse loonaangifte-taken en voortgang per collega',
     instellingen:'Live synchronisatie tussen collega\'s'
   }[STATE.view];
 }
@@ -694,6 +702,7 @@ function viewHTML(){
   if(STATE.view==='teams') return teamsHTML();
   if(STATE.view==='klanten') return klantenHTML();
   if(STATE.view==='aanlevering') return aanleveringHTML();
+  if(STATE.view==='loonheffing') return loonheffingHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
   return '';
 }
@@ -713,6 +722,54 @@ function allDeadlineRows(){
   return rows;
 }
 const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
+const LH_TAKEN = [
+  'Salarissen verwerken',
+  'Salaris- en betaallijst dossier werkgever',
+  'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)',
+  'LJP dossier (Loondossier, dossier AB, uploaden in AB)'
+];
+function nieuwLhTaken(){ return LH_TAKEN.map(naam=>({naam, done:false, door:null, ts:null, notitie:''})); }
+function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
+function advanceDate(datum, herhaling){
+  const dt = new Date(datum+'T00:00:00');
+  if(herhaling==='maandelijks') dt.setMonth(dt.getMonth()+1);
+  else if(herhaling==='kwartaal') dt.setMonth(dt.getMonth()+3);
+  else if(herhaling==='jaarlijks') dt.setFullYear(dt.getFullYear()+1);
+  else return datum;
+  // Let op: bewust geen toISOString() — dat rekent om naar UTC en zou de datum een dag
+  // kunnen laten verschuiven in de Nederlandse tijdzone. We bouwen de datumstring op uit
+  // de lokale jaar/maand/dag-onderdelen, zodat "15 januari" ook echt "15 januari" blijft.
+  const y = dt.getFullYear(), m = String(dt.getMonth()+1).padStart(2,'0'), day = String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function completeLhPeriode(klant, door){
+  const f = STORE[klant.id];
+  const entry = f.dl.LH;
+  if(entry && !entry.na){
+    const herh = entry.herhaling || 'geen';
+    if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
+    else { entry.status = 'ingediend'; }
+  }
+  if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+  f.lh.log.push({ts:new Date().toISOString(), actie:'periode-afgerond', door});
+  f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; t.notitie=''; });
+  persist();
+}
+function migrateData(){
+  RAW_KLANTEN.forEach(k=>{
+    if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
+    ['OB','VPB','LH','JR'].forEach(t=>{
+      if(k.dl[t] && !k.dl[t].na && k.dl[t].herhaling===undefined) k.dl[t].herhaling='geen';
+    });
+    const f = STORE[k.id];
+    if(f){
+      ['OB','VPB','LH','JR'].forEach(t=>{
+        if(f.dl[t] && !f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
+      });
+      if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    }
+  });
+}
 
 function dashboardHTML(){
   const rows = allDeadlineRows();
@@ -1000,6 +1057,53 @@ function aanleveringHTML(){
   </div>`;
 }
 
+/* ============================= VIEW: LOONHEFFINGEN ============================= */
+function loonheffingHTML(){
+  const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+  const rows = list.map(k=>{
+    const f = STORE[k.id];
+    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    const doneCount = f.lh.taken.filter(t=>t.done).length;
+    const lhEntry = effDL(k,'LH');
+    const taakRows = f.lh.taken.map((t,idx)=>`
+      <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap;">
+        <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''}>
+        <div style="flex:1; min-width:220px;">
+          <label>${t.naam}</label>
+          ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px;">✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+          <input type="text" data-lh-notitie="${k.id}|${idx}" value="${(t.notitie||'').replace(/"/g,'&quot;')}" placeholder="Aantekening…" style="margin-top:4px; width:100%; max-width:340px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+        </div>
+      </div>`).join('');
+    const recentLog = f.lh.log.slice().reverse().slice(0,5);
+    const logLine = (l)=>{
+      if(l.actie==='periode-afgerond') return 'rondde de periode af';
+      if(l.actie==='afgevinkt') return `vinkte "${l.taak}" af`;
+      if(l.actie==='uitgevinkt') return `haalde het vinkje van "${l.taak}" af`;
+      return l.actie;
+    };
+    return `<div class="section" style="margin-bottom:18px;">
+      <div class="section-head">
+        <div>
+          <h3>${k.naam}</h3>
+          <span class="hint">${bh(k.bh).naam} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</span>
+        </div>
+        <button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>
+      </div>
+      <div class="section-body pad">
+        ${taakRows}
+        <div class="rem-log" style="margin-top:14px;">
+          <b style="font-size:12px;">Recente activiteit</b>
+          ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item">📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Elke actie (afvinken/uitvinken/periode afronden) wordt gelogd met naam en tijdstip — zo zien jullie elkaars voortgang. Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
+  ${list.length ? rows : `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>`}`;
+}
+
 /* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
 function instellingenHTML(){
   const runningLocally = window.location.protocol === 'file:';
@@ -1060,10 +1164,20 @@ function deadlineCard(type, entry){
   }
   const st = statusOf(entry); const meta = STATUS_META[st.key];
   const daysTxt = entry.status==='ingediend' ? `Ingediend op ${fmtDate(entry.datum)}` : (st.dagen<0 ? `${Math.abs(st.dagen)} dagen te laat` : `Nog ${st.dagen} dagen`);
+  const herh = entry.herhaling || 'geen';
   return `<div class="dl-card">
     <div class="dl-top"><span class="dl-name">${TYPE_LABEL[type]}</span>${badge(entry)}</div>
     <div class="dl-date">Deadline: ${fmtDate(entry.datum)}</div>
     <div class="dl-days" style="color:var(--${meta.cls==='gray'?'muted':meta.cls})">${daysTxt}</div>
+    <div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
+      <label style="font-size:11px; color:var(--muted);">Herhaling:</label>
+      <select data-set-herhaling="${type}" style="padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+        <option value="geen" ${herh==='geen'?'selected':''}>Geen</option>
+        <option value="maandelijks" ${herh==='maandelijks'?'selected':''}>Maandelijks</option>
+        <option value="kwartaal" ${herh==='kwartaal'?'selected':''}>Per kwartaal</option>
+        <option value="jaarlijks" ${herh==='jaarlijks'?'selected':''}>Jaarlijks</option>
+      </select>
+    </div>
     <div class="dl-actions">
       ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}">Markeer als ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}">Ongedaan maken</button>`}
     </div>
@@ -1104,6 +1218,16 @@ function panelHTML(klant){
         <a class="btn sm" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
         <a class="btn sm" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
         <span class="btn sm ghost" style="cursor:default;">☎ ${klant.tel}</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h4>Loonaangifte</h4>
+      <div class="inner">
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+          <input type="checkbox" id="loonaangifteToggle" ${klant.doetLoonaangifte?'checked':''}> Wij doen de loonaangifte voor deze klant
+        </label>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt of deze klant meetelt in de pagina "Loonheffingen".</div>
       </div>
     </div>
 
@@ -1225,11 +1349,40 @@ function addKlantFormHTML(){
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
     </div></div>
     <div class="panel-section"><h4>Eerstvolgende deadlines (optioneel)</h4><div class="inner">
-      <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="JJJJ-MM-DD"></div>
-      <div class="field-row"><label>VPB</label><input type="text" id="newKlantVpb" placeholder="JJJJ-MM-DD"></div>
-      <div class="field-row"><label>LH</label><input type="text" id="newKlantLh" placeholder="JJJJ-MM-DD"></div>
-      <div class="field-row"><label>JR/JA</label><input type="text" id="newKlantJr" placeholder="JJJJ-MM-DD"></div>
-      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD.</div>
+      <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="JJJJ-MM-DD">
+        <select id="newKlantObHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="geen">Geen herhaling</option>
+          <option value="maandelijks">Maandelijks</option>
+          <option value="kwartaal" selected>Per kwartaal</option>
+          <option value="jaarlijks">Jaarlijks</option>
+        </select>
+      </div>
+      <div class="field-row"><label>VPB</label><input type="text" id="newKlantVpb" placeholder="JJJJ-MM-DD">
+        <select id="newKlantVpbHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="geen" selected>Geen herhaling</option>
+          <option value="jaarlijks">Jaarlijks</option>
+        </select>
+      </div>
+      <div class="field-row"><label>LH</label><input type="text" id="newKlantLh" placeholder="JJJJ-MM-DD">
+        <select id="newKlantLhHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="geen">Geen herhaling</option>
+          <option value="maandelijks" selected>Maandelijks</option>
+          <option value="kwartaal">Per kwartaal</option>
+        </select>
+      </div>
+      <div class="field-row"><label>JR/JA</label><input type="text" id="newKlantJr" placeholder="JJJJ-MM-DD">
+        <select id="newKlantJrHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="geen" selected>Geen herhaling</option>
+          <option value="jaarlijks">Jaarlijks</option>
+        </select>
+      </div>
+      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD. Bij een herhaling schuift de deadline automatisch door zodra je 'm markeert als ingediend — je hoeft de datum dan niet steeds opnieuw in te stellen.</div>
+    </div></div>
+    <div class="panel-section"><h4>Loonheffing</h4><div class="inner">
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+        <input type="checkbox" id="newKlantLoonaangifte"> Wij doen de loonaangifte voor deze klant
+      </label>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Alleen klanten met dit vinkje komen in de pagina "Loonheffingen" te staan.</div>
     </div></div>
     <button class="btn primary" data-save-new-klant style="width:100%; justify-content:center; padding:11px;">Klant toevoegen</button>
   </div>`;
@@ -1285,10 +1438,11 @@ function openAddKlantPanel(silent){
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
       tel:document.getElementById('newKlantTel').value.trim(),
-      ob:dateOrEmpty(document.getElementById('newKlantOb').value),
-      vpb:dateOrEmpty(document.getElementById('newKlantVpb').value),
-      lh:dateOrEmpty(document.getElementById('newKlantLh').value),
-      jr:dateOrEmpty(document.getElementById('newKlantJr').value),
+      ob:dateOrEmpty(document.getElementById('newKlantOb').value), obHerh:document.getElementById('newKlantObHerh').value,
+      vpb:dateOrEmpty(document.getElementById('newKlantVpb').value), vpbHerh:document.getElementById('newKlantVpbHerh').value,
+      lh:dateOrEmpty(document.getElementById('newKlantLh').value), lhHerh:document.getElementById('newKlantLhHerh').value,
+      jr:dateOrEmpty(document.getElementById('newKlantJr').value), jrHerh:document.getElementById('newKlantJrHerh').value,
+      doetLoonaangifte:document.getElementById('newKlantLoonaangifte').checked,
     });
     STATE.showAddKlant=false;
     toast('Klant toegevoegd: '+naam);
@@ -1413,6 +1567,39 @@ function attachHandlers(){
   const csvInput = document.getElementById('csvUpload');
   if(csvInput) csvInput.addEventListener('change', handleCSVUpload);
 
+  document.querySelectorAll('[data-lh-toggle]').forEach(el=>el.addEventListener('change',(e)=>{
+    const [klantId, idxStr] = el.getAttribute('data-lh-toggle').split('|');
+    const idx = +idxStr;
+    const checked = e.target.checked;
+    const door = huidigeGebruiker();
+    const f = STORE[klantId];
+    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    f.lh.taken[idx].done = checked;
+    f.lh.taken[idx].door = checked ? door : null;
+    f.lh.taken[idx].ts = checked ? new Date().toISOString() : null;
+    f.lh.log.push({ts:new Date().toISOString(), taak:f.lh.taken[idx].naam, actie: checked?'afgevinkt':'uitgevinkt', door});
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-notitie]').forEach(el=>el.addEventListener('change',(e)=>{
+    const [klantId, idxStr] = el.getAttribute('data-lh-notitie').split('|');
+    const idx = +idxStr;
+    const f = STORE[klantId];
+    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    f.lh.taken[idx].notitie = e.target.value;
+    persist();
+    toast('Aantekening opgeslagen.');
+  }));
+  document.querySelectorAll('[data-lh-complete]').forEach(el=>el.addEventListener('click', ()=>{
+    const klantId = el.getAttribute('data-lh-complete');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm(`Periode afronden voor "${klant.naam}"? Alle taken worden gereset voor de volgende periode en de LH-deadline schuift door indien een herhaling is ingesteld.`)) return;
+    completeLhPeriode(klant, huidigeGebruiker());
+    toast('Periode afgerond voor '+klant.naam);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+
   document.querySelectorAll('[data-sync-now]').forEach(el=>el.addEventListener('click', ()=>{
     if(!SYNC.enabled || !SYNC.account){ toast('Stel eerst de Microsoft-koppeling in bij Instellingen en log in.'); return; }
     fetchRemoteAndMerge(true);
@@ -1478,12 +1665,33 @@ function attachPanelHandlers(klant){
 
   document.querySelectorAll('[data-mark-ingediend]').forEach(el=>el.addEventListener('click',()=>{
     const type = el.getAttribute('data-mark-ingediend');
-    STORE[klant.id].dl[type].status='ingediend'; persist(); refreshPanel(klant);
+    if(type==='LH'){
+      completeLhPeriode(klant, huidigeGebruiker());
+    } else {
+      const entry = STORE[klant.id].dl[type];
+      const herh = entry.herhaling || 'geen';
+      if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
+      else { entry.status = 'ingediend'; }
+      persist();
+    }
+    refreshPanel(klant);
   }));
   document.querySelectorAll('[data-unmark-ingediend]').forEach(el=>el.addEventListener('click',()=>{
     const type = el.getAttribute('data-unmark-ingediend');
     STORE[klant.id].dl[type].status=null; persist(); refreshPanel(klant);
   }));
+  document.querySelectorAll('[data-set-herhaling]').forEach(el=>el.addEventListener('change',()=>{
+    const type = el.getAttribute('data-set-herhaling');
+    STORE[klant.id].dl[type].herhaling = el.value;
+    persist();
+    toast('Herhaling ingesteld.');
+  }));
+  const loonToggle = document.getElementById('loonaangifteToggle');
+  if(loonToggle) loonToggle.addEventListener('change', (e)=>{
+    klant.doetLoonaangifte = e.target.checked;
+    persistMeta();
+    toast(e.target.checked ? 'Klant toegevoegd aan Loonheffingen.' : 'Klant verwijderd uit Loonheffingen.');
+  });
   document.querySelectorAll('[data-mark-overige]').forEach(el=>el.addEventListener('click',()=>{
     const idx = +el.getAttribute('data-mark-overige');
     STORE[klant.id].dl.overige[idx].status='ingediend'; persist(); refreshPanel(klant);
@@ -1593,6 +1801,7 @@ if(SYNC.enabled) fetchRemoteAndMerge(false);
 setInterval(()=>{
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) fetchRemoteAndMerge(false);
 }, 25000);
+
 </script>
 </body>
 </html>
