@@ -692,7 +692,7 @@ function worstStatus(klant){
     const s = statusOf(effDL(klant,t)).key;
     if(order[s] < order[worst]) worst = s;
   });
-  (klant.dl.overige||[]).forEach(o=>{
+  (STORE[klant.id].dl.overige||[]).forEach(o=>{
     const s = statusOf(o).key;
     if(order[s] < order[worst]) worst = s;
   });
@@ -700,6 +700,18 @@ function worstStatus(klant){
   return worst;
 }
 function effDL(klant, type){ return STORE[klant.id].dl[type]; }
+// Geen automatische verzending — dit signaleert alleen (voor de boekhouder om zelf een
+// herinnering te sturen) wanneer een deadline nadert/verstreken is én er nog openstaande
+// banktransacties zijn die nog verwerkt moeten worden.
+function heeftUrgenteHerinneringNodig(klant){
+  const f = STORE[klant.id];
+  if(!f || !((f.txn||0) > 0)) return false;
+  const types = ['OB','VPB','LH','JR'];
+  const dringend = (entry)=>{ const s = statusOf(entry).key; return s==='actie' || s==='nadert'; };
+  if(types.some(t=>{ const e = f.dl[t]; return e && !e.na && dringend(e); })) return true;
+  if((f.dl.overige||[]).some(o=>dringend(o))) return true;
+  return false;
+}
 function bh(id){ return BOEKHOUDERS.find(b=>b.id===id); }
 function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
 function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
@@ -712,7 +724,7 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false };
 
 /* ============================= ICONS ============================= */
 const ICONS = {
@@ -814,7 +826,7 @@ function allDeadlineRows(){
       if(entry.na) return;
       rows.push({klant:k, type, entry, st:statusOf(entry)});
     });
-    (k.dl.overige||[]).forEach(o=>{
+    (STORE[k.id].dl.overige||[]).forEach(o=>{
       rows.push({klant:k, type:'Overige', entry:o, st:statusOf(o)});
     });
   });
@@ -926,6 +938,23 @@ function dashboardHTML(){
           <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${r.klant.id}">Bekijk →</button></td>
         </tr>`).join('')}
       </tbody></table>` : `<div class="empty-state">Geen urgente acties — alles op schema. 🎉</div>`}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><h3>🚩 Stuur een herinnering</h3><span class="hint">Deadline nadert/verstreken én banktransacties nog niet verwerkt</span></div>
+    <div class="section-body">
+      ${(()=>{ const flagged = RAW_KLANTEN.filter(k=>heeftUrgenteHerinneringNodig(k));
+        return flagged.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Status</th><th>Openstaande transacties</th><th></th></tr></thead><tbody>
+        ${flagged.map(k=>{ const w = worstStatus(k); const meta = STATUS_META[w];
+          return `<tr class="row-click" data-open-klant="${k.id}">
+            <td><div class="klant-name">${k.naam}</div></td>
+            <td>${bh(k.bh).naam}</td>
+            <td><span class="badge ${meta.cls}"><span class="dot ${meta.cls}"></span>${meta.label}</span></td>
+            <td>${STORE[k.id].txn} transactie(s)</td>
+            <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
+          </tr>`; }).join('')}
+        </tbody></table>` : `<div class="empty-state">Niets dat nu om een herinnering vraagt. 🎉</div>`; })()}
     </div>
   </div>
 
@@ -1079,10 +1108,10 @@ function klantenHTML(){
         <thead><tr><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
         <tbody>
           ${list.map(k=>{
-            const ov = k.dl.overige||[];
+            const ov = STORE[k.id].dl.overige||[];
             const ovWorst = ov.length ? ov.map(o=>statusOf(o).key).sort((a,b)=>({actie:0,nadert:1,ingediend:2,schema:3}[a]-{actie:0,nadert:1,ingediend:2,schema:3}[b]))[0] : null;
             return `<tr class="row-click" data-open-klant="${k.id}">
-            <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm} · ${bh(k.bh).naam}</div></td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${bh(k.bh).naam}</div></td>
             <td>${bh(k.bh).naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
@@ -1335,10 +1364,16 @@ function panelHTML(klant){
           <span>🧾 ${bh(klant.bh).naam}</span>
         </div>
       </div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <div style="display:flex; gap:6px; flex:none;">
+        <button class="btn sm" data-edit-klant="${klant.id}" style="background:rgba(255,255,255,.12); border:none; color:#fff;">✎ Bewerken</button>
+        <button class="panel-close" data-close-panel>✕</button>
+      </div>
     </div>
   </div>
   <div class="panel-body">
+    ${heeftUrgenteHerinneringNodig(klant) ? `<div class="banner" style="background:var(--red-bg); border-color:var(--red-brd); color:var(--red);">
+      🚩 <b>Let op:</b> een deadline nadert of is verstreken én er staan nog ${STORE[klant.id].txn} banktransactie(s) open. Overweeg een herinnering te sturen (zie "Automatische herinneringen" hieronder).
+    </div>` : ''}
     <div class="panel-section">
       <h4>Contact</h4>
       <div class="inner" style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1367,7 +1402,7 @@ function panelHTML(klant){
         ${deadlineCard('JR', effDL(klant,'JR'))}
       </div>
       <h4 style="border-top:1px solid var(--border);">Overige deadlines</h4>
-      ${(klant.dl.overige||[]).map((o,idx)=>`
+      ${(STORE[klant.id].dl.overige||[]).map((o,idx)=>`
         <div class="overige-row">
           <div class="overige-left"><b>${o.naam}</b><div>Deadline: ${fmtDate(o.datum)}</div></div>
           <div style="display:flex; align-items:center; gap:8px;">
@@ -1453,6 +1488,59 @@ function panelHTML(klant){
         <div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Verwijdert deze klant en alle bijbehorende gegevens definitief. Dit kan niet ongedaan worden gemaakt.</div>
       </div>
     </div>` : ''}
+  </div>`;
+}
+
+const VORM_OPTIES = ['BV','Eenmanszaak','V.O.F.'];
+function vormSelectHTML(id, current){
+  const opts = VORM_OPTIES.includes(current) ? VORM_OPTIES : [...VORM_OPTIES, current].filter(Boolean);
+  return `<select id="${id}" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${opts.map(v=>`<option value="${v}" ${v===current?'selected':''}>${v}</option>`).join('')}</select>`;
+}
+function editKlantFormHTML(klant){
+  const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
+  const f = STORE[klant.id];
+  const dateVal = (type)=> f.dl[type] && !f.dl[type].na ? f.dl[type].datum : '';
+  const herhOptsHTML = (type)=>{
+    const cur = f.dl[type] && !f.dl[type].na ? (f.dl[type].herhaling||'geen') : 'geen';
+    const opties = [['geen','Geen herhaling'],['maandelijks','Maandelijks'],['kwartaal','Per kwartaal'],['jaarlijks','Jaarlijks']];
+    return opties.map(([v,l])=>`<option value="${v}" ${v===cur?'selected':''}>${l}</option>`).join('');
+  };
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Bewerken</div><div class="panel-klant-name">${klant.naam}</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Klantgegevens</h4><div class="inner">
+      <div class="field-row"><label>Naam*</label><input type="text" id="editKlantNaam" value="${klant.naam}"></div>
+      <div class="field-row"><label>Rechtsvorm</label>${vormSelectHTML('editKlantVorm', klant.vorm)}</div>
+      <div class="field-row"><label>Boekhouder*</label><select id="editKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${bhOptions}</select></div>
+      <div class="field-row"><label>KvK-nummer</label><input type="text" id="editKlantKvk" value="${klant.kvk||''}"></div>
+      <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
+      <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
+      <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
+    </div></div>
+    <div class="panel-section"><h4>Deadlines</h4><div class="inner">
+      <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="JJJJ-MM-DD">
+        <select id="editKlantOBHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('OB')}</select>
+      </div>
+      <div class="field-row"><label>VPB</label><input type="text" id="editKlantVPBDatum" value="${dateVal('VPB')}" placeholder="JJJJ-MM-DD">
+        <select id="editKlantVPBHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('VPB')}</select>
+      </div>
+      <div class="field-row"><label>LH</label><input type="text" id="editKlantLHDatum" value="${dateVal('LH')}" placeholder="JJJJ-MM-DD">
+        <select id="editKlantLHHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('LH')}</select>
+      </div>
+      <div class="field-row"><label>JR/JA</label><input type="text" id="editKlantJRDatum" value="${dateVal('JR')}" placeholder="JJJJ-MM-DD">
+        <select id="editKlantJRHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('JR')}</select>
+      </div>
+      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD.</div>
+    </div></div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
+      <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
+    </div>
   </div>`;
 }
 
@@ -1609,9 +1697,10 @@ function openPanel(klantId, silent){
   const klant = RAW_KLANTEN.find(k=>k.id===klantId);
   const panel = document.getElementById('panel');
   const overlay = document.getElementById('overlay');
-  panel.innerHTML = panelHTML(klant);
+  const editing = STATE.editKlant === klantId;
+  panel.innerHTML = editing ? editKlantFormHTML(klant) : panelHTML(klant);
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
-  attachPanelHandlers(klant);
+  if(editing) attachEditKlantHandlers(klant); else attachPanelHandlers(klant);
 }
 function closePanelDom(){
   const panel = document.getElementById('panel');
@@ -1619,7 +1708,44 @@ function closePanelDom(){
   if(panel) panel.classList.remove('open');
   if(overlay) overlay.classList.remove('open');
 }
-function closePanel(){ STATE.panelKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; closePanelDom(); }
+function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; closePanelDom(); }
+function attachEditKlantHandlers(klant){
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  const cancelBtn = document.querySelector('[data-cancel-edit-klant]');
+  if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ STATE.editKlant=null; openPanel(klant.id); });
+  const saveBtn = document.querySelector('[data-save-edit-klant]');
+  if(saveBtn) saveBtn.addEventListener('click', ()=>{
+    const naam = document.getElementById('editKlantNaam').value.trim();
+    if(!naam){ toast('Vul een klantnaam in.'); return; }
+    const bhId = document.getElementById('editKlantBh').value;
+    if(!bhId){ toast('Kies een boekhouder.'); return; }
+    klant.naam = naam;
+    klant.vorm = document.getElementById('editKlantVorm').value;
+    klant.bh = bhId;
+    klant.kvk = document.getElementById('editKlantKvk').value.trim();
+    klant.contact = document.getElementById('editKlantContact').value.trim();
+    klant.email = document.getElementById('editKlantEmail').value.trim();
+    klant.tel = document.getElementById('editKlantTel').value.trim();
+
+    const f = STORE[klant.id];
+    [['OB','editKlantOBDatum','editKlantOBHerh'],['VPB','editKlantVPBDatum','editKlantVPBHerh'],['LH','editKlantLHDatum','editKlantLHHerh'],['JR','editKlantJRDatum','editKlantJRHerh']].forEach(([type,dateId,herhId])=>{
+      const dateVal = document.getElementById(dateId).value.trim();
+      const herhVal = document.getElementById(herhId).value;
+      const existing = f.dl[type];
+      if(/^\d{4}-\d{2}-\d{2}$/.test(dateVal)){
+        const unchanged = existing && !existing.na && existing.datum === dateVal;
+        f.dl[type] = { datum: dateVal, status: unchanged ? existing.status : null, herhaling: herhVal };
+      } else {
+        f.dl[type] = { na:true };
+      }
+    });
+
+    persistMeta(); persist();
+    toast('Klantgegevens bijgewerkt.');
+    STATE.editKlant = null;
+    render();
+  });
+}
 
 /* ============================= HANDLERS ============================= */
 function attachHandlers(){
@@ -1944,6 +2070,9 @@ function handleTxnImport(e){
 function attachPanelHandlers(klant){
   const f = STORE[klant.id];
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+
+  const editBtn = document.querySelector('[data-edit-klant]');
+  if(editBtn) editBtn.addEventListener('click', ()=>{ STATE.editKlant = klant.id; openPanel(klant.id); });
 
   document.querySelectorAll('[data-mark-ingediend]').forEach(el=>el.addEventListener('click',()=>{
     const type = el.getAttribute('data-mark-ingediend');
