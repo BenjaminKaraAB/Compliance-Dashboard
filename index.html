@@ -552,7 +552,7 @@ async function fetchRemoteAndMerge(showFeedback){
       try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
       SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
-      if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) render(); else updateSyncIndicator();
+      if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()) render(); else updateSyncIndicator();
       if(showFeedback) toast('Gesynchroniseerd met gedeelde data.');
     }
   }catch(e){
@@ -801,7 +801,7 @@ function pageSub(){
     teams:'Teamindeling en openstaande deadlines per team',
     klanten:'Alle klanten met deadlinestatus per categorie',
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
-    loonheffing:'Maandelijkse loonaangifte-taken en voortgang per collega',
+    loonheffing:`Maandelijkse loonaangifte-taken en voortgang per collega · ${RAW_KLANTEN.filter(k=>k.doetLoonaangifte).length} klant(en) totaal`,
     instellingen:'Live synchronisatie tussen collega\'s'
   }[STATE.view];
 }
@@ -842,6 +842,17 @@ const LH_TAKEN = [
 ];
 function nieuwLhTaken(){ return LH_TAKEN.map(naam=>({naam, done:false, door:null, ts:null, aantekeningen:[]})); }
 function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
+function isTypingInField(){
+  const el = document.activeElement;
+  if(!el) return false;
+  const tag = el.tagName;
+  if(tag === 'TEXTAREA') return true;
+  if(tag === 'INPUT'){
+    const t = (el.type||'text').toLowerCase();
+    return t !== 'checkbox' && t !== 'radio' && t !== 'file' && t !== 'button' && t !== 'submit';
+  }
+  return false;
+}
 function boekhouderKleurVoorNaam(naam){
   if(!naam) return null;
   const n = naam.trim().toLowerCase();
@@ -1244,6 +1255,41 @@ function aanleveringHTML(){
 }
 
 /* ============================= VIEW: LOONHEFFINGEN ============================= */
+function loonheffingOverzichtHTML(list){
+  if(!list.length) return '';
+  const jaarNu = TODAY.getFullYear();
+  const rijen = list.map((k,i)=>{
+    const f = STORE[k.id];
+    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    const lhEntry = effDL(k,'LH');
+    const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
+    const taakCellen = f.lh.taken.map(t=>{
+      const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
+      const titel = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
+      return `<td style="text-align:center;" title="${titel.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
+    }).join('');
+    return `<tr class="row-click" data-open-klant="${k.id}">
+      <td style="color:var(--muted);">${i+1}</td>
+      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      ${taakCellen}
+      <td style="text-align:center;">${periodesDitJaar}</td>
+      <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
+    </tr>`;
+  }).join('');
+  const taakHeaders = LH_TAKEN.map((naam,idx)=>`<th style="text-align:center;" title="${naam.replace(/"/g,'&quot;')}">${idx+1}</th>`).join('');
+  return `<div class="section" style="margin-bottom:18px;">
+    <div class="section-head">
+      <h3>Overzicht alle werkgevers</h3>
+      <span class="hint">Zoals de statuslijst per werkgever — 1 rij per klant, bolletje = afgerond (kleur = door wie)</span>
+    </div>
+    <div class="section-body" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Nr.</th><th>Werkgever</th>${taakHeaders}<th style="text-align:center;">Periodes ${jaarNu}</th><th>Volgende deadline</th></tr></thead>
+        <tbody>${rijen}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
 function loonheffingHTML(){
   const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
   const rows = list.map(k=>{
@@ -1306,8 +1352,8 @@ function loonheffingHTML(){
     return `<div class="section" style="margin-bottom:18px;">
       <div class="section-head">
         <div>
-          <h3>${k.naam}</h3>
-          <span class="hint">${bh(k.bh).naam} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</span>
+          <h3>${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></h3>
+          <span class="hint">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</span>
         </div>
         <button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>
       </div>
@@ -1337,6 +1383,7 @@ function loonheffingHTML(){
       <div id="lhKlantenImportResult" style="margin-top:12px;"></div>
     </div>
   </div>
+  ${loonheffingOverzichtHTML(list)}
   ${legend}
   ${list.length ? rows : `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>`}`;
 }
@@ -2547,7 +2594,7 @@ try{ render(); }catch(e){
 }
 try{ if(SYNC.enabled) fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
 setInterval(()=>{
-  if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh){
+  if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
     try{ fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
   }
 }, 25000);
