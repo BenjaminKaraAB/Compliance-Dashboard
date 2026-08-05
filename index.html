@@ -431,20 +431,30 @@ function getMsalInstance(){
     persistSync();
     return Promise.resolve(null);
   }
-  msalInstance = new msal.PublicClientApplication({
-    auth:{
-      clientId: SYNC.clientId,
-      authority: 'https://login.microsoftonline.com/' + (SYNC.tenantId || 'organizations'),
-      redirectUri: window.location.origin + window.location.pathname
-    },
-    cache:{ cacheLocation:'localStorage' }
-  });
-  msalInitPromise = msalInstance.initialize().then(()=>msalInstance).catch(e=>{
-    msalInitPromise = null;
-    SYNC.lastError = e.message || 'Initialiseren van Microsoft-login mislukt';
+  // Belangrijk: PublicClientApplication valideert de configuratie synchroon en kan direct
+  // een exception gooien (niet alleen een afgewezen Promise) bij een ongeldig App ID/Tenant ID.
+  // Zonder deze try/catch zou dat de hele pagina blanco laten (render() zou nooit meer draaien).
+  try{
+    msalInstance = new msal.PublicClientApplication({
+      auth:{
+        clientId: SYNC.clientId,
+        authority: 'https://login.microsoftonline.com/' + (SYNC.tenantId || 'organizations'),
+        redirectUri: window.location.origin + window.location.pathname
+      },
+      cache:{ cacheLocation:'localStorage' }
+    });
+    msalInitPromise = msalInstance.initialize().then(()=>msalInstance).catch(e=>{
+      msalInitPromise = null;
+      SYNC.lastError = e.message || 'Initialiseren van Microsoft-login mislukt';
+      persistSync();
+      return null;
+    });
+  }catch(e){
+    msalInstance = null; msalInitPromise = null;
+    SYNC.lastError = 'Microsoft-login kon niet worden opgezet: ' + (e.message || e);
     persistSync();
-    return null;
-  });
+    return Promise.resolve(null);
+  }
   return msalInitPromise;
 }
 async function signIn(){
@@ -2067,11 +2077,23 @@ function attachHandlersLite(){
   }));
 }
 
-loadSync();
-render();
-if(SYNC.enabled) fetchRemoteAndMerge(false);
+// Elke stap hieronder is defensief in een try/catch gezet: een fout in de Microsoft-sync
+// (bijv. een verkeerd ingevuld App ID) mag de rest van het dashboard nooit blokkeren of
+// een blanco pagina veroorzaken — render() moet hoe dan ook draaien.
+try{ loadSync(); }catch(e){ console.error('Sync-instellingen laden mislukt:', e); }
+try{ render(); }catch(e){
+  console.error('Render mislukt:', e);
+  const appEl = document.getElementById('app');
+  if(appEl) appEl.innerHTML = '<div style="padding:40px; font-family:sans-serif; max-width:600px; margin:0 auto;">'
+    + '<h2>Er ging iets mis bij het laden</h2>'
+    + '<p>Technische foutmelding: ' + (e && e.message ? e.message : e) + '</p>'
+    + '<p>Probeer de pagina te verversen. Blijft dit gebeuren, stuur deze foutmelding door.</p></div>';
+}
+try{ if(SYNC.enabled) fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
 setInterval(()=>{
-  if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) fetchRemoteAndMerge(false);
+  if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh){
+    try{ fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
+  }
 }, 25000);
 
 </script>
