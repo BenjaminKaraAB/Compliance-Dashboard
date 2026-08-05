@@ -226,6 +226,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
    klant- of boekhoudernamen in de broncode — ook geen fictieve. Voeg klanten/boekhouders toe via de
    knoppen in het dashboard, of koppel de Microsoft-sync (zie Instellingen) om echte data op te halen. */
 let BOEKHOUDERS = [];
+let TEAMS = [];
 
 function d(offsetDays){ const dt=new Date(TODAY); dt.setDate(dt.getDate()+offsetDays); return dt.toISOString().slice(0,10); }
 function DL(datum, status=null){ return {datum, status}; }
@@ -242,11 +243,12 @@ function loadMeta(){
       const parsed = JSON.parse(raw);
       if(parsed.boekhouders && parsed.boekhouders.length) BOEKHOUDERS = parsed.boekhouders;
       if(parsed.klanten && parsed.klanten.length) RAW_KLANTEN = parsed.klanten;
+      if(parsed.teams && parsed.teams.length) TEAMS = parsed.teams;
     }
   }catch(e){}
 }
 function persistMeta(){
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
   pushRemoteDebounced();
 }
 loadMeta();
@@ -277,7 +279,7 @@ function addKlant(data){
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
   const kleuren = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
-  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', kleur:kleuren[BOEKHOUDERS.length % kleuren.length]};
+  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur:kleuren[BOEKHOUDERS.length % kleuren.length]};
   BOEKHOUDERS.push(b); persistMeta();
   return b;
 }
@@ -314,6 +316,43 @@ function confirmDeleteBoekhouder(id){
   if(!confirm(`Weet je zeker dat je "${b.naam}" wilt verwijderen?`)) return;
   deleteBoekhouder(id);
   toast(`Boekhouder "${b.naam}" verwijderd.`);
+  render();
+}
+function addTeam(data){
+  const id = nextId(TEAMS,'team');
+  const t = {id, naam:data.naam};
+  TEAMS.push(t); persistMeta();
+  return t;
+}
+function deleteTeam(id){
+  if(BOEKHOUDERS.some(b=>b.team===id)) return 'heeft-boekhouders';
+  const idx = TEAMS.findIndex(t=>t.id===id);
+  if(idx===-1) return false;
+  TEAMS.splice(idx,1);
+  persistMeta();
+  return true;
+}
+function setBoekhouderTeam(bhId, teamId){
+  const b = bh(bhId);
+  if(!b) return false;
+  b.team = teamId || '';
+  persistMeta();
+  return true;
+}
+function teamOf(id){ return TEAMS.find(t=>t.id===id); }
+function boekhoudersOfTeam(teamId){ return BOEKHOUDERS.filter(b=>b.team===teamId); }
+function klantenOfTeam(teamId){
+  const bhIds = boekhoudersOfTeam(teamId).map(b=>b.id);
+  return RAW_KLANTEN.filter(k=>bhIds.includes(k.bh));
+}
+function confirmDeleteTeam(id){
+  const t = teamOf(id);
+  if(!t) return;
+  const leden = boekhoudersOfTeam(id);
+  if(leden.length){ toast(`Kan team "${t.naam}" niet verwijderen: er zijn nog ${leden.length} boekhouder(s) aan gekoppeld. Verplaats ze eerst naar een ander team.`); return; }
+  if(!confirm(`Weet je zeker dat je team "${t.naam}" wilt verwijderen?`)) return;
+  deleteTeam(id);
+  toast(`Team "${t.naam}" verwijderd.`);
   render();
 }
 
@@ -471,7 +510,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList();
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, store: STORE });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     });
@@ -491,8 +530,9 @@ async function fetchRemoteAndMerge(showFeedback){
     if(json && json.klanten){
       BOEKHOUDERS = json.boekhouders && json.boekhouders.length ? json.boekhouders : BOEKHOUDERS;
       RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
+      TEAMS = json.teams && json.teams.length ? json.teams : TEAMS;
       STORE = json.store || STORE;
-      try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN})); }catch(e){}
+      try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
       SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
       if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh) render(); else updateSyncIndicator();
@@ -568,7 +608,7 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, showAddKlant:false, showAddBh:false };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false };
 
 /* ============================= ICONS ============================= */
 const ICONS = {
@@ -582,6 +622,7 @@ const ICONS = {
   bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
   upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  team:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
@@ -596,6 +637,7 @@ function render(){
       <div class="nav">
         ${navItem('dashboard','dash','Overzicht')}
         ${navItem('boekhouders','building','Boekhouders')}
+        ${navItem('teams','team','Teams')}
         ${navItem('klanten','users','Klanten')}
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('instellingen','gear','Instellingen')}
@@ -623,6 +665,7 @@ function render(){
   if(STATE.panelKlant) openPanel(STATE.panelKlant, true);
   else if(STATE.showAddKlant) openAddKlantPanel(true);
   else if(STATE.showAddBh) openAddBhPanel(true);
+  else if(STATE.showAddTeam) openAddTeamPanel(true);
   else closePanelDom();
   attachHandlers();
   updateSyncIndicator();
@@ -631,12 +674,13 @@ function navItem(view, icon, label){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span></button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', instellingen:'Instellingen'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', instellingen:'Instellingen'}[STATE.view];
 }
 function pageSub(){
   return {
     dashboard:'Status van alle deadlines in één oogopslag',
     boekhouders:'Klantportefeuille per boekhouder',
+    teams:'Teamindeling en openstaande deadlines per team',
     klanten:'Alle klanten met deadlinestatus per categorie',
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
     instellingen:'Live synchronisatie tussen collega\'s'
@@ -647,6 +691,7 @@ function pageSub(){
 function viewHTML(){
   if(STATE.view==='dashboard') return dashboardHTML();
   if(STATE.view==='boekhouders') return boekhoudersHTML();
+  if(STATE.view==='teams') return teamsHTML();
   if(STATE.view==='klanten') return klantenHTML();
   if(STATE.view==='aanlevering') return aanleveringHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
@@ -760,7 +805,7 @@ function boekhoudersHTML(){
       ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="position:absolute; top:10px; right:10px; padding:4px 7px; color:var(--red);">🗑</button>` : ''}
       <div class="bh-top">
         <div class="avatar" style="background:${b.kleur}">${initials(b.naam)}</div>
-        <div><div class="bh-name">${b.naam}</div><div class="bh-role">${b.rol}</div></div>
+        <div><div class="bh-name">${b.naam}</div><div class="bh-role">${b.rol}${b.team && teamOf(b.team) ? ' · '+teamOf(b.team).naam : ''}</div></div>
       </div>
       <div class="bh-stats">
         <div class="bh-stat"><b style="color:var(--red)">${c.actie}</b><span>Actie</span></div>
@@ -776,6 +821,69 @@ function boekhoudersHTML(){
     <button class="btn sm primary" data-add-bh-btn>+ Nieuwe boekhouder</button>
   </div>
   ${BOEKHOUDERS.length ? `<div class="bh-grid">${cards}</div>` : `<div class="section"><div class="empty-state">Nog geen boekhouders toegevoegd. Klik op "+ Nieuwe boekhouder" om te beginnen, of koppel Microsoft-sync bij Instellingen om bestaande gegevens op te halen.</div></div>`}`;
+}
+
+/* ============================= VIEW: TEAMS ============================= */
+function teamsHTML(){
+  const types = ['OB','VPB','LH','JR','Overige'];
+  const cards = TEAMS.map(t=>{
+    const leden = boekhoudersOfTeam(t.id);
+    const klanten = klantenOfTeam(t.id);
+    const klantIds = new Set(klanten.map(k=>k.id));
+    const rows = allDeadlineRows().filter(r=>klantIds.has(r.klant.id));
+    const perTypeRows = types.map(type=>{
+      const trows = rows.filter(r=>r.type===type);
+      const c = {actie:0,nadert:0,schema:0,ingediend:0};
+      trows.forEach(r=>c[r.st.key]++);
+      const open = c.actie + c.nadert;
+      return `<tr>
+        <td>${TYPE_LABEL[type]}</td>
+        <td><span class="badge red"><span class="dot red"></span>${c.actie}</span></td>
+        <td><span class="badge amber"><span class="dot amber"></span>${c.nadert}</span></td>
+        <td><span class="badge green"><span class="dot green"></span>${c.schema}</span></td>
+        <td style="font-weight:700;">${open}</td>
+      </tr>`;
+    }).join('');
+    const totalOpen = rows.filter(r=>r.st.key==='actie'||r.st.key==='nadert').length;
+    const bhOptionsToAdd = BOEKHOUDERS.filter(b=>b.team!==t.id).map(b=>`<option value="${b.id}">${b.naam}${b.team && teamOf(b.team) ? ' ('+teamOf(b.team).naam+')' : ''}</option>`).join('');
+
+    return `<div class="section" style="margin-bottom:18px;">
+      <div class="section-head">
+        <div>
+          <h3>${t.naam}</h3>
+          <span class="hint">${leden.length} boekhouder(s) · ${klanten.length} klanten · ${totalOpen} deadline(s) nog open</span>
+        </div>
+        ${isAdmin() ? `<button class="btn sm ghost" data-delete-team="${t.id}" title="Team verwijderen" style="color:var(--red);">🗑 Verwijderen</button>` : ''}
+      </div>
+      <div class="section-body pad">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+          ${leden.length ? leden.map(b=>`
+            <span class="badge gray" style="gap:8px;">
+              <span class="dot" style="background:${b.kleur}"></span>${b.naam}
+              <button data-remove-from-team="${b.id}" title="Uit team halen" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; padding:0 0 0 4px;">✕</button>
+            </span>`).join('') : '<span style="font-size:12px; color:var(--muted2);">Nog geen boekhouders in dit team.</span>'}
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:18px;">
+          <select data-team-add-select="${t.id}" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+            <option value="">Boekhouder kiezen om toe te voegen…</option>
+            ${bhOptionsToAdd}
+          </select>
+          <button class="btn sm primary" data-team-add-btn="${t.id}">+ Toevoegen</button>
+        </div>
+        <table>
+          <thead><tr><th>Categorie</th><th>Actie vereist</th><th>Nadert</th><th>Op schema</th><th>Totaal open</th></tr></thead>
+          <tbody>${perTypeRows || `<tr><td colspan="5" style="color:var(--muted2);">Geen klanten in dit team.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="section-head" style="padding:0 0 14px; border-bottom:none;">
+    <h3 style="font-size:15px;">Teams</h3>
+    <button class="btn sm primary" data-add-team-btn>+ Nieuw team</button>
+  </div>
+  ${TEAMS.length ? cards : `<div class="section"><div class="empty-state">Nog geen teams aangemaakt. Klik op "+ Nieuw team" om te beginnen.</div></div>`}`;
 }
 
 /* ============================= VIEW: KLANTEN ============================= */
@@ -1127,6 +1235,7 @@ function addKlantFormHTML(){
   </div>`;
 }
 function addBhFormHTML(){
+  const teamOptions = TEAMS.map(t=>`<option value="${t.id}">${t.naam}</option>`).join('');
   return `
   <div class="panel-head">
     <div class="panel-head-top">
@@ -1139,8 +1248,24 @@ function addBhFormHTML(){
       <div class="field-row"><label>Naam*</label><input type="text" id="newBhNaam"></div>
       <div class="field-row"><label>Rol</label><input type="text" id="newBhRol" placeholder="Boekhouder"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newBhEmail" placeholder="naam@administratiebox.nl"></div>
+      <div class="field-row"><label>Team</label><select id="newBhTeam" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="">Geen team</option>${teamOptions}</select></div>
     </div></div>
     <button class="btn primary" data-save-new-bh style="width:100%; justify-content:center; padding:11px;">Boekhouder toevoegen</button>
+  </div>`;
+}
+function addTeamFormHTML(){
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Team toevoegen</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Gegevens</h4><div class="inner">
+      <div class="field-row"><label>Naam*</label><input type="text" id="newTeamNaam" placeholder="bijv. Team Noord"></div>
+    </div></div>
+    <button class="btn primary" data-save-new-team style="width:100%; justify-content:center; padding:11px;">Team toevoegen</button>
   </div>`;
 }
 function openAddKlantPanel(silent){
@@ -1178,9 +1303,23 @@ function openAddBhPanel(silent){
   document.querySelector('[data-save-new-bh]').addEventListener('click', ()=>{
     const naam = document.getElementById('newBhNaam').value.trim();
     if(!naam){ toast('Vul een naam in.'); return; }
-    addBoekhouder({naam, rol:document.getElementById('newBhRol').value.trim(), email:document.getElementById('newBhEmail').value.trim()});
+    addBoekhouder({naam, rol:document.getElementById('newBhRol').value.trim(), email:document.getElementById('newBhEmail').value.trim(), team:document.getElementById('newBhTeam').value});
     STATE.showAddBh=false;
     toast('Boekhouder toegevoegd: '+naam);
+    render();
+  });
+}
+function openAddTeamPanel(silent){
+  const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
+  panel.innerHTML = addTeamFormHTML();
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  document.querySelector('[data-save-new-team]').addEventListener('click', ()=>{
+    const naam = document.getElementById('newTeamNaam').value.trim();
+    if(!naam){ toast('Vul een teamnaam in.'); return; }
+    addTeam({naam});
+    STATE.showAddTeam=false;
+    toast('Team toegevoegd: '+naam);
     render();
   });
 }
@@ -1199,16 +1338,35 @@ function closePanelDom(){
   if(panel) panel.classList.remove('open');
   if(overlay) overlay.classList.remove('open');
 }
-function closePanel(){ STATE.panelKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; closePanelDom(); }
+function closePanel(){ STATE.panelKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; closePanelDom(); }
 
 /* ============================= HANDLERS ============================= */
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>{
-    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false;
+    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false;
     render();
   }));
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
   document.querySelectorAll('[data-add-bh-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddBh=true; render(); }));
+  document.querySelectorAll('[data-add-team-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddTeam=true; render(); }));
+  document.querySelectorAll('[data-delete-team]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); confirmDeleteTeam(el.getAttribute('data-delete-team'));
+  }));
+  document.querySelectorAll('[data-team-add-btn]').forEach(el=>el.addEventListener('click', ()=>{
+    const teamId = el.getAttribute('data-team-add-btn');
+    const select = document.querySelector(`[data-team-add-select="${teamId}"]`);
+    const bhId = select ? select.value : '';
+    if(!bhId){ toast('Kies eerst een boekhouder.'); return; }
+    setBoekhouderTeam(bhId, teamId);
+    toast('Boekhouder toegevoegd aan team.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-remove-from-team]').forEach(el=>el.addEventListener('click', ()=>{
+    const bhId = el.getAttribute('data-remove-from-team');
+    setBoekhouderTeam(bhId, '');
+    toast('Boekhouder uit team gehaald.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-nav-bh]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render();
   }));
@@ -1394,6 +1552,11 @@ function attachPanelHandlers(klant){
   const saveNot = document.querySelector('[data-save-notities]');
   if(saveNot) saveNot.addEventListener('click', ()=>{
     STORE[klant.id].notities = document.getElementById('notitiesInput').value; persist(); toast('Notitie opgeslagen.');
+  });
+
+  const delKlantPanelBtn = document.querySelector('[data-delete-klant-panel]');
+  if(delKlantPanelBtn) delKlantPanelBtn.addEventListener('click', ()=>{
+    confirmDeleteKlant(klant.id);
   });
 }
 function refreshPanel(klant){
