@@ -724,7 +724,7 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null };
 
 /* ============================= ICONS ============================= */
 const ICONS = {
@@ -840,8 +840,14 @@ const LH_TAKEN = [
   'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)',
   'LJP dossier (Loondossier, dossier AB, uploaden in AB)'
 ];
-function nieuwLhTaken(){ return LH_TAKEN.map(naam=>({naam, done:false, door:null, ts:null, notitie:''})); }
+function nieuwLhTaken(){ return LH_TAKEN.map(naam=>({naam, done:false, door:null, ts:null, aantekeningen:[]})); }
 function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
+function boekhouderKleurVoorNaam(naam){
+  if(!naam) return null;
+  const n = naam.trim().toLowerCase();
+  const match = BOEKHOUDERS.find(b => (b.naam && b.naam.trim().toLowerCase()===n) || (b.email && b.email.trim().toLowerCase()===n));
+  return match ? match.kleur : null;
+}
 function advanceDate(datum, herhaling){
   const dt = new Date(datum+'T00:00:00');
   if(herhaling==='maandelijks') dt.setMonth(dt.getMonth()+1);
@@ -864,7 +870,7 @@ function completeLhPeriode(klant, door){
   }
   if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
   f.lh.log.push({ts:new Date().toISOString(), actie:'periode-afgerond', door});
-  f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; t.notitie=''; });
+  f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
   persist();
 }
 function migrateData(){
@@ -879,6 +885,14 @@ function migrateData(){
         if(f.dl[t] && !f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
       });
       if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+      if(f.lh && f.lh.taken){
+        f.lh.taken.forEach(t=>{
+          if(t.aantekeningen===undefined){
+            t.aantekeningen = t.notitie ? [{id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst:t.notitie, door:'Onbekend (gemigreerd)', ts:new Date().toISOString()}] : [];
+            delete t.notitie;
+          }
+        });
+      }
       if(f.saldoDebet===undefined) f.saldoDebet = 0;
       if(f.saldoCredit===undefined) f.saldoCredit = 0;
     }
@@ -1173,6 +1187,20 @@ function aanleveringHTML(){
 
   <div class="section">
     <div class="section-head">
+      <h3>Banktransacties in bulk importeren</h3>
+      <span class="hint">Meerdere bestanden tegelijk, één per klant</span>
+    </div>
+    <div class="section-body pad">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
+        Heb je per klant een los banktransactie-bestand (CSV of Excel)? Selecteer ze allemaal in één keer — de klant wordt automatisch gekoppeld op basis van de bestandsnaam (bijv. "10xGrowth-....csv" → klant "10xGrowth"). Controleer de koppeling en de bedragen voor je op "Alles toepassen" klikt.
+      </div>
+      <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Meerdere bestanden kiezen<input type="file" id="bulkTxnImportFiles" accept=".csv,.xlsx,.xls" multiple style="display:none;"></label>
+      <div id="bulkTxnImportPreview" style="margin-top:12px; overflow-x:auto;"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
       <h3>Bulk-upload banksaldo (samenvatting)</h3>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} CSV uploaden<input type="file" id="csvUpload" accept=".csv" style="display:none;"></label>
     </div>
@@ -1223,20 +1251,56 @@ function loonheffingHTML(){
     if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
     const doneCount = f.lh.taken.filter(t=>t.done).length;
     const lhEntry = effDL(k,'LH');
-    const taakRows = f.lh.taken.map((t,idx)=>`
-      <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap;">
+    const aantekeningenHTML = (t, idx)=>{
+      const notes = t.aantekeningen || [];
+      const noteItems = notes.map(n=>{
+        const editKey = `${k.id}|${idx}|${n.id}`;
+        if(STATE.lhEditNote === editKey){
+          return `<div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
+            <input type="text" data-lh-note-edit-input="${editKey}" value="${(n.tekst||'').replace(/"/g,'&quot;')}" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+            <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
+            <button class="btn sm ghost" data-lh-note-cancel="${editKey}">Annuleren</button>
+          </div>`;
+        }
+        return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:5px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:400px;">
+          <div style="font-size:11.5px; min-width:0;">
+            <div style="word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+          </div>
+          <div style="display:flex; gap:3px; flex-shrink:0;">
+            <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;">✎</button>
+            <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);">🗑</button>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div style="margin-top:4px;">
+        ${noteItems}
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <input type="text" data-lh-note-new="${k.id}|${idx}" placeholder="Nieuwe aantekening…" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+          <button class="btn sm" data-lh-note-add="${k.id}|${idx}">+ Toevoegen</button>
+        </div>
+      </div>`;
+    };
+    const taakRows = f.lh.taken.map((t,idx)=>{
+      const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
+      return `
+      <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap; ${kleur?`border-left:4px solid ${kleur}; background:${kleur}14; padding-left:8px; border-radius:6px;`:''}">
         <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''}>
         <div style="flex:1; min-width:220px;">
           <label>${t.naam}</label>
-          ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px;">✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
-          <input type="text" data-lh-notitie="${k.id}|${idx}" value="${(t.notitie||'').replace(/"/g,'&quot;')}" placeholder="Aantekening…" style="margin-top:4px; width:100%; max-width:340px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+          ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span>✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+          ${aantekeningenHTML(t, idx)}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     const recentLog = f.lh.log.slice().reverse().slice(0,5);
     const logLine = (l)=>{
       if(l.actie==='periode-afgerond') return 'rondde de periode af';
       if(l.actie==='afgevinkt') return `vinkte "${l.taak}" af`;
       if(l.actie==='uitgevinkt') return `haalde het vinkje van "${l.taak}" af`;
+      if(l.actie==='aantekening-toegevoegd') return `voegde een aantekening toe bij "${l.taak}"`;
+      if(l.actie==='aantekening-bewerkt') return `bewerkte een aantekening bij "${l.taak}"`;
+      if(l.actie==='aantekening-verwijderd') return `verwijderde een aantekening bij "${l.taak}"`;
       return l.actie;
     };
     return `<div class="section" style="margin-bottom:18px;">
@@ -1257,8 +1321,23 @@ function loonheffingHTML(){
     </div>`;
   }).join('');
 
+  const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id);
+  const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
+
   return `
-  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Elke actie (afvinken/uitvinken/periode afronden) wordt gelogd met naam en tijdstip — zo zien jullie elkaars voortgang. Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
+  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Elke actie (afvinken/uitvinken/periode afronden) wordt gelogd met naam en tijdstip — zo zien jullie elkaars voortgang, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
+  <div class="section" style="margin-bottom:18px;">
+    <div class="section-head">
+      <h3>Klanten loonheffingen importeren</h3>
+      <span class="hint">Uit het salarisadministratie-Excel-bestand</span>
+    </div>
+    <div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px;">Upload het "verwerken salarisadministratie"-bestand (Excel). Werkgevers die daarin voorkomen worden gematcht op naam met bestaande klanten en krijgen automatisch het vinkje "Wij doen de loonaangifte" aan. Er worden geen nieuwe klanten aangemaakt — namen die niet gevonden worden, komen in een lijst te staan.</p>
+      <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Excel-bestand kiezen<input type="file" id="lhKlantenImportFile" accept=".xlsx,.xls" style="display:none;"></label>
+      <div id="lhKlantenImportResult" style="margin-top:12px;"></div>
+    </div>
+  </div>
+  ${legend}
   ${list.length ? rows : `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>`}`;
 }
 
@@ -1766,6 +1845,8 @@ function attachHandlers(){
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
   const klantenCsvUpload = document.getElementById('klantenCsvUpload');
   if(klantenCsvUpload) klantenCsvUpload.addEventListener('change', handleKlantenCSVUpload);
+  const lhKlantenImportFile = document.getElementById('lhKlantenImportFile');
+  if(lhKlantenImportFile) lhKlantenImportFile.addEventListener('change', handleLhKlantenImport);
   document.querySelectorAll('[data-add-bh-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddBh=true; render(); }));
   document.querySelectorAll('[data-add-team-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddTeam=true; render(); }));
   document.querySelectorAll('[data-delete-team]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -1833,6 +1914,8 @@ function attachHandlers(){
   if(csvInput) csvInput.addEventListener('change', handleCSVUpload);
   const txnImportFile = document.getElementById('txnImportFile');
   if(txnImportFile) txnImportFile.addEventListener('change', handleTxnImport);
+  const bulkTxnImportFiles = document.getElementById('bulkTxnImportFiles');
+  if(bulkTxnImportFiles) bulkTxnImportFiles.addEventListener('change', handleBulkTxnImport);
 
   document.querySelectorAll('[data-lh-toggle]').forEach(el=>el.addEventListener('change',(e)=>{
     const [klantId, idxStr] = el.getAttribute('data-lh-toggle').split('|');
@@ -1848,14 +1931,60 @@ function attachHandlers(){
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-notitie]').forEach(el=>el.addEventListener('change',(e)=>{
-    const [klantId, idxStr] = el.getAttribute('data-lh-notitie').split('|');
+  document.querySelectorAll('[data-lh-note-add]').forEach(el=>el.addEventListener('click',()=>{
+    const [klantId, idxStr] = el.getAttribute('data-lh-note-add').split('|');
     const idx = +idxStr;
+    const input = document.querySelector(`[data-lh-note-new="${klantId}|${idxStr}"]`);
+    const tekst = input ? input.value.trim() : '';
+    if(!tekst) return;
     const f = STORE[klantId];
     if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
-    f.lh.taken[idx].notitie = e.target.value;
+    const t = f.lh.taken[idx];
+    if(!t.aantekeningen) t.aantekeningen = [];
+    const door = huidigeGebruiker();
+    t.aantekeningen.push({id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst, door, ts:new Date().toISOString()});
+    f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-toegevoegd', door});
     persist();
-    toast('Aantekening opgeslagen.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-note-edit]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = el.getAttribute('data-lh-note-edit');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-note-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-note-save]').forEach(el=>el.addEventListener('click',()=>{
+    const key = el.getAttribute('data-lh-note-save');
+    const [klantId, idxStr, noteId] = key.split('|');
+    const idx = +idxStr;
+    const input = document.querySelector(`[data-lh-note-edit-input="${key}"]`);
+    const tekst = input ? input.value.trim() : '';
+    if(!tekst) return;
+    const f = STORE[klantId];
+    const t = f.lh.taken[idx];
+    const note = (t.aantekeningen||[]).find(n=>n.id===noteId);
+    if(note){
+      note.tekst = tekst; note.door = huidigeGebruiker(); note.ts = new Date().toISOString();
+      f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-bewerkt', door:huidigeGebruiker()});
+    }
+    STATE.lhEditNote = null;
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-note-delete]').forEach(el=>el.addEventListener('click',()=>{
+    const key = el.getAttribute('data-lh-note-delete');
+    const [klantId, idxStr, noteId] = key.split('|');
+    const idx = +idxStr;
+    if(!confirm('Deze aantekening verwijderen?')) return;
+    const f = STORE[klantId];
+    const t = f.lh.taken[idx];
+    t.aantekeningen = (t.aantekeningen||[]).filter(n=>n.id!==noteId);
+    f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-verwijderd', door:huidigeGebruiker()});
+    if(STATE.lhEditNote===key) STATE.lhEditNote = null;
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-complete]').forEach(el=>el.addEventListener('click', ()=>{
     const klantId = el.getAttribute('data-lh-complete');
@@ -1997,6 +2126,103 @@ function renderTxnPreview(stats, filename){
   });
 }
 /* ============================= KLANTEN BULK-IMPORT (CSV/Excel export vanuit Administratiebox) ============================= */
+function parseLhKlantNaam(raw){
+  let s = (raw||'').trim();
+  const parenIdx = s.indexOf('(');
+  if(parenIdx > 0) s = s.slice(0, parenIdx).trim();
+  return s.replace(/[.,]+$/,'').trim();
+}
+function normalizeKlantNaam(s){
+  return (s||'').toLowerCase()
+    .replace(/\bb\.?v\.?\b/g,'bv')
+    .replace(/\bv\.?o\.?f\.?\b/g,'vof')
+    .replace(/[^a-z0-9]+/g,' ')
+    .trim()
+    .replace(/\s+/g,' ');
+}
+function vindKlantOpNaam(naam){
+  const norm = normalizeKlantNaam(naam);
+  if(!norm || norm.length < 3) return null;
+  let match = RAW_KLANTEN.find(k => normalizeKlantNaam(k.naam) === norm);
+  if(match) return match;
+  const prefixMatches = RAW_KLANTEN.filter(k => {
+    const kn = normalizeKlantNaam(k.naam);
+    return kn && kn.length >= 4 && (norm.startsWith(kn) || kn.startsWith(norm));
+  });
+  return prefixMatches.length === 1 ? prefixMatches[0] : null;
+}
+function isLhMetaRow(v){
+  if(v===undefined || v===null) return true;
+  if(typeof v !== 'string') return true;
+  const s = v.trim();
+  if(s==='') return true;
+  if(s.startsWith('Email')) return true;
+  if(s==='Verwerker') return true;
+  if(s.startsWith('Salarissen')) return true;
+  if(s.startsWith('Salaris') && s.includes('betaallijst')) return true;
+  if(s.startsWith('Aangifte')) return true;
+  if(s.startsWith('LJP')) return true;
+  if(/^let\s*op/i.test(s)) return true;
+  if(s.toLowerCase().includes('ter info')) return true;
+  if(BOEKHOUDERS.some(b=>b.naam && b.naam.trim()===s)) return true;
+  return false;
+}
+function readLhExcelNamesPromise(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error('Bestand kon niet gelezen worden'));
+    reader.onload = (ev)=>{
+      try{
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const grid = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:null});
+        const names = [];
+        for(let r=0; r<grid.length; r++){
+          const v = grid[r] && grid[r][0];
+          if(typeof v==='string' && !isLhMetaRow(v)){
+            const n1 = grid[r+1] && grid[r+1][0];
+            const n2 = grid[r+2] && grid[r+2][0];
+            const hasFollowup = (typeof n1==='string' && (n1.trim().startsWith('Email') || n1.trim()==='Verwerker')) ||
+                                 (typeof n2==='string' && (n2.trim().startsWith('Email') || n2.trim()==='Verwerker'));
+            if(hasFollowup) names.push(v);
+          }
+        }
+        resolve(names);
+      }catch(err){ reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+async function handleLhKlantenImport(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const resultBox = document.getElementById('lhKlantenImportResult');
+  if(resultBox) resultBox.innerHTML = '<div class="hint">Bestand wordt gelezen…</div>';
+  try{
+    const rawNames = await readLhExcelNamesPromise(file);
+    let nieuwGemarkeerd = 0, algeactiveerd = 0;
+    const nietGevonden = [];
+    rawNames.forEach(raw=>{
+      const naam = parseLhKlantNaam(raw);
+      const klant = vindKlantOpNaam(naam);
+      if(!klant){ nietGevonden.push(raw); return; }
+      if(klant.doetLoonaangifte){ algeactiveerd++; }
+      else { klant.doetLoonaangifte = true; nieuwGemarkeerd++; }
+    });
+    persistMeta(); persist();
+    if(resultBox){
+      const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      resultBox.innerHTML = `<div class="banner">✅ <b>${rawNames.length}</b> werkgevers gevonden in "${escaped(file.name)}". `
+        + `<b>${nieuwGemarkeerd}</b> klant(en) nieuw gemarkeerd met loonaangifte, <b>${algeactiveerd}</b> stonden al aan.`
+        + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> niet gevonden op naam — voeg deze klant(en) toe of vink handmatig aan: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
+        + `</div>`;
+    }
+    render();
+  }catch(err){
+    if(resultBox) resultBox.innerHTML = `<div class="banner" style="border-color:var(--red); color:var(--red);">Fout bij inlezen: ${(err&&err.message)||err}</div>`;
+  }
+}
 function handleKlantenCSVUpload(e){
   const file = e.target.files[0]; if(!file) return;
   const resultBox = document.getElementById('klantImportResult');
@@ -2099,6 +2325,70 @@ function handleTxnImport(e){
     const sel = document.getElementById('txnImportKlant');
     if(sel && !sel.value && guessId) sel.value = guessId;
     renderTxnPreview(stats, file.name);
+  });
+}
+
+function readTabularFilePromise(file){
+  return new Promise((resolve)=>{ readTabularFile(file, (objects, err)=> resolve({file, objects, err})); });
+}
+async function handleBulkTxnImport(e){
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  const box = document.getElementById('bulkTxnImportPreview');
+  if(box) box.innerHTML = `<div class="banner">Bezig met inlezen van ${files.length} bestand(en)…</div>`;
+  const results = await Promise.all(files.map(readTabularFilePromise));
+  const rows = results.map(r=>{
+    if(r.err) return { filename:r.file.name, error:r.err };
+    const stats = computeTxnStats(r.objects);
+    const guessId = guessKlantFromFilename(r.file.name);
+    return { filename:r.file.name, stats, klantId: guessId || '' };
+  });
+  renderBulkTxnPreview(rows);
+}
+function renderBulkTxnPreview(rows){
+  const box = document.getElementById('bulkTxnImportPreview');
+  if(!box) return;
+  const gevonden = rows.filter(r=>!r.error && r.klantId).length;
+  const nietGevonden = rows.filter(r=>!r.error && !r.klantId).length;
+  const fouten = rows.filter(r=>r.error).length;
+  box.innerHTML = `
+    <div class="banner">${rows.length} bestand(en) ingelezen — ${gevonden} automatisch gekoppeld op bestandsnaam${nietGevonden?`, ${nietGevonden} niet herkend (kies handmatig)`:''}${fouten?`, ${fouten} met een leesfout`:''}. Controleer de koppeling voor je toepast.</div>
+    <table><thead><tr><th>Bestand</th><th>Klant</th><th>Debet</th><th>Credit</th><th>Aantal</th></tr></thead><tbody>
+      ${rows.map((r,idx)=> r.error ? `<tr><td style="font-size:11.5px;">${r.filename}</td><td colspan="4" style="color:var(--red); font-size:11.5px;">${r.error}</td></tr>` : `
+      <tr>
+        <td style="font-size:11.5px;">${r.filename}</td>
+        <td><select id="bulkTxnKlant-${idx}" style="padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+          <option value="">— niet koppelen —</option>
+          ${RAW_KLANTEN.map(k=>`<option value="${k.id}" ${k.id===r.klantId?'selected':''}>${k.naam}</option>`).join('')}
+        </select></td>
+        <td><input type="number" step="0.01" id="bulkTxnDebet-${idx}" value="${r.stats.debetSaldo}" style="width:80px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></td>
+        <td><input type="number" step="0.01" id="bulkTxnCredit-${idx}" value="${r.stats.creditSaldo}" style="width:80px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></td>
+        <td><input type="number" id="bulkTxnAantal-${idx}" value="${r.stats.aantal}" style="width:60px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></td>
+      </tr>`).join('')}
+    </tbody></table>
+    <button class="btn sm primary" data-apply-bulk-txn style="margin-top:10px;">Alles toepassen</button>
+  `;
+  const btn = box.querySelector('[data-apply-bulk-txn]');
+  if(btn) btn.addEventListener('click', ()=>{
+    let toegepast=0, overgeslagen=0;
+    rows.forEach((r, idx)=>{
+      if(r.error){ overgeslagen++; return; }
+      const klantSel = document.getElementById('bulkTxnKlant-'+idx);
+      const klantId = klantSel ? klantSel.value : '';
+      if(!klantId){ overgeslagen++; return; }
+      const debet = parseFloat(document.getElementById('bulkTxnDebet-'+idx).value)||0;
+      const credit = parseFloat(document.getElementById('bulkTxnCredit-'+idx).value)||0;
+      const aantal = parseInt(document.getElementById('bulkTxnAantal-'+idx).value)||0;
+      STORE[klantId].saldoDebet = debet;
+      STORE[klantId].saldoCredit = credit;
+      STORE[klantId].saldo = Math.round((debet+credit)*100)/100;
+      STORE[klantId].txn = aantal;
+      STORE[klantId].sync = new Date().toISOString().slice(0,10);
+      toegepast++;
+    });
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast(`Bulk-import klaar: ${toegepast} klant(en) bijgewerkt${overgeslagen?`, ${overgeslagen} overgeslagen (geen klant gekoppeld)`:''}.`);
   });
 }
 
