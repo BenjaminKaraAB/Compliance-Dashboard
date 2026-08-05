@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Compliance Dashboard — Administratiebox</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --navy:#0b1220; --navy2:#141f38; --navy3:#1c2a4a;
@@ -262,11 +263,12 @@ function addKlant(data){
     id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
+    extId: data.extId || '',
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
-      VPB:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.vpb, data.vpbHerh),
+      VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
       LH:dateOrNa(data.lh, data.lhHerh),
-      JR:data.vorm==='Eenmanszaak' ? NA() : dateOrNa(data.jr, data.jrHerh),
+      JR:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.jr, data.jrHerh),
       overige:[]
     }
   };
@@ -558,6 +560,93 @@ function updateSyncIndicator(){
   el.style.color = 'var(--green)';
 }
 
+/* ============================= BESTANDEN INLEZEN (CSV/Excel, gedeeld door importers) ============================= */
+function detectDelimiter(text){
+  const firstLine = text.split(/\r?\n/)[0] || '';
+  const semis = (firstLine.match(/;/g)||[]).length;
+  const commas = (firstLine.match(/,/g)||[]).length;
+  return semis > commas ? ';' : ',';
+}
+// Quote-bewuste parser: respecteert aanhalingstekens, ook als een veld daarbinnen een komma/puntkomma
+// of een regeleinde bevat (komt vaak voor in banktransactie-exports).
+function parseDelimitedText(text, delimiter){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else { inQuotes = false; }
+      } else { field += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === delimiter){ row.push(field); field=''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1]==='\n') i++;
+        row.push(field); field='';
+        if(!(row.length===1 && row[0]==='')) rows.push(row);
+        row = [];
+      } else { field += c; }
+    }
+  }
+  if(field!=='' || row.length){ row.push(field); if(!(row.length===1 && row[0]==='')) rows.push(row); }
+  return rows;
+}
+function rowsToObjects(rows){
+  if(!rows.length) return [];
+  const headers = rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.some(c=>(c||'').trim()!=='')).map(r=>{
+    const obj = {};
+    headers.forEach((h,idx)=>{ obj[h] = (r[idx]||'').trim(); });
+    return obj;
+  });
+}
+function findField(obj, candidates){
+  const keys = Object.keys(obj);
+  for(const cand of candidates){
+    const key = keys.find(k=>k.toLowerCase().trim() === cand.toLowerCase());
+    if(key) return obj[key];
+  }
+  return '';
+}
+function parseDutchAmount(str){
+  const cleaned = String(str==null?'0':str).trim().replace(/\./g,'').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
+}
+// Leest een File (csv/xlsx/xls) in en geeft via callback(objects, error) een array van rij-objecten terug
+// (elke rij als {kolomnaam: waarde}, op basis van de header-rij).
+function readTabularFile(file, callback){
+  const ext = (file.name.split('.').pop()||'').toLowerCase();
+  if(ext === 'csv' || ext === 'txt'){
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      const text = ev.target.result;
+      const delim = detectDelimiter(text);
+      const rows = parseDelimitedText(text, delim);
+      callback(rowsToObjects(rows), null);
+    };
+    reader.onerror = ()=> callback(null, 'Bestand kon niet gelezen worden.');
+    reader.readAsText(file);
+  } else if(ext === 'xlsx' || ext === 'xls'){
+    if(typeof XLSX === 'undefined'){ callback(null, 'Kon de Excel-bibliotheek niet laden (geen internetverbinding?).'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      try{
+        const wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const objects = XLSX.utils.sheet_to_json(sheet, {defval:'', raw:false});
+        callback(objects, null);
+      }catch(err){ callback(null, 'Kon het Excel-bestand niet lezen: '+(err.message||err)); }
+    };
+    reader.onerror = ()=> callback(null, 'Bestand kon niet gelezen worden.');
+    reader.readAsArrayBuffer(file);
+  } else {
+    callback(null, 'Onbekend bestandstype. Gebruik .csv, .xlsx of .xls.');
+  }
+}
+
 /* ============================= HELPERS ============================= */
 function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
 function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
@@ -722,6 +811,7 @@ function allDeadlineRows(){
   return rows;
 }
 const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
+const GEEN_VPB_VORMEN = ['Eenmanszaak','V.O.F.','VOF','Maatschap'];
 const LH_TAKEN = [
   'Salarissen verwerken',
   'Salaris- en betaallijst dossier werkgever',
@@ -958,8 +1048,12 @@ function klantenHTML(){
   <div class="section">
     <div class="section-head">
       <h3>Klantenlijst</h3>
-      <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
+      <div style="display:flex; gap:8px;">
+        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Klanten importeren (CSV/Excel)<input type="file" id="klantenCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+        <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
+      </div>
     </div>
+    <div id="klantImportResult" style="padding:0 20px;"></div>
     <div class="filters">
       <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
       <select id="filterStatus">
@@ -1015,11 +1109,34 @@ function aanleveringHTML(){
 
   <div class="section">
     <div class="section-head">
-      <h3>Bulk-upload banksaldo</h3>
+      <h3>Banktransacties importeren (per klant)</h3>
+      <span class="hint">CSV of Excel, rechtstreeks van de bank</span>
+    </div>
+    <div class="section-body pad">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
+        Upload het banktransactie-bestand van één klant — .csv (met puntkomma of komma) of .xlsx/.xls, zonder eerst handmatig om te hoeven zetten. Het openstaand saldo wordt berekend als de som van de bedragen met status "Niet verwerkt" (heeft het bestand geen statuskolom, dan tellen alle regels mee).
+      </div>
+      <div class="field-row"><label>Klant</label>
+        <select id="txnImportKlant" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="">Kies een klant…</option>
+          ${RAW_KLANTEN.map(k=>`<option value="${k.id}">${k.naam}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+        <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Bestand kiezen<input type="file" id="txnImportFile" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+        <span id="txnImportFileName" style="font-size:12px; color:var(--muted);"></span>
+      </div>
+      <div id="txnImportPreview" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h3>Bulk-upload banksaldo (samenvatting)</h3>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} CSV uploaden<input type="file" id="csvUpload" accept=".csv" style="display:none;"></label>
     </div>
     <div class="section-body pad" style="font-size:12px; color:var(--muted);">
-      Verwacht formaat per regel: <code>Klantnaam,Openstaand saldo,Aantal transacties</code>. Klanten worden gematcht op naam.
+      Voor een kant-en-klare samenvatting (bijv. uit een ander systeem). Verwacht formaat per regel: <code>Klantnaam,Openstaand saldo,Aantal transacties</code>. Klanten worden gematcht op naam.
     </div>
   </div>
 
@@ -1501,6 +1618,8 @@ function attachHandlers(){
     render();
   }));
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
+  const klantenCsvUpload = document.getElementById('klantenCsvUpload');
+  if(klantenCsvUpload) klantenCsvUpload.addEventListener('change', handleKlantenCSVUpload);
   document.querySelectorAll('[data-add-bh-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddBh=true; render(); }));
   document.querySelectorAll('[data-add-team-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddTeam=true; render(); }));
   document.querySelectorAll('[data-delete-team]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -1566,6 +1685,8 @@ function attachHandlers(){
 
   const csvInput = document.getElementById('csvUpload');
   if(csvInput) csvInput.addEventListener('change', handleCSVUpload);
+  const txnImportFile = document.getElementById('txnImportFile');
+  if(txnImportFile) txnImportFile.addEventListener('change', handleTxnImport);
 
   document.querySelectorAll('[data-lh-toggle]').forEach(el=>el.addEventListener('change',(e)=>{
     const [klantId, idxStr] = el.getAttribute('data-lh-toggle').split('|');
@@ -1657,6 +1778,157 @@ function handleCSVUpload(e){
     toast(`CSV verwerkt: ${updated} klant(en) bijgewerkt${skipped?`, ${skipped} regel(s) niet herkend`:''}.`);
   };
   reader.readAsText(file);
+}
+
+/* ============================= BANKTRANSACTIE-IMPORT PER KLANT ============================= */
+function computeTxnStats(rows){
+  const hasStatusCol = rows.length > 0 && Object.keys(rows[0]).some(k=>k.toLowerCase().trim()==='status');
+  let relevant = rows;
+  if(hasStatusCol){
+    relevant = rows.filter(r=> (findField(r,['Status'])||'').toLowerCase().includes('niet verwerkt'));
+  }
+  let saldo = 0;
+  relevant.forEach(r=>{ saldo += Math.abs(parseDutchAmount(findField(r,['Bedrag','Amount']))); });
+  return { saldo: Math.round(saldo*100)/100, aantal: relevant.length, totaalRegels: rows.length, hasStatusCol };
+}
+function guessKlantFromFilename(filename){
+  const base = filename.replace(/\.(csv|xlsx|xls|txt)$/i,'');
+  const prefix = base.split(/[-_]/)[0].trim();
+  if(!prefix) return null;
+  const match = RAW_KLANTEN.find(k=> k.naam.toLowerCase().includes(prefix.toLowerCase()) || prefix.toLowerCase().includes(k.naam.toLowerCase()));
+  return match ? match.id : null;
+}
+function renderTxnPreview(stats, filename){
+  const box = document.getElementById('txnImportPreview');
+  if(!box) return;
+  box.innerHTML = `
+    <div class="banner" style="background:var(--gray-bg); border-color:var(--gray-brd); color:var(--text);">
+      <b>${filename}</b>: ${stats.totaalRegels} regel(s) gevonden${stats.hasStatusCol ? `, waarvan ${stats.aantal} met status "Niet verwerkt"` : ' — geen statuskolom gevonden, dus alle regels meegeteld'}.
+    </div>
+    <div class="field-row"><label>Openstaand saldo</label><input type="number" step="0.01" id="txnImportSaldo" value="${stats.saldo}"></div>
+    <div class="field-row"><label>Aantal transacties</label><input type="number" id="txnImportAantal" value="${stats.aantal}"></div>
+    <button class="btn sm primary" data-apply-txn-import>Toepassen op klant</button>
+  `;
+  const btn = box.querySelector('[data-apply-txn-import]');
+  if(btn) btn.addEventListener('click', ()=>{
+    const klantId = document.getElementById('txnImportKlant').value;
+    if(!klantId){ toast('Kies eerst een klant.'); return; }
+    const saldo = parseFloat(document.getElementById('txnImportSaldo').value)||0;
+    const aantal = parseInt(document.getElementById('txnImportAantal').value)||0;
+    STORE[klantId].saldo = saldo;
+    STORE[klantId].txn = aantal;
+    STORE[klantId].sync = new Date().toISOString().slice(0,10);
+    persist();
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    toast(`Saldo bijgewerkt voor ${klant?klant.naam:klantId}.`);
+    box.innerHTML='';
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
+}
+/* ============================= KLANTEN BULK-IMPORT (CSV/Excel export vanuit Administratiebox) ============================= */
+function handleKlantenCSVUpload(e){
+  const file = e.target.files[0]; if(!file) return;
+  const resultBox = document.getElementById('klantImportResult');
+  if(resultBox) resultBox.innerHTML = `<div class="banner">Bezig met inlezen van "${file.name}"…</div>`;
+  readTabularFile(file, (rows, err)=>{
+    if(err){ toast(err); if(resultBox) resultBox.innerHTML=''; return; }
+    if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(resultBox) resultBox.innerHTML=''; return; }
+
+    const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, nieuweBoekhouders:[], nieuweTeams:[] };
+    let fallbackBhId = null;
+    const getFallbackBh = ()=>{
+      if(fallbackBhId) return fallbackBhId;
+      let existing = BOEKHOUDERS.find(b=>b.naam==='Niet toegewezen');
+      if(!existing){ existing = addBoekhouder({naam:'Niet toegewezen'}); report.nieuweBoekhouders.push('Niet toegewezen'); }
+      fallbackBhId = existing.id;
+      return fallbackBhId;
+    };
+
+    rows.forEach(row=>{
+      const naam = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
+      if(!naam){ report.overgeslagen++; return; }
+      const extId = (findField(row,['Id']) || findField(row,['Klantnummer'])||'').trim();
+      const vorm = (findField(row,['Rechtsvorm'])||'').trim();
+      const kvk = (findField(row,['KvK nummer','KVK nummer','Kvk nummer'])||'').trim();
+      const contact = (findField(row,['Contactpersoon'])||findField(row,['Voornaam'])||'').trim();
+      const email = (findField(row,['E-mail','Email'])||'').trim();
+      const tel = (findField(row,['Telefoon'])||'').trim();
+      const txn = parseInt(findField(row,['Onverwerkte banktransacties'])||'0',10)||0;
+      const teamLetter = (findField(row,['Team'])||'').trim();
+      const boekhouderNaam = (findField(row,['Boekhouder'])||'').trim();
+
+      let teamObj = null;
+      if(teamLetter){
+        const teamNaam = 'Team '+teamLetter;
+        teamObj = TEAMS.find(t=>t.naam.toLowerCase()===teamNaam.toLowerCase());
+        if(!teamObj){ teamObj = addTeam({naam:teamNaam}); report.nieuweTeams.push(teamNaam); }
+      }
+      let bhId;
+      if(boekhouderNaam){
+        let bhObj = BOEKHOUDERS.find(b=>b.naam.toLowerCase().trim()===boekhouderNaam.toLowerCase());
+        if(!bhObj){ bhObj = addBoekhouder({naam:boekhouderNaam, team: teamObj?teamObj.id:''}); report.nieuweBoekhouders.push(boekhouderNaam); }
+        else if(teamObj && !bhObj.team){ bhObj.team = teamObj.id; }
+        bhId = bhObj.id;
+      } else {
+        bhId = getFallbackBh();
+      }
+
+      const bestaand = extId ? RAW_KLANTEN.find(k=>k.extId===extId) : null;
+      if(bestaand){
+        bestaand.naam = naam;
+        if(vorm) bestaand.vorm = vorm;
+        if(kvk) bestaand.kvk = kvk;
+        if(contact) bestaand.contact = contact;
+        if(email) bestaand.email = email;
+        if(tel) bestaand.tel = tel;
+        bestaand.bh = bhId;
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        STORE[bestaand.id].txn = txn;
+        STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
+        report.bijgewerkt++;
+      } else {
+        const id = nextId(RAW_KLANTEN,'k');
+        const klant = {
+          id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
+          doetLoonaangifte:false, extId,
+          dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
+        };
+        RAW_KLANTEN.push(klant);
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        report.nieuw++;
+      }
+    });
+
+    persistMeta(); persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+
+    const bhList = [...new Set(report.nieuweBoekhouders)];
+    const teamList = [...new Set(report.nieuweTeams)];
+    const box = document.getElementById('klantImportResult');
+    if(box){
+      box.innerHTML = `<div class="banner">
+        ✅ Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
+        ${bhList.length ? `Nieuwe boekhouders aangemaakt: ${bhList.join(', ')}.<br>` : ''}
+        ${teamList.length ? `Nieuwe teams aangemaakt: ${teamList.join(', ')}.<br>` : ''}
+        Let op: deadlinedata (OB/VPB/LH/JR) zaten niet in dit bestand en zijn dus niet ingevuld — die stel je per klant handmatig in (met eventueel een herhaling).
+      </div>`;
+    }
+    toast(`Import klaar: ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt.`);
+  });
+}
+
+function handleTxnImport(e){
+  const file = e.target.files[0]; if(!file) return;
+  const nameSpan = document.getElementById('txnImportFileName');
+  if(nameSpan) nameSpan.textContent = file.name;
+  readTabularFile(file, (objects, err)=>{
+    if(err){ toast(err); return; }
+    const stats = computeTxnStats(objects);
+    const guessId = guessKlantFromFilename(file.name);
+    const sel = document.getElementById('txnImportKlant');
+    if(sel && !sel.value && guessId) sel.value = guessId;
+    renderTxnPreview(stats, file.name);
+  });
 }
 
 function attachPanelHandlers(klant){
