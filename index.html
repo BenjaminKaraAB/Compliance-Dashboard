@@ -274,7 +274,7 @@ function addKlant(data){
   };
   RAW_KLANTEN.push(klant);
   STORE[id] = {
-    dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, txn:0, sync:new Date().toISOString().slice(0,10),
+    dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
     items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'',
     lh:{ taken: nieuwLhTaken(), log:[] }
   };
@@ -879,6 +879,8 @@ function migrateData(){
         if(f.dl[t] && !f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
       });
       if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+      if(f.saldoDebet===undefined) f.saldoDebet = 0;
+      if(f.saldoCredit===undefined) f.saldoCredit = 0;
     }
   });
 }
@@ -1427,6 +1429,14 @@ function panelHTML(klant){
           <input type="number" step="0.01" id="saldoInput" value="${f.saldo}">
         </div>
         <div class="field-row">
+          <label>— waarvan debet</label>
+          <input type="number" step="0.01" id="saldoDebetInput" value="${f.saldoDebet||0}">
+        </div>
+        <div class="field-row">
+          <label>— waarvan credit</label>
+          <input type="number" step="0.01" id="saldoCreditInput" value="${f.saldoCredit||0}">
+        </div>
+        <div class="field-row">
           <label>Aantal transacties</label>
           <input type="number" id="txnInput" value="${f.txn}">
         </div>
@@ -1923,9 +1933,21 @@ function computeTxnStats(rows){
   if(hasStatusCol){
     relevant = rows.filter(r=> (findField(r,['Status'])||'').toLowerCase().includes('niet verwerkt'));
   }
-  let saldo = 0;
-  relevant.forEach(r=>{ saldo += Math.abs(parseDutchAmount(findField(r,['Bedrag','Amount']))); });
-  return { saldo: Math.round(saldo*100)/100, aantal: relevant.length, totaalRegels: rows.length, hasStatusCol };
+  // Een bedrag mét minteken ervoor is een crediteur (credit), zonder minteken een debiteur (debet) —
+  // deze twee worden apart opgeteld i.p.v. als één absolute som.
+  let debetSaldo = 0, debetAantal = 0, creditSaldo = 0, creditAantal = 0;
+  relevant.forEach(r=>{
+    const bedrag = parseDutchAmount(findField(r,['Bedrag','Amount']));
+    if(bedrag < 0){ creditSaldo += Math.abs(bedrag); creditAantal++; }
+    else { debetSaldo += Math.abs(bedrag); debetAantal++; }
+  });
+  debetSaldo = Math.round(debetSaldo*100)/100;
+  creditSaldo = Math.round(creditSaldo*100)/100;
+  return {
+    debetSaldo, debetAantal, creditSaldo, creditAantal,
+    saldo: Math.round((debetSaldo+creditSaldo)*100)/100,
+    aantal: relevant.length, totaalRegels: rows.length, hasStatusCol
+  };
 }
 function guessKlantFromFilename(filename){
   const base = filename.replace(/\.(csv|xlsx|xls|txt)$/i,'');
@@ -1940,17 +1962,30 @@ function renderTxnPreview(stats, filename){
   box.innerHTML = `
     <div class="banner" style="background:var(--gray-bg); border-color:var(--gray-brd); color:var(--text);">
       <b>${filename}</b>: ${stats.totaalRegels} regel(s) gevonden${stats.hasStatusCol ? `, waarvan ${stats.aantal} met status "Niet verwerkt"` : ' — geen statuskolom gevonden, dus alle regels meegeteld'}.
+      Bedragen zónder minteken tellen als debet, bedragen mét minteken (-) als credit.
     </div>
-    <div class="field-row"><label>Openstaand saldo</label><input type="number" step="0.01" id="txnImportSaldo" value="${stats.saldo}"></div>
+    <div class="field-row"><label>Debet (${stats.debetAantal}x)</label><input type="number" step="0.01" id="txnImportDebet" value="${stats.debetSaldo}"></div>
+    <div class="field-row"><label>Credit (${stats.creditAantal}x)</label><input type="number" step="0.01" id="txnImportCredit" value="${stats.creditSaldo}"></div>
+    <div class="field-row"><label>Totaal saldo</label><input type="number" step="0.01" id="txnImportSaldo" value="${stats.saldo}"></div>
     <div class="field-row"><label>Aantal transacties</label><input type="number" id="txnImportAantal" value="${stats.aantal}"></div>
     <button class="btn sm primary" data-apply-txn-import>Toepassen op klant</button>
   `;
+  const debetInput = box.querySelector('#txnImportDebet');
+  const creditInput = box.querySelector('#txnImportCredit');
+  const saldoInput = box.querySelector('#txnImportSaldo');
+  const recalc = ()=>{ if(saldoInput) saldoInput.value = Math.round(((parseFloat(debetInput.value)||0)+(parseFloat(creditInput.value)||0))*100)/100; };
+  if(debetInput) debetInput.addEventListener('input', recalc);
+  if(creditInput) creditInput.addEventListener('input', recalc);
   const btn = box.querySelector('[data-apply-txn-import]');
   if(btn) btn.addEventListener('click', ()=>{
     const klantId = document.getElementById('txnImportKlant').value;
     if(!klantId){ toast('Kies eerst een klant.'); return; }
+    const debet = parseFloat(document.getElementById('txnImportDebet').value)||0;
+    const credit = parseFloat(document.getElementById('txnImportCredit').value)||0;
     const saldo = parseFloat(document.getElementById('txnImportSaldo').value)||0;
     const aantal = parseInt(document.getElementById('txnImportAantal').value)||0;
+    STORE[klantId].saldoDebet = debet;
+    STORE[klantId].saldoCredit = credit;
     STORE[klantId].saldo = saldo;
     STORE[klantId].txn = aantal;
     STORE[klantId].sync = new Date().toISOString().slice(0,10);
@@ -2018,7 +2053,7 @@ function handleKlantenCSVUpload(e){
         if(email) bestaand.email = email;
         if(tel) bestaand.tel = tel;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -2030,7 +2065,7 @@ function handleKlantenCSVUpload(e){
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
         report.nieuw++;
       }
     });
@@ -2122,6 +2157,8 @@ function attachPanelHandlers(klant){
   const saveFin = document.querySelector('[data-save-financieel]');
   if(saveFin) saveFin.addEventListener('click', ()=>{
     STORE[klant.id].saldo = parseFloat(document.getElementById('saldoInput').value)||0;
+    STORE[klant.id].saldoDebet = parseFloat(document.getElementById('saldoDebetInput').value)||0;
+    STORE[klant.id].saldoCredit = parseFloat(document.getElementById('saldoCreditInput').value)||0;
     STORE[klant.id].txn = parseInt(document.getElementById('txnInput').value)||0;
     persist(); toast('Financiële gegevens opgeslagen.'); refreshPanel(klant);
   });
