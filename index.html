@@ -398,7 +398,8 @@ const SYNC_KEY = 'compliance_dashboard_sync_v1';
 let SYNC = {
   clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
   enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null,
-  adminEmails:['benjamin@administratiebox.nl']
+  adminEmails:['benjamin@administratiebox.nl'],
+  lhBevoegdeBhIds:[]
 };
 let msalInstance = null;
 let msalInitPromise = null;
@@ -418,6 +419,18 @@ function isAdmin(){
   if(!SYNC.account || !SYNC.account.username) return false;
   const list = (SYNC.adminEmails||[]).map(e=>e.toLowerCase().trim());
   return list.includes(SYNC.account.username.toLowerCase());
+}
+function huidigeBoekhouder(){
+  if(!SYNC.account) return null;
+  const uname = (SYNC.account.username||'').trim().toLowerCase();
+  const naam = (SYNC.account.name||'').trim().toLowerCase();
+  return BOEKHOUDERS.find(b => (b.email && b.email.trim().toLowerCase()===uname) || (b.naam && b.naam.trim().toLowerCase()===naam)) || null;
+}
+function magLhBewerken(){
+  if(isAdmin()) return true;
+  if(!SYNC.lhBevoegdeBhIds || !SYNC.lhBevoegdeBhIds.length) return true; // niet ingesteld door beheerder = geen restrictie
+  const huidige = huidigeBoekhouder();
+  return !!(huidige && SYNC.lhBevoegdeBhIds.includes(huidige.id));
 }
 
 /* MSAL v3 vereist dat initialize() wordt aangeroepen en afgewacht vóórdat andere MSAL-API's gebruikt
@@ -874,15 +887,32 @@ function advanceDate(datum, herhaling){
 function completeLhPeriode(klant, door){
   const f = STORE[klant.id];
   const entry = f.dl.LH;
+  const logEntry = {id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), actie:'periode-afgerond', door};
   if(entry && !entry.na){
+    logEntry.voorgaandeDatum = entry.datum;
+    logEntry.voorgaandeStatus = entry.status===undefined ? null : entry.status;
     const herh = entry.herhaling || 'geen';
     if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
     else { entry.status = 'ingediend'; }
   }
   if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
-  f.lh.log.push({ts:new Date().toISOString(), actie:'periode-afgerond', door});
+  f.lh.log.push(logEntry);
   f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
   persist();
+}
+function verwijderLhLogEntry(klant, logId){
+  const f = STORE[klant.id];
+  if(!f || !f.lh || !f.lh.log) return false;
+  const idx = f.lh.log.findIndex(l=>l.id===logId);
+  if(idx===-1) return false;
+  const entry = f.lh.log[idx];
+  if(entry.actie==='periode-afgerond' && entry.voorgaandeDatum!==undefined){
+    const dl = f.dl.LH;
+    if(dl && !dl.na){ dl.datum = entry.voorgaandeDatum; dl.status = entry.voorgaandeStatus!==undefined ? entry.voorgaandeStatus : null; }
+  }
+  f.lh.log.splice(idx,1);
+  persist();
+  return true;
 }
 function migrateData(){
   RAW_KLANTEN.forEach(k=>{
@@ -903,6 +933,9 @@ function migrateData(){
             delete t.notitie;
           }
         });
+      }
+      if(f.lh && f.lh.log){
+        f.lh.log.forEach(l=>{ if(!l.id) l.id = 'log'+Date.now()+Math.floor(Math.random()*10000); });
       }
       if(f.saldoDebet===undefined) f.saldoDebet = 0;
       if(f.saldoCredit===undefined) f.saldoCredit = 0;
@@ -1273,13 +1306,14 @@ function bulkSetLhDeadlines(klantList){
 function loonheffingKlantDetailHTML(k){
   const f = STORE[k.id];
   if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+  const bewerkbaar = magLhBewerken();
   const doneCount = f.lh.taken.filter(t=>t.done).length;
   const lhEntry = effDL(k,'LH');
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
     const noteItems = notes.map(n=>{
       const editKey = `${k.id}|${idx}|${n.id}`;
-      if(STATE.lhEditNote === editKey){
+      if(bewerkbaar && STATE.lhEditNote === editKey){
         return `<div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
           <input type="text" data-lh-note-edit-input="${editKey}" value="${(n.tekst||'').replace(/"/g,'&quot;')}" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
           <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
@@ -1291,25 +1325,25 @@ function loonheffingKlantDetailHTML(k){
           <div style="word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
           <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
         </div>
-        <div style="display:flex; gap:3px; flex-shrink:0;">
+        ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
           <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;">✎</button>
           <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);">🗑</button>
-        </div>
+        </div>` : ''}
       </div>`;
     }).join('');
     return `<div style="margin-top:4px;">
       ${noteItems}
-      <div style="display:flex; gap:6px; margin-top:6px;">
+      ${bewerkbaar ? `<div style="display:flex; gap:6px; margin-top:6px;">
         <input type="text" data-lh-note-new="${k.id}|${idx}" placeholder="Nieuwe aantekening…" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
         <button class="btn sm" data-lh-note-add="${k.id}|${idx}">+ Toevoegen</button>
-      </div>
+      </div>` : ''}
     </div>`;
   };
   const taakRows = f.lh.taken.map((t,idx)=>{
     const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
     return `
     <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap; ${kleur?`border-left:4px solid ${kleur}; background:${kleur}14; padding-left:8px; border-radius:6px;`:''}">
-      <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''}>
+      <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''} ${bewerkbaar?'':'disabled'}>
       <div style="flex:1; min-width:220px;">
         <label>${t.naam}</label>
         ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span>✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
@@ -1328,6 +1362,7 @@ function loonheffingKlantDetailHTML(k){
     return l.actie;
   };
   return `
+    ${!bewerkbaar ? `<div class="banner" style="margin-bottom:12px;">🔒 Je hebt geen bewerkrechten voor Loonheffingen. Vraag een beheerder om je toe te voegen bij Instellingen → Bevoegdheid Loonheffingen.</div>` : ''}
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
@@ -1335,13 +1370,16 @@ function loonheffingKlantDetailHTML(k){
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0;">
         <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
-        <button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>
+        ${bewerkbaar ? `<button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>` : ''}
       </div>
     </div>
     ${taakRows}
     <div class="rem-log" style="margin-top:14px;">
       <b style="font-size:12px;">Recente activiteit</b>
-      ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item">📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
+      ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <span>📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+        ${bewerkbaar && l.id ? `<button class="btn sm ghost" title="Verwijderen uit logboek" data-lh-log-delete="${k.id}|${l.id}" style="padding:2px 6px; color:var(--red); flex-shrink:0;">🗑</button>` : ''}
+      </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
     </div>`;
 }
 function loonheffingOverzichtHTML(list){
@@ -1387,12 +1425,14 @@ function loonheffingOverzichtHTML(list){
 }
 function loonheffingHTML(){
   const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+  const bewerkbaar = magLhBewerken();
   const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id);
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
 
   return `
   <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
-  <div class="section" style="margin-bottom:18px;">
+  ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">🔒 Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
+  ${bewerkbaar ? `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
       <h3>Klanten loonheffingen importeren</h3>
       <span class="hint">Uit het salarisadministratie-Excel-bestand</span>
@@ -1406,7 +1446,7 @@ function loonheffingHTML(){
         <span class="hint" style="margin-left:8px;">Zet de deadline van alle ${list.length} loonheffing-klant(en) in één keer op ${fmtDate(volgendeMaandTweedeWeek())}</span>
       </div>
     </div>
-  </div>
+  </div>` : ''}
   ${legend}
   ${loonheffingOverzichtHTML(list)}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
@@ -1453,6 +1493,25 @@ function instellingenHTML(){
       </div>
     </div>
   </div>
+
+  ${isAdmin() ? `<div class="section">
+    <div class="section-head">
+      <h3>Bevoegdheid Loonheffingen</h3>
+      <span class="hint">Alleen zichtbaar voor beheerders</span>
+    </div>
+    <div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
+      ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
+          <input type="checkbox" data-lh-access-check value="${b.id}" ${(SYNC.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
+          <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
+          ${b.naam}${b.email? ' · '+b.email : ''}
+        </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
+      <div style="margin-top:10px;">
+        <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
+      </div>
+    </div>
+  </div>` : ''}
 
   <div class="section">
     <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
@@ -1989,6 +2048,7 @@ function attachHandlers(){
   if(bulkTxnImportFiles) bulkTxnImportFiles.addEventListener('change', handleBulkTxnImport);
 
   document.querySelectorAll('[data-lh-toggle]').forEach(el=>el.addEventListener('change',(e)=>{
+    if(!magLhBewerken()) return;
     const [klantId, idxStr] = el.getAttribute('data-lh-toggle').split('|');
     const idx = +idxStr;
     const checked = e.target.checked;
@@ -1998,11 +2058,12 @@ function attachHandlers(){
     f.lh.taken[idx].done = checked;
     f.lh.taken[idx].door = checked ? door : null;
     f.lh.taken[idx].ts = checked ? new Date().toISOString() : null;
-    f.lh.log.push({ts:new Date().toISOString(), taak:f.lh.taken[idx].naam, actie: checked?'afgevinkt':'uitgevinkt', door});
+    f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:f.lh.taken[idx].naam, actie: checked?'afgevinkt':'uitgevinkt', door});
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-note-add]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
     const [klantId, idxStr] = el.getAttribute('data-lh-note-add').split('|');
     const idx = +idxStr;
     const input = document.querySelector(`[data-lh-note-new="${klantId}|${idxStr}"]`);
@@ -2014,11 +2075,12 @@ function attachHandlers(){
     if(!t.aantekeningen) t.aantekeningen = [];
     const door = huidigeGebruiker();
     t.aantekeningen.push({id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst, door, ts:new Date().toISOString()});
-    f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-toegevoegd', door});
+    f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-toegevoegd', door});
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-note-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
     STATE.lhEditNote = el.getAttribute('data-lh-note-edit');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -2027,6 +2089,7 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-note-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
     const key = el.getAttribute('data-lh-note-save');
     const [klantId, idxStr, noteId] = key.split('|');
     const idx = +idxStr;
@@ -2038,13 +2101,14 @@ function attachHandlers(){
     const note = (t.aantekeningen||[]).find(n=>n.id===noteId);
     if(note){
       note.tekst = tekst; note.door = huidigeGebruiker(); note.ts = new Date().toISOString();
-      f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-bewerkt', door:huidigeGebruiker()});
+      f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-bewerkt', door:huidigeGebruiker()});
     }
     STATE.lhEditNote = null;
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-note-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
     const key = el.getAttribute('data-lh-note-delete');
     const [klantId, idxStr, noteId] = key.split('|');
     const idx = +idxStr;
@@ -2052,12 +2116,33 @@ function attachHandlers(){
     const f = STORE[klantId];
     const t = f.lh.taken[idx];
     t.aantekeningen = (t.aantekeningen||[]).filter(n=>n.id!==noteId);
-    f.lh.log.push({ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-verwijderd', door:huidigeGebruiker()});
+    f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-verwijderd', door:huidigeGebruiker()});
     if(STATE.lhEditNote===key) STATE.lhEditNote = null;
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-lh-log-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const [klantId, logId] = el.getAttribute('data-lh-log-delete').split('|');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm('Dit logboek-item verwijderen? Als het een afgeronde periode betreft, wordt de LH-deadline ook teruggezet naar de datum van vóór het afronden.')) return;
+    verwijderLhLogEntry(klant, logId);
+    toast('Logboek-item verwijderd.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-save-lh-access]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const checks = document.querySelectorAll('[data-lh-access-check]');
+    const ids = [];
+    checks.forEach(c=>{ if(c.checked) ids.push(c.getAttribute('value')); });
+    SYNC.lhBevoegdeBhIds = ids;
+    persistSync();
+    toast('Bevoegdheid opgeslagen.');
+    render();
+  }));
   document.querySelectorAll('[data-lh-complete]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!magLhBewerken()) return;
     const klantId = el.getAttribute('data-lh-complete');
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     if(!klant) return;
@@ -2073,6 +2158,7 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-bulk-deadline]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!magLhBewerken()) return;
     const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
     if(!list.length){ toast('Geen klanten met loonaangifte gemarkeerd.'); return; }
     const datum = volgendeMaandTweedeWeek();
