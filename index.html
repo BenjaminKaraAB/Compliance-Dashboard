@@ -724,7 +724,7 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null };
 
 /* ============================= ICONS ============================= */
 const ICONS = {
@@ -1255,33 +1255,128 @@ function aanleveringHTML(){
 }
 
 /* ============================= VIEW: LOONHEFFINGEN ============================= */
+function volgendeMaandTweedeWeek(){
+  const d = new Date(TODAY.getFullYear(), TODAY.getMonth()+1, 14);
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function bulkSetLhDeadlines(klantList){
+  const datum = volgendeMaandTweedeWeek();
+  klantList.forEach(k=>{
+    const f = STORE[k.id];
+    if(!f) return;
+    f.dl.LH = { datum, status:null, herhaling:'maandelijks' };
+  });
+  persist();
+  return datum;
+}
+function loonheffingKlantDetailHTML(k){
+  const f = STORE[k.id];
+  if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+  const doneCount = f.lh.taken.filter(t=>t.done).length;
+  const lhEntry = effDL(k,'LH');
+  const aantekeningenHTML = (t, idx)=>{
+    const notes = t.aantekeningen || [];
+    const noteItems = notes.map(n=>{
+      const editKey = `${k.id}|${idx}|${n.id}`;
+      if(STATE.lhEditNote === editKey){
+        return `<div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
+          <input type="text" data-lh-note-edit-input="${editKey}" value="${(n.tekst||'').replace(/"/g,'&quot;')}" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+          <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
+          <button class="btn sm ghost" data-lh-note-cancel="${editKey}">Annuleren</button>
+        </div>`;
+      }
+      return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:5px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:400px;">
+        <div style="font-size:11.5px; min-width:0;">
+          <div style="word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
+          <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+        </div>
+        <div style="display:flex; gap:3px; flex-shrink:0;">
+          <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;">✎</button>
+          <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div style="margin-top:4px;">
+      ${noteItems}
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <input type="text" data-lh-note-new="${k.id}|${idx}" placeholder="Nieuwe aantekening…" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+        <button class="btn sm" data-lh-note-add="${k.id}|${idx}">+ Toevoegen</button>
+      </div>
+    </div>`;
+  };
+  const taakRows = f.lh.taken.map((t,idx)=>{
+    const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
+    return `
+    <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap; ${kleur?`border-left:4px solid ${kleur}; background:${kleur}14; padding-left:8px; border-radius:6px;`:''}">
+      <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''}>
+      <div style="flex:1; min-width:220px;">
+        <label>${t.naam}</label>
+        ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span>✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        ${aantekeningenHTML(t, idx)}
+      </div>
+    </div>`;
+  }).join('');
+  const recentLog = f.lh.log.slice().reverse().slice(0,5);
+  const logLine = (l)=>{
+    if(l.actie==='periode-afgerond') return 'rondde de periode af';
+    if(l.actie==='afgevinkt') return `vinkte "${l.taak}" af`;
+    if(l.actie==='uitgevinkt') return `haalde het vinkje van "${l.taak}" af`;
+    if(l.actie==='aantekening-toegevoegd') return `voegde een aantekening toe bij "${l.taak}"`;
+    if(l.actie==='aantekening-bewerkt') return `bewerkte een aantekening bij "${l.taak}"`;
+    if(l.actie==='aantekening-verwijderd') return `verwijderde een aantekening bij "${l.taak}"`;
+    return l.actie;
+  };
+  return `
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+      <div>
+        <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
+        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
+      </div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
+        <button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>
+      </div>
+    </div>
+    ${taakRows}
+    <div class="rem-log" style="margin-top:14px;">
+      <b style="font-size:12px;">Recente activiteit</b>
+      ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item">📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
+    </div>`;
+}
 function loonheffingOverzichtHTML(list){
   if(!list.length) return '';
   const jaarNu = TODAY.getFullYear();
+  const kolomAantal = 4 + LH_TAKEN.length;
   const rijen = list.map((k,i)=>{
     const f = STORE[k.id];
     if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
     const lhEntry = effDL(k,'LH');
     const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
+    const expanded = STATE.lhExpandedKlant === k.id;
     const taakCellen = f.lh.taken.map(t=>{
       const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
       const titel = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
       return `<td style="text-align:center;" title="${titel.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
     }).join('');
-    return `<tr class="row-click" data-open-klant="${k.id}">
-      <td style="color:var(--muted);">${i+1}</td>
+    const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:#f7f9fd;':''}">
+      <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
       <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
     </tr>`;
+    const detailRij = expanded ? `<tr><td colspan="${kolomAantal}" style="background:#fbfcfe; padding:16px 20px; border-bottom:1px solid var(--border);">${loonheffingKlantDetailHTML(k)}</td></tr>` : '';
+    return hoofdRij + detailRij;
   }).join('');
   const taakHeaders = LH_TAKEN.map((naam,idx)=>`<th style="text-align:center;" title="${naam.replace(/"/g,'&quot;')}">${idx+1}</th>`).join('');
+  const taakLegenda = LH_TAKEN.map((naam,idx)=>`<span style="margin-right:14px;"><b>${idx+1}.</b> ${naam}</span>`).join('');
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
-      <h3>Overzicht alle werkgevers</h3>
-      <span class="hint">Zoals de statuslijst per werkgever — 1 rij per klant, bolletje = afgerond (kleur = door wie)</span>
+      <h3>Overzicht alle werkgevers — ${TODAY.toLocaleDateString('nl-NL',{month:'long', year:'numeric'})}</h3>
+      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken</span>
     </div>
+    <div style="padding:12px 20px 0; font-size:11px; color:var(--muted); line-height:1.8;">${taakLegenda}</div>
     <div class="section-body" style="overflow-x:auto;">
       <table>
         <thead><tr><th>Nr.</th><th>Werkgever</th>${taakHeaders}<th style="text-align:center;">Periodes ${jaarNu}</th><th>Volgende deadline</th></tr></thead>
@@ -1292,86 +1387,11 @@ function loonheffingOverzichtHTML(list){
 }
 function loonheffingHTML(){
   const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
-  const rows = list.map(k=>{
-    const f = STORE[k.id];
-    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
-    const doneCount = f.lh.taken.filter(t=>t.done).length;
-    const lhEntry = effDL(k,'LH');
-    const aantekeningenHTML = (t, idx)=>{
-      const notes = t.aantekeningen || [];
-      const noteItems = notes.map(n=>{
-        const editKey = `${k.id}|${idx}|${n.id}`;
-        if(STATE.lhEditNote === editKey){
-          return `<div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
-            <input type="text" data-lh-note-edit-input="${editKey}" value="${(n.tekst||'').replace(/"/g,'&quot;')}" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
-            <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
-            <button class="btn sm ghost" data-lh-note-cancel="${editKey}">Annuleren</button>
-          </div>`;
-        }
-        return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:5px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:400px;">
-          <div style="font-size:11.5px; min-width:0;">
-            <div style="word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
-            <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
-          </div>
-          <div style="display:flex; gap:3px; flex-shrink:0;">
-            <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;">✎</button>
-            <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);">🗑</button>
-          </div>
-        </div>`;
-      }).join('');
-      return `<div style="margin-top:4px;">
-        ${noteItems}
-        <div style="display:flex; gap:6px; margin-top:6px;">
-          <input type="text" data-lh-note-new="${k.id}|${idx}" placeholder="Nieuwe aantekening…" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
-          <button class="btn sm" data-lh-note-add="${k.id}|${idx}">+ Toevoegen</button>
-        </div>
-      </div>`;
-    };
-    const taakRows = f.lh.taken.map((t,idx)=>{
-      const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
-      return `
-      <div class="checklist-item ${t.done?'done':''}" style="align-items:flex-start; flex-wrap:wrap; ${kleur?`border-left:4px solid ${kleur}; background:${kleur}14; padding-left:8px; border-radius:6px;`:''}">
-        <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''}>
-        <div style="flex:1; min-width:220px;">
-          <label>${t.naam}</label>
-          ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span>✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
-          ${aantekeningenHTML(t, idx)}
-        </div>
-      </div>`;
-    }).join('');
-    const recentLog = f.lh.log.slice().reverse().slice(0,5);
-    const logLine = (l)=>{
-      if(l.actie==='periode-afgerond') return 'rondde de periode af';
-      if(l.actie==='afgevinkt') return `vinkte "${l.taak}" af`;
-      if(l.actie==='uitgevinkt') return `haalde het vinkje van "${l.taak}" af`;
-      if(l.actie==='aantekening-toegevoegd') return `voegde een aantekening toe bij "${l.taak}"`;
-      if(l.actie==='aantekening-bewerkt') return `bewerkte een aantekening bij "${l.taak}"`;
-      if(l.actie==='aantekening-verwijderd') return `verwijderde een aantekening bij "${l.taak}"`;
-      return l.actie;
-    };
-    return `<div class="section" style="margin-bottom:18px;">
-      <div class="section-head">
-        <div>
-          <h3>${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></h3>
-          <span class="hint">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</span>
-        </div>
-        <button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>
-      </div>
-      <div class="section-body pad">
-        ${taakRows}
-        <div class="rem-log" style="margin-top:14px;">
-          <b style="font-size:12px;">Recente activiteit</b>
-          ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item">📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
   const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id);
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
 
   return `
-  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Elke actie (afvinken/uitvinken/periode afronden) wordt gelogd met naam en tijdstip — zo zien jullie elkaars voortgang, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
+  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
   <div class="section" style="margin-bottom:18px;">
     <div class="section-head">
       <h3>Klanten loonheffingen importeren</h3>
@@ -1381,11 +1401,15 @@ function loonheffingHTML(){
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px;">Upload het "verwerken salarisadministratie"-bestand (Excel). Werkgevers die daarin voorkomen worden gematcht op naam met bestaande klanten en krijgen automatisch het vinkje "Wij doen de loonaangifte" aan. Er worden geen nieuwe klanten aangemaakt — namen die niet gevonden worden, komen in een lijst te staan.</p>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Excel-bestand kiezen<input type="file" id="lhKlantenImportFile" accept=".xlsx,.xls" style="display:none;"></label>
       <div id="lhKlantenImportResult" style="margin-top:12px;"></div>
+      <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+        <button class="btn sm" data-lh-bulk-deadline>📅 LH-deadline bulk bijwerken (2e week volgende maand)</button>
+        <span class="hint" style="margin-left:8px;">Zet de deadline van alle ${list.length} loonheffing-klant(en) in één keer op ${fmtDate(volgendeMaandTweedeWeek())}</span>
+      </div>
     </div>
   </div>
-  ${loonheffingOverzichtHTML(list)}
   ${legend}
-  ${list.length ? rows : `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>`}`;
+  ${loonheffingOverzichtHTML(list)}
+  ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
 /* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
@@ -2040,6 +2064,21 @@ function attachHandlers(){
     if(!confirm(`Periode afronden voor "${klant.naam}"? Alle taken worden gereset voor de volgende periode en de LH-deadline schuift door indien een herhaling is ingesteld.`)) return;
     completeLhPeriode(klant, huidigeGebruiker());
     toast('Periode afgerond voor '+klant.naam);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-toggle-detail]').forEach(el=>el.addEventListener('click', (e)=>{
+    if(e.target.closest('button') || e.target.closest('input')) return;
+    const klantId = el.getAttribute('data-lh-toggle-detail');
+    STATE.lhExpandedKlant = (STATE.lhExpandedKlant === klantId) ? null : klantId;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-bulk-deadline]').forEach(el=>el.addEventListener('click', ()=>{
+    const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+    if(!list.length){ toast('Geen klanten met loonaangifte gemarkeerd.'); return; }
+    const datum = volgendeMaandTweedeWeek();
+    if(!confirm(`LH-deadline van alle ${list.length} loonheffing-klant(en) instellen op ${fmtDate(datum)} (2e week volgende maand)? Overschrijft de huidige LH-deadline per klant.`)) return;
+    bulkSetLhDeadlines(list);
+    toast(`LH-deadline bijgewerkt voor ${list.length} klant(en) → ${fmtDate(datum)}.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
 
