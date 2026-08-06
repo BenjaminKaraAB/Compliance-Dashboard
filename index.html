@@ -229,6 +229,10 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
    knoppen in het dashboard, of koppel de Microsoft-sync (zie Instellingen) om echte data op te halen. */
 let BOEKHOUDERS = [];
 let TEAMS = [];
+/* Rechten (wie is beheerder, wie mag Loonheffingen bewerken) horen bij de GEDEELDE data — niet bij de
+   lokale SYNC-instellingen — zodat een wijziging door de beheerder ook echt bij collega's doorkomt zodra
+   zij synchroniseren. Voorheen stonden deze velden per ongeluk alleen lokaal in de browser. */
+let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[] };
 
 function d(offsetDays){ const dt=new Date(TODAY); dt.setDate(dt.getDate()+offsetDays); return dt.toISOString().slice(0,10); }
 function DL(datum, status=null){ return {datum, status}; }
@@ -246,11 +250,12 @@ function loadMeta(){
       if(parsed.boekhouders && parsed.boekhouders.length) BOEKHOUDERS = parsed.boekhouders;
       if(parsed.klanten && parsed.klanten.length) RAW_KLANTEN = parsed.klanten;
       if(parsed.teams && parsed.teams.length) TEAMS = parsed.teams;
+      if(parsed.rechten) RECHTEN = Object.assign({}, RECHTEN, parsed.rechten);
     }
   }catch(e){}
 }
 function persistMeta(){
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN})); }catch(e){}
   pushRemoteDebounced();
 }
 loadMeta();
@@ -263,6 +268,7 @@ function addKlant(data){
     id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
+    heeftDga: !!data.heeftDga,
     extId: data.extId || '',
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
@@ -276,7 +282,7 @@ function addKlant(data){
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
     items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'',
-    lh:{ taken: nieuwLhTaken(), log:[] }
+    lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   persistMeta(); persist();
   return klant;
@@ -397,9 +403,7 @@ function persist(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE));
 const SYNC_KEY = 'compliance_dashboard_sync_v1';
 let SYNC = {
   clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
-  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null,
-  adminEmails:['benjamin@administratiebox.nl'],
-  lhBevoegdeBhIds:[]
+  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null
 };
 let msalInstance = null;
 let msalInitPromise = null;
@@ -417,7 +421,7 @@ function persistSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)
 
 function isAdmin(){
   if(!SYNC.account || !SYNC.account.username) return false;
-  const list = (SYNC.adminEmails||[]).map(e=>e.toLowerCase().trim());
+  const list = (RECHTEN.adminEmails||[]).map(e=>e.toLowerCase().trim());
   return list.includes(SYNC.account.username.toLowerCase());
 }
 function huidigeBoekhouder(){
@@ -428,9 +432,9 @@ function huidigeBoekhouder(){
 }
 function magLhBewerken(){
   if(isAdmin()) return true;
-  if(!SYNC.lhBevoegdeBhIds || !SYNC.lhBevoegdeBhIds.length) return true; // niet ingesteld door beheerder = geen restrictie
+  if(!RECHTEN.lhBevoegdeBhIds || !RECHTEN.lhBevoegdeBhIds.length) return true; // niet ingesteld door beheerder = geen restrictie
   const huidige = huidigeBoekhouder();
-  return !!(huidige && SYNC.lhBevoegdeBhIds.includes(huidige.id));
+  return !!(huidige && RECHTEN.lhBevoegdeBhIds.includes(huidige.id));
 }
 
 /* MSAL v3 vereist dat initialize() wordt aangeroepen en afgewacht vóórdat andere MSAL-API's gebruikt
@@ -539,7 +543,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList();
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     });
@@ -561,8 +565,9 @@ async function fetchRemoteAndMerge(showFeedback){
       RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
       TEAMS = json.teams && json.teams.length ? json.teams : TEAMS;
       STORE = json.store || STORE;
+      RECHTEN = json.rechten ? Object.assign({}, RECHTEN, json.rechten) : RECHTEN;
       migrateData();
-      try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS})); }catch(e){}
+      try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN})); }catch(e){}
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
       SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
       if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()) render(); else updateSyncIndicator();
@@ -847,13 +852,40 @@ function allDeadlineRows(){
 }
 const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
 const GEEN_VPB_VORMEN = ['Eenmanszaak','V.O.F.','VOF','Maatschap'];
-const LH_TAKEN = [
-  'Salarissen verwerken',
-  'Salaris- en betaallijst dossier werkgever',
-  'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)',
-  'LJP dossier (Loondossier, dossier AB, uploaden in AB)'
+/* Wel-DGA en geen-DGA klanten volgen een andere takenlijst en ander tijdsvenster (zoals in het
+   salarisadministratie-Excel-bestand). De aangifte-/LJP-taken vallen voor beide groepen uiterlijk in de
+   2e week van de eerstvolgende maand (dag 14) — dat is ook de datum die de LH-deadline/bulkbewerking
+   gebruikt. Het venster hierbeneden is puur informatief (hint-tekst per taak). */
+const LH_TAKEN_DGA = [
+  {naam:'Salarissen verwerken', hint:'Tussen de 10e en 25e van de huidige maand'},
+  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 10e en 25e van de huidige maand'},
+  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'},
+  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'}
 ];
-function nieuwLhTaken(){ return LH_TAKEN.map(naam=>({naam, done:false, door:null, ts:null, aantekeningen:[]})); }
+const LH_TAKEN_GEEN_DGA = [
+  {naam:'Salarissen verwerken', hint:'Tussen de 20e en 30e van de huidige maand'},
+  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 20e en 30e van de huidige maand'},
+  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
+  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
+  {naam:'Salarisdossier werknemer', hint:'Geen vaste deadline — pas aanleveren zodra de werkgever heeft betaald'}
+];
+function lhTakenDefinitie(heeftDga){ return heeftDga ? LH_TAKEN_DGA : LH_TAKEN_GEEN_DGA; }
+function nieuwLhTaken(heeftDga){ return lhTakenDefinitie(heeftDga).map(t=>({naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]})); }
+/* Zorgt dat f.lh.taken altijd exact overeenkomt met de takenlijst die bij klant.heeftDga hoort (zowel
+   qua aantal als volgorde), zodat de rij-index die in de checkbox/aantekening-handlers wordt gebruikt
+   (data-lh-toggle="klantId|idx") altijd naar de juiste taak wijst. Bestaande voortgang/aantekeningen
+   worden op naam gematcht en dus behouden; alleen echt ontbrekende taken worden nieuw aangemaakt. */
+function syncLhTaken(klant){
+  const f = STORE[klant.id];
+  if(!f) return null;
+  if(!f.lh) f.lh = { taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' };
+  if(f.lh.volgendeMaandNotitie===undefined) f.lh.volgendeMaandNotitie = '';
+  if(!f.lh.log) f.lh.log = [];
+  const definitie = lhTakenDefinitie(klant.heeftDga);
+  const bestaand = f.lh.taken || [];
+  f.lh.taken = definitie.map(t => bestaand.find(x=>x.naam===t.naam) || {naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]});
+  return f;
+}
 function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
 function isTypingInField(){
   const el = document.activeElement;
@@ -885,7 +917,7 @@ function advanceDate(datum, herhaling){
   return `${y}-${m}-${day}`;
 }
 function completeLhPeriode(klant, door){
-  const f = STORE[klant.id];
+  const f = syncLhTaken(klant);
   const entry = f.dl.LH;
   const logEntry = {id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), actie:'periode-afgerond', door};
   if(entry && !entry.na){
@@ -895,7 +927,6 @@ function completeLhPeriode(klant, door){
     if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
     else { entry.status = 'ingediend'; }
   }
-  if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
   f.lh.log.push(logEntry);
   f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
   persist();
@@ -917,6 +948,7 @@ function verwijderLhLogEntry(klant, logId){
 function migrateData(){
   RAW_KLANTEN.forEach(k=>{
     if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
+    if(k.heeftDga===undefined) k.heeftDga=false;
     ['OB','VPB','LH','JR'].forEach(t=>{
       if(k.dl[t] && !k.dl[t].na && k.dl[t].herhaling===undefined) k.dl[t].herhaling='geen';
     });
@@ -925,7 +957,7 @@ function migrateData(){
       ['OB','VPB','LH','JR'].forEach(t=>{
         if(f.dl[t] && !f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
       });
-      if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+      syncLhTaken(k);
       if(f.lh && f.lh.taken){
         f.lh.taken.forEach(t=>{
           if(t.aantekeningen===undefined){
@@ -1304,11 +1336,32 @@ function bulkSetLhDeadlines(klantList){
   return datum;
 }
 function loonheffingKlantDetailHTML(k){
-  const f = STORE[k.id];
-  if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+  const f = syncLhTaken(k);
   const bewerkbaar = magLhBewerken();
   const doneCount = f.lh.taken.filter(t=>t.done).length;
   const lhEntry = effDL(k,'LH');
+  const volgendeMaandNotitieHTML = (()=>{
+    const huidigeTekst = f.lh.volgendeMaandNotitie || '';
+    if(STATE.lhEditNote === `volgendemaand|${k.id}`){
+      return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
+        <textarea data-lh-volgendemaand-input="${k.id}" rows="2" placeholder="Notitie voor volgende maand…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <button class="btn sm primary" data-lh-volgendemaand-save="${k.id}">Opslaan</button>
+          <button class="btn sm ghost" data-lh-volgendemaand-cancel="${k.id}">Annuleren</button>
+        </div>
+      </div>`;
+    }
+    if(huidigeTekst){
+      return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:#fff8e1; border:1px solid #f0d98c; border-radius:6px; max-width:420px;">
+        <div style="font-size:11.5px; min-width:0;"><span style="margin-right:4px;">⭐</span>${huidigeTekst.replace(/</g,'&lt;')}</div>
+        ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
+          <button class="btn sm ghost" title="Bewerken" data-lh-volgendemaand-edit="${k.id}" style="padding:3px 7px;">✎</button>
+          <button class="btn sm ghost" title="Verwijderen" data-lh-volgendemaand-delete="${k.id}" style="padding:3px 7px; color:var(--red);">🗑</button>
+        </div>` : ''}
+      </div>`;
+    }
+    return bewerkbaar ? `<button class="btn sm ghost" data-lh-volgendemaand-edit="${k.id}" style="margin-top:6px;">+ Notitie voor volgende maand</button>` : '';
+  })();
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
     const noteItems = notes.map(n=>{
@@ -1366,7 +1419,8 @@ function loonheffingKlantDetailHTML(k){
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
-        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${LH_TAKEN.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
+        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
+        ${volgendeMaandNotitieHTML}
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0;">
         <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
@@ -1382,24 +1436,26 @@ function loonheffingKlantDetailHTML(k){
       </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
     </div>`;
 }
-function loonheffingOverzichtHTML(list){
+function loonheffingOverzichtHTML(list, heeftDga, titel){
   if(!list.length) return '';
   const jaarNu = TODAY.getFullYear();
-  const kolomAantal = 4 + LH_TAKEN.length;
-  const rijen = list.map((k,i)=>{
-    const f = STORE[k.id];
-    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+  const takenDef = lhTakenDefinitie(heeftDga);
+  const kolomAantal = 4 + takenDef.length; // Nr. + Werkgever + taken + Periodes + Volgende deadline
+  const gesorteerd = list.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  const rijen = gesorteerd.map((k,i)=>{
+    const f = syncLhTaken(k);
     const lhEntry = effDL(k,'LH');
     const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
     const expanded = STATE.lhExpandedKlant === k.id;
+    const heeftVolgendeMaandNotitie = !!(f.lh.volgendeMaandNotitie && f.lh.volgendeMaandNotitie.trim());
     const taakCellen = f.lh.taken.map(t=>{
       const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
-      const titel = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
-      return `<td style="text-align:center;" title="${titel.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
+      const titelTxt = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
+      return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
     }).join('');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:#f7f9fd;':''}">
       <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
-      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      <td><div class="klant-name">${heeftVolgendeMaandNotitie ? '<span title="Notitie klaargezet voor volgende maand" style=\'margin-right:4px;\'>⭐</span>' : ''}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
@@ -1407,12 +1463,12 @@ function loonheffingOverzichtHTML(list){
     const detailRij = expanded ? `<tr><td colspan="${kolomAantal}" style="background:#fbfcfe; padding:16px 20px; border-bottom:1px solid var(--border);">${loonheffingKlantDetailHTML(k)}</td></tr>` : '';
     return hoofdRij + detailRij;
   }).join('');
-  const taakHeaders = LH_TAKEN.map((naam,idx)=>`<th style="text-align:center;" title="${naam.replace(/"/g,'&quot;')}">${idx+1}</th>`).join('');
-  const taakLegenda = LH_TAKEN.map((naam,idx)=>`<span style="margin-right:14px;"><b>${idx+1}.</b> ${naam}</span>`).join('');
+  const taakHeaders = takenDef.map((t,idx)=>`<th style="text-align:center;" title="${t.naam.replace(/"/g,'&quot;')}">${idx+1}</th>`).join('');
+  const taakLegenda = takenDef.map((t,idx)=>`<span style="margin-right:14px;"><b>${idx+1}.</b> ${t.naam}</span>`).join('');
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
-      <h3>Overzicht alle werkgevers — ${TODAY.toLocaleDateString('nl-NL',{month:'long', year:'numeric'})}</h3>
-      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken</span>
+      <h3>${titel} — ${TODAY.toLocaleDateString('nl-NL',{month:'long', year:'numeric'})}</h3>
+      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken · ${gesorteerd.length} klant(en)</span>
     </div>
     <div style="padding:12px 20px 0; font-size:11px; color:var(--muted); line-height:1.8;">${taakLegenda}</div>
     <div class="section-body" style="overflow-x:auto;">
@@ -1448,7 +1504,8 @@ function loonheffingHTML(){
     </div>
   </div>` : ''}
   ${legend}
-  ${loonheffingOverzichtHTML(list)}
+  ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga), true, 'DGA-klanten')}
+  ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga), false, 'Geen-DGA-klanten')}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
@@ -1476,7 +1533,7 @@ function instellingenHTML(){
       <div class="field-row"><label>Tenant ID</label><input type="text" id="syncTenantId" value="${SYNC.tenantId||''}" placeholder="optioneel — leeg = elk werk-/schoolaccount"></div>
       <div class="field-row"><label>SharePoint site-adres</label><input type="text" id="syncSiteUrl" value="${SYNC.siteUrl||''}" placeholder="https://jullietenant.sharepoint.com/sites/Compliance-Dashboard"></div>
       <div class="field-row"><label>Lijstnaam</label><input type="text" id="syncListName" value="${SYNC.listName||'ComplianceDashboardData'}"></div>
-      <div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(SYNC.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>
+      <div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(RECHTEN.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>
       <div class="field-row"><label>Synchronisatie</label>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;"><input type="checkbox" id="syncEnabled" ${SYNC.enabled?'checked':''}> Inschakelen</label>
       </div>
@@ -1503,7 +1560,7 @@ function instellingenHTML(){
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
       ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
-          <input type="checkbox" data-lh-access-check value="${b.id}" ${(SYNC.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
+          <input type="checkbox" data-lh-access-check value="${b.id}" ${(RECHTEN.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
           <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
           ${b.naam}${b.email? ' · '+b.email : ''}
         </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
@@ -1600,7 +1657,11 @@ function panelHTML(klant){
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
           <input type="checkbox" id="loonaangifteToggle" ${klant.doetLoonaangifte?'checked':''}> Wij doen de loonaangifte voor deze klant
         </label>
-        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt of deze klant meetelt in de pagina "Loonheffingen".</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt of deze klant meetelt in de pagina "Loonheffingen".</div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+          <input type="checkbox" id="dgaToggle" ${klant.heeftDga?'checked':''}> DGA
+        </label>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
       </div>
     </div>
 
@@ -1816,7 +1877,11 @@ function addKlantFormHTML(){
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
         <input type="checkbox" id="newKlantLoonaangifte"> Wij doen de loonaangifte voor deze klant
       </label>
-      <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Alleen klanten met dit vinkje komen in de pagina "Loonheffingen" te staan.</div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Alleen klanten met dit vinkje komen in de pagina "Loonheffingen" te staan.</div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+        <input type="checkbox" id="newKlantDga"> DGA
+      </label>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen.</div>
     </div></div>
     <button class="btn primary" data-save-new-klant style="width:100%; justify-content:center; padding:11px;">Klant toevoegen</button>
   </div>`;
@@ -1877,6 +1942,7 @@ function openAddKlantPanel(silent){
       lh:dateOrEmpty(document.getElementById('newKlantLh').value), lhHerh:document.getElementById('newKlantLhHerh').value,
       jr:dateOrEmpty(document.getElementById('newKlantJr').value), jrHerh:document.getElementById('newKlantJrHerh').value,
       doetLoonaangifte:document.getElementById('newKlantLoonaangifte').checked,
+      heeftDga:document.getElementById('newKlantDga').checked,
     });
     STATE.showAddKlant=false;
     toast('Klant toegevoegd: '+naam);
@@ -2053,8 +2119,8 @@ function attachHandlers(){
     const idx = +idxStr;
     const checked = e.target.checked;
     const door = huidigeGebruiker();
-    const f = STORE[klantId];
-    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    const f = syncLhTaken(klant);
     f.lh.taken[idx].done = checked;
     f.lh.taken[idx].door = checked ? door : null;
     f.lh.taken[idx].ts = checked ? new Date().toISOString() : null;
@@ -2069,8 +2135,8 @@ function attachHandlers(){
     const input = document.querySelector(`[data-lh-note-new="${klantId}|${idxStr}"]`);
     const tekst = input ? input.value.trim() : '';
     if(!tekst) return;
-    const f = STORE[klantId];
-    if(!f.lh) f.lh = { taken: nieuwLhTaken(), log:[] };
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    const f = syncLhTaken(klant);
     const t = f.lh.taken[idx];
     if(!t.aantekeningen) t.aantekeningen = [];
     const door = huidigeGebruiker();
@@ -2121,6 +2187,41 @@ function attachHandlers(){
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-lh-volgendemaand-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-lh-volgendemaand-edit');
+    STATE.lhEditNote = `volgendemaand|${klantId}`;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-volgendemaand-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-volgendemaand-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-lh-volgendemaand-save');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    const input = document.querySelector(`[data-lh-volgendemaand-input="${klantId}"]`);
+    const tekst = input ? input.value.trim() : '';
+    const f = syncLhTaken(klant);
+    f.lh.volgendeMaandNotitie = tekst;
+    STATE.lhEditNote = null;
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-volgendemaand-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-lh-volgendemaand-delete');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm('Deze notitie voor volgende maand verwijderen?')) return;
+    const f = syncLhTaken(klant);
+    f.lh.volgendeMaandNotitie = '';
+    if(STATE.lhEditNote===`volgendemaand|${klantId}`) STATE.lhEditNote = null;
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-lh-log-delete]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
     const [klantId, logId] = el.getAttribute('data-lh-log-delete').split('|');
@@ -2136,9 +2237,9 @@ function attachHandlers(){
     const checks = document.querySelectorAll('[data-lh-access-check]');
     const ids = [];
     checks.forEach(c=>{ if(c.checked) ids.push(c.getAttribute('value')); });
-    SYNC.lhBevoegdeBhIds = ids;
-    persistSync();
-    toast('Bevoegdheid opgeslagen.');
+    RECHTEN.lhBevoegdeBhIds = ids;
+    persistMeta();
+    toast('Bevoegdheid opgeslagen — komt door bij collega\'s zodra zij synchroniseren.');
     render();
   }));
   document.querySelectorAll('[data-lh-complete]').forEach(el=>el.addEventListener('click', ()=>{
@@ -2180,9 +2281,12 @@ function attachHandlers(){
       tenantId: document.getElementById('syncTenantId').value.trim(),
       siteUrl: document.getElementById('syncSiteUrl').value.trim(),
       listName: document.getElementById('syncListName').value.trim() || 'ComplianceDashboardData',
-      adminEmails: document.getElementById('syncAdminEmails').value.split(',').map(s=>s.trim()).filter(Boolean),
       siteId:null, listId:null, // opnieuw opzoeken na wijziging van site/lijst
     });
+    // Beheerders staat in de GEDEELDE data (RECHTEN), niet in de lokale SYNC-instellingen, zodat de lijst
+    // ook bij collega's doorkomt zodra zij synchroniseren.
+    RECHTEN.adminEmails = document.getElementById('syncAdminEmails').value.split(',').map(s=>s.trim()).filter(Boolean);
+    persistMeta();
     msalInstance = null; msalInitPromise = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
     toast('Instellingen opgeslagen.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); updateSyncIndicator();
@@ -2451,7 +2555,7 @@ function handleKlantenCSVUpload(e){
         if(email) bestaand.email = email;
         if(tel) bestaand.tel = tel;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -2459,11 +2563,11 @@ function handleKlantenCSVUpload(e){
         const id = nextId(RAW_KLANTEN,'k');
         const klant = {
           id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
-          doetLoonaangifte:false, extId,
+          doetLoonaangifte:false, heeftDga:false, extId,
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(), log:[]} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
@@ -2599,6 +2703,12 @@ function attachPanelHandlers(klant){
     klant.doetLoonaangifte = e.target.checked;
     persistMeta();
     toast(e.target.checked ? 'Klant toegevoegd aan Loonheffingen.' : 'Klant verwijderd uit Loonheffingen.');
+  });
+  const dgaToggle = document.getElementById('dgaToggle');
+  if(dgaToggle) dgaToggle.addEventListener('change', (e)=>{
+    klant.heeftDga = e.target.checked;
+    persistMeta();
+    toast(e.target.checked ? 'Gemarkeerd als DGA-klant.' : 'Gemarkeerd als geen-DGA-klant.');
   });
   document.querySelectorAll('[data-mark-overige]').forEach(el=>el.addEventListener('click',()=>{
     const idx = +el.getAttribute('data-mark-overige');
