@@ -269,6 +269,8 @@ function addKlant(data){
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
+    staatOpHold: !!data.staatOpHold,
+    opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
@@ -949,6 +951,8 @@ function migrateData(){
   RAW_KLANTEN.forEach(k=>{
     if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
     if(k.heeftDga===undefined) k.heeftDga=false;
+    if(k.staatOpHold===undefined) k.staatOpHold=false;
+    if(k.opHoldReden===undefined) k.opHoldReden='';
     ['OB','VPB','LH','JR'].forEach(t=>{
       if(k.dl[t] && !k.dl[t].na && k.dl[t].herhaling===undefined) k.dl[t].herhaling='geen';
     });
@@ -1479,6 +1483,43 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     </div>
   </div>`;
 }
+function loonheffingOpHoldHTML(){
+  const bewerkbaar = magLhBewerken();
+  const list = RAW_KLANTEN.filter(k=>k.staatOpHold).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  if(!list.length) return '';
+  const rijen = list.map(k=>{
+    const editKey = `ophold|${k.id}`;
+    const redenCel = (bewerkbaar && STATE.lhEditNote === editKey)
+      ? `<div style="display:flex; gap:6px; align-items:flex-start;">
+          <textarea data-ophold-input="${k.id}" rows="2" placeholder="Reden…" style="flex:1; min-width:180px; max-width:340px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;">${(k.opHoldReden||'').replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;">
+            <button class="btn sm primary" data-ophold-save="${k.id}">Opslaan</button>
+            <button class="btn sm ghost" data-ophold-cancel="${k.id}">Annuleren</button>
+          </div>
+        </div>`
+      : `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <span style="font-size:12px; color:${k.opHoldReden?'var(--text)':'var(--muted)'};">${k.opHoldReden ? k.opHoldReden.replace(/</g,'&lt;') : '—'}</span>
+          ${bewerkbaar ? `<button class="btn sm ghost" title="Reden bewerken" data-ophold-edit="${k.id}" style="padding:3px 7px; flex-shrink:0;">✎</button>` : ''}
+        </div>`;
+    return `<tr>
+      <td><div class="klant-name">${k.naam}</div></td>
+      <td>${bh(k.bh).naam}</td>
+      <td>${redenCel}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="section" style="margin-bottom:18px;">
+    <div class="section-head">
+      <h3>Op hold</h3>
+      <span class="hint">Klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie · ${list.length} klant(en)</span>
+    </div>
+    <div class="section-body" style="overflow-x:auto;">
+      <table>
+        <thead><tr><th>Werkgever</th><th>Boekhouder</th><th>Reden</th></tr></thead>
+        <tbody>${rijen}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
 function loonheffingHTML(){
   const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
   const bewerkbaar = magLhBewerken();
@@ -1506,6 +1547,7 @@ function loonheffingHTML(){
   ${legend}
   ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga), true, 'DGA-klanten')}
   ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga), false, 'Geen-DGA-klanten')}
+  ${loonheffingOpHoldHTML()}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
@@ -1661,7 +1703,16 @@ function panelHTML(klant){
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
           <input type="checkbox" id="dgaToggle" ${klant.heeftDga?'checked':''}> DGA
         </label>
-        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+          <input type="checkbox" id="opHoldToggle" ${klant.staatOpHold?'checked':''}> Staat op hold
+        </label>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. Verschijnt dan onderaan de Loonheffingen-pagina, onder de geen-DGA-lijst.</div>
+        ${klant.staatOpHold ? `<div style="margin-top:8px;">
+          <label style="font-size:11.5px; color:var(--muted); display:block; margin-bottom:4px;">Reden / notitie</label>
+          <textarea id="opHoldRedenInput" rows="2" placeholder="Bijv. reageert niet op mail sinds…" style="width:100%; max-width:340px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; resize:vertical;">${(klant.opHoldReden||'').replace(/</g,'&lt;')}</textarea>
+          <button class="btn sm" id="opHoldRedenSave" style="margin-top:6px;">Reden opslaan</button>
+        </div>` : ''}
       </div>
     </div>
 
@@ -1881,7 +1932,11 @@ function addKlantFormHTML(){
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
         <input type="checkbox" id="newKlantDga"> DGA
       </label>
-      <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen.</div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen.</div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+        <input type="checkbox" id="newKlantOpHold"> Staat op hold
+      </label>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. De reden kun je later toevoegen via het klantdossier.</div>
     </div></div>
     <button class="btn primary" data-save-new-klant style="width:100%; justify-content:center; padding:11px;">Klant toevoegen</button>
   </div>`;
@@ -1943,6 +1998,7 @@ function openAddKlantPanel(silent){
       jr:dateOrEmpty(document.getElementById('newKlantJr').value), jrHerh:document.getElementById('newKlantJrHerh').value,
       doetLoonaangifte:document.getElementById('newKlantLoonaangifte').checked,
       heeftDga:document.getElementById('newKlantDga').checked,
+      staatOpHold:document.getElementById('newKlantOpHold').checked,
     });
     STATE.showAddKlant=false;
     toast('Klant toegevoegd: '+naam);
@@ -2222,6 +2278,27 @@ function attachHandlers(){
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-ophold-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-ophold-edit');
+    STATE.lhEditNote = `ophold|${klantId}`;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-ophold-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-ophold-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-ophold-save');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    const input = document.querySelector(`[data-ophold-input="${klantId}"]`);
+    klant.opHoldReden = input ? input.value.trim() : '';
+    STATE.lhEditNote = null;
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-lh-log-delete]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
     const [klantId, logId] = el.getAttribute('data-lh-log-delete').split('|');
@@ -2454,6 +2531,7 @@ function readLhExcelNamesPromise(file){
         const ws = wb.Sheets[wb.SheetNames[0]];
         const grid = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:null});
         const names = [];
+        const isBlankCell = (v)=> v===null || v===undefined || (typeof v==='string' && v.trim()==='');
         for(let r=0; r<grid.length; r++){
           const v = grid[r] && grid[r][0];
           if(typeof v==='string' && !isLhMetaRow(v)){
@@ -2461,7 +2539,12 @@ function readLhExcelNamesPromise(file){
             const n2 = grid[r+2] && grid[r+2][0];
             const hasFollowup = (typeof n1==='string' && (n1.trim().startsWith('Email') || n1.trim()==='Verwerker')) ||
                                  (typeof n2==='string' && (n2.trim().startsWith('Email') || n2.trim()==='Verwerker'));
-            if(hasFollowup) names.push(v);
+            // Elke echte werkgever-rij in dit bestand wordt vooraf gegaan door een lege rij (de blanco
+            // scheidingsregel tussen twee werkgevers). Dit sluit ook de kop-rijen bovenaan het bestand
+            // uit (bijv. de namen van de boekhouders zelf, die toevallig ook door "Verwerker" gevolgd
+            // kunnen worden en anders ten onrechte als werkgever herkend zouden worden).
+            const vorigeRijLeeg = r===0 || isBlankCell(grid[r-1] && grid[r-1][0]);
+            if(hasFollowup && vorigeRijLeeg) names.push(v);
           }
         }
         resolve(names);
@@ -2471,12 +2554,25 @@ function readLhExcelNamesPromise(file){
   });
 }
 async function handleLhKlantenImport(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const resultBox = document.getElementById('lhKlantenImportResult');
-  if(resultBox) resultBox.innerHTML = '<div class="hint">Bestand wordt gelezen…</div>';
+  // Haalt de resultaat-box telkens opnieuw op (in plaats van één keer vast te leggen), zodat een
+  // eventuele tussentijdse her-render (bijv. door de periodieke sync) niet leidt tot een melding die
+  // in een losstaand, onzichtbaar DOM-element terechtkomt — daardoor zou een gebruiker denken dat er
+  // "niets gebeurt" terwijl de import eigenlijk wel (deels) gelukt of mislukt is.
+  const getResultBox = ()=> document.getElementById('lhKlantenImportResult');
   try{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const box0 = getResultBox();
+    if(box0) box0.innerHTML = '<div class="hint">Bestand wordt gelezen…</div>';
+    if(typeof XLSX === 'undefined'){
+      throw new Error('De Excel-bibliotheek (XLSX) kon niet geladen worden. Controleer je internetverbinding en herlaad de pagina, en probeer het daarna opnieuw.');
+    }
     const rawNames = await readLhExcelNamesPromise(file);
+    if(!rawNames.length){
+      const boxEmpty = getResultBox();
+      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;">⚠️ Er zijn geen werkgevers herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is en of de structuur (naam, daaronder "Email:", daaronder "Verwerker") ongewijzigd is.</div>`;
+      return;
+    }
     let nieuwGemarkeerd = 0, algeactiveerd = 0;
     const nietGevonden = [];
     rawNames.forEach(raw=>{
@@ -2487,16 +2583,20 @@ async function handleLhKlantenImport(e){
       else { klant.doetLoonaangifte = true; nieuwGemarkeerd++; }
     });
     persistMeta(); persist();
-    if(resultBox){
+    const box = getResultBox();
+    if(box){
       const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      resultBox.innerHTML = `<div class="banner">✅ <b>${rawNames.length}</b> werkgevers gevonden in "${escaped(file.name)}". `
+      box.innerHTML = `<div class="banner">✅ <b>${rawNames.length}</b> werkgevers gevonden in "${escaped(file.name)}". `
         + `<b>${nieuwGemarkeerd}</b> klant(en) nieuw gemarkeerd met loonaangifte, <b>${algeactiveerd}</b> stonden al aan.`
         + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> niet gevonden op naam — voeg deze klant(en) toe of vink handmatig aan: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
         + `</div>`;
     }
     render();
   }catch(err){
-    if(resultBox) resultBox.innerHTML = `<div class="banner" style="border-color:var(--red); color:var(--red);">Fout bij inlezen: ${(err&&err.message)||err}</div>`;
+    console.error('Loonheffing-klantenimport mislukt:', err);
+    const boxErr = getResultBox();
+    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);">❌ Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
+    if(boxErr) boxErr.innerHTML = msg; else alert('Fout bij inlezen van het Excel-bestand: '+((err&&err.message)||err));
   }
 }
 function handleKlantenCSVUpload(e){
@@ -2563,7 +2663,7 @@ function handleKlantenCSVUpload(e){
         const id = nextId(RAW_KLANTEN,'k');
         const klant = {
           id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
-          doetLoonaangifte:false, heeftDga:false, extId,
+          doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', extId,
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
@@ -2709,6 +2809,21 @@ function attachPanelHandlers(klant){
     klant.heeftDga = e.target.checked;
     persistMeta();
     toast(e.target.checked ? 'Gemarkeerd als DGA-klant.' : 'Gemarkeerd als geen-DGA-klant.');
+  });
+  const opHoldToggle = document.getElementById('opHoldToggle');
+  if(opHoldToggle) opHoldToggle.addEventListener('change', (e)=>{
+    klant.staatOpHold = e.target.checked;
+    persistMeta();
+    toast(e.target.checked ? 'Klant gemarkeerd als "op hold".' : 'Klant niet meer op hold.');
+    refreshPanel(klant);
+  });
+  const opHoldRedenSave = document.getElementById('opHoldRedenSave');
+  if(opHoldRedenSave) opHoldRedenSave.addEventListener('click', ()=>{
+    const input = document.getElementById('opHoldRedenInput');
+    klant.opHoldReden = input ? input.value.trim() : '';
+    persistMeta();
+    toast('Reden opgeslagen.');
+    refreshPanel(klant);
   });
   document.querySelectorAll('[data-mark-overige]').forEach(el=>el.addEventListener('click',()=>{
     const idx = +el.getAttribute('data-mark-overige');
