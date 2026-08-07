@@ -237,6 +237,11 @@ let TEAMS = [];
 let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[] };
 /* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
 let AUTOS = [];
+/* Activiteitenlogboek: een gedeeld, alleen-lezen-voor-niet-beheerders overzicht van wie wat heeft
+   gedaan (klanten/boekhouders/teams/auto's toevoegen of verwijderen, imports, wijzigingen aan de
+   bijtellingstabel of aan de rechten). Alleen zichtbaar bij Instellingen voor beheerders. Wordt begrensd
+   op de laatste 500 gebeurtenissen om de opslag niet onbeperkt te laten groeien. */
+let ACTIVITEITENLOG = [];
 /* Bijtellingspercentages per jaar — overneemt exact de tabel uit "Bijtelling" in het Excel-bestand.
    laag/cap = alleen relevant voor elektrische auto's (verlaagd tarief tot de cap, algemeen tarief
    daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
@@ -274,13 +279,14 @@ function loadMeta(){
       if(parsed.rechten) RECHTEN = Object.assign({}, RECHTEN, parsed.rechten);
       if(parsed.autos && parsed.autos.length) AUTOS = parsed.autos;
       if(parsed.bijtellingTabel && parsed.bijtellingTabel.length) BIJTELLING_TABEL = parsed.bijtellingTabel;
+      if(parsed.activiteitenlog && parsed.activiteitenlog.length) ACTIVITEITENLOG = parsed.activiteitenlog;
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -290,6 +296,20 @@ function persistMeta(){
 loadMeta();
 
 function nextId(list, prefix){ let n=list.length+1; while(list.some(x=>x.id===prefix+n)) n++; return prefix+n; }
+// Schrijft één regel weg in het gedeelde activiteitenlogboek (alleen zichtbaar voor beheerders bij
+// Instellingen). huidigeGebruiker() staat verderop in het bestand maar is door hoisting al beschikbaar
+// tegen de tijd dat deze functie daadwerkelijk wordt aangeroepen (bij een gebruikersactie).
+function logActiviteit(actie){
+  try{
+    ACTIVITEITENLOG.unshift({
+      id:'act'+Date.now()+Math.floor(Math.random()*10000),
+      ts:new Date().toISOString(),
+      door: (typeof huidigeGebruiker==='function') ? huidigeGebruiker() : 'Onbekende gebruiker',
+      actie,
+    });
+    if(ACTIVITEITENLOG.length > 500) ACTIVITEITENLOG.length = 500;
+  }catch(e){ console.error('Wegschrijven activiteitenlog mislukt:', e); }
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -315,6 +335,7 @@ function addKlant(data){
     items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'',
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
+  logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
   persistMeta(); persist();
   return klant;
 }
@@ -322,7 +343,9 @@ function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
   const kleuren = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
   const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur:kleuren[BOEKHOUDERS.length % kleuren.length]};
-  BOEKHOUDERS.push(b); persistMeta();
+  BOEKHOUDERS.push(b);
+  logActiviteit(`Boekhouder toegevoegd: "${b.naam}"`);
+  persistMeta();
   return b;
 }
 function deleteKlant(id){
@@ -345,6 +368,7 @@ function confirmDeleteKlant(id){
   const k = RAW_KLANTEN.find(x=>x.id===id);
   if(!k) return;
   if(!confirm(`Weet je zeker dat je "${k.naam}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  logActiviteit(`Klant verwijderd: "${k.naam}"`);
   deleteKlant(id);
   toast(`Klant "${k.naam}" verwijderd.`);
   closePanel();
@@ -370,6 +394,7 @@ function addAuto(data){
     notities: data.notities || '',
   };
   AUTOS.push(auto);
+  logActiviteit(`Auto toegevoegd: "${auto.kenteken||auto.merk||auto.id}"`);
   persistMeta();
   return auto;
 }
@@ -377,6 +402,7 @@ function updateAuto(id, data){
   const auto = AUTOS.find(a=>a.id===id);
   if(!auto) return null;
   Object.assign(auto, data);
+  logActiviteit(`Auto bijgewerkt: "${auto.kenteken||auto.merk||auto.id}"`);
   persistMeta();
   return auto;
 }
@@ -392,6 +418,7 @@ function confirmDeleteAuto(id){
   if(!a) return;
   const omschrijving = [a.merk, a.kenteken].filter(Boolean).join(' · ') || 'deze auto';
   if(!confirm(`Weet je zeker dat je "${omschrijving}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  logActiviteit(`Auto verwijderd: "${omschrijving}"`);
   deleteAuto(id);
   toast(`Auto "${omschrijving}" verwijderd.`);
   closePanel();
@@ -403,6 +430,7 @@ function confirmDeleteBoekhouder(id){
   const klanten = klantsOf(id);
   if(klanten.length){ toast(`Kan "${b.naam}" niet verwijderen: heeft nog ${klanten.length} klant(en). Verplaats of verwijder deze eerst.`); return; }
   if(!confirm(`Weet je zeker dat je "${b.naam}" wilt verwijderen?`)) return;
+  logActiviteit(`Boekhouder verwijderd: "${b.naam}"`);
   deleteBoekhouder(id);
   toast(`Boekhouder "${b.naam}" verwijderd.`);
   render();
@@ -410,7 +438,9 @@ function confirmDeleteBoekhouder(id){
 function addTeam(data){
   const id = nextId(TEAMS,'team');
   const t = {id, naam:data.naam};
-  TEAMS.push(t); persistMeta();
+  TEAMS.push(t);
+  logActiviteit(`Team toegevoegd: "${t.naam}"`);
+  persistMeta();
   return t;
 }
 function deleteTeam(id){
@@ -440,6 +470,7 @@ function confirmDeleteTeam(id){
   const leden = boekhoudersOfTeam(id);
   if(leden.length){ toast(`Kan team "${t.naam}" niet verwijderen: er zijn nog ${leden.length} boekhouder(s) aan gekoppeld. Verplaats ze eerst naar een ander team.`); return; }
   if(!confirm(`Weet je zeker dat je team "${t.naam}" wilt verwijderen?`)) return;
+  logActiviteit(`Team verwijderd: "${t.naam}"`);
   deleteTeam(id);
   toast(`Team "${t.naam}" verwijderd.`);
   render();
@@ -641,7 +672,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList(false);
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, false);
@@ -684,8 +715,9 @@ async function fetchRemoteAndMerge(showFeedback){
         RECHTEN = json.rechten ? Object.assign({}, RECHTEN, json.rechten) : RECHTEN;
         AUTOS = json.autos && json.autos.length ? json.autos : AUTOS;
         BIJTELLING_TABEL = json.bijtellingTabel && json.bijtellingTabel.length ? json.bijtellingTabel : BIJTELLING_TABEL;
+        ACTIVITEITENLOG = json.activiteitenlog && json.activiteitenlog.length ? json.activiteitenlog : ACTIVITEITENLOG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -798,6 +830,7 @@ function readTabularFile(file, callback){
 
 /* ============================= HELPERS ============================= */
 function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
+function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
 function datumNaarInvoer(iso){
   // Zet interne ISO-datum (JJJJ-MM-DD) om naar het invoerformaat DD-MM-JJJJ voor formuliervelden.
@@ -1022,7 +1055,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50 };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1342,6 +1375,7 @@ function migrateData(){
       {jaar:2026, laag:0.18, cap:30000, algemeen:0.22},
     ];
   }
+  if(!Array.isArray(ACTIVITEITENLOG)) ACTIVITEITENLOG = [];
 }
 
 function dashboardHTML(){
@@ -1997,6 +2031,7 @@ function autolijstHTML(){
       <div style="display:flex; gap:8px;">
         <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Auto's importeren (Excel)<input type="file" id="autoExcelUpload" accept=".xlsx,.xls" style="display:none;"></label>
         <button class="btn sm primary" data-add-auto-btn>+ Nieuwe auto</button>
+        ${admin && AUTOS.length ? `<button class="btn sm ghost" data-clear-all-autos title="Alle auto's verwijderen (bijv. om met een schone lei opnieuw te importeren)" style="color:var(--red);">🗑 Alles wissen</button>` : ''}
       </div>
     </div>
     <div id="autoImportResult" style="padding:0 20px;"></div>
@@ -2278,20 +2313,29 @@ async function handleAutoImport(e){
       if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;">⚠️ Er zijn geen auto's herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is (tabblad "Checklist", koppen op rij 5).</div>`;
       return;
     }
-    let toegevoegd = 0; const nietGevonden = [];
+    // Opnieuw hetzelfde bestand importeren mag nooit dubbele auto's opleveren, en moet foutieve
+    // waarden uit een eerdere (bijv. verkeerd-uitgelezen) import gewoon overschrijven met de nieuwe,
+    // correcte waarden. Daarom wordt hier ge-"upsert": een auto van dezelfde klant met hetzelfde
+    // kenteken wordt bijgewerkt in plaats van nogmaals toegevoegd. Alleen auto's zonder kenteken (of
+    // met een kenteken dat nog niet bestaat) worden als nieuw toegevoegd.
+    let toegevoegd = 0, bijgewerkt = 0; const nietGevonden = [];
     rows.forEach(row=>{
       const klant = vindKlantOpNaam(row.klantnaam);
       if(!klant){ nietGevonden.push(row.klantnaam); return; }
-      addAuto({ klant: klant.id, merk:row.merk, kenteken:row.kenteken, klantBtwVrijgesteld:row.klantBtwVrijgesteld,
+      const data = { klant: klant.id, merk:row.merk, kenteken:row.kenteken, klantBtwVrijgesteld:row.klantBtwVrijgesteld,
         btwAuto:row.btwAuto, gebruik:row.gebruik, elektrisch:row.elektrisch, type:row.type,
         aankoopdatum:row.aankoopdatum, verkoopdatum:row.verkoopdatum, datumEersteInschrijving:row.datumEersteInschrijving,
-        cataloguswaarde:row.cataloguswaarde, dagwaarde:row.dagwaarde, vuzgAanwezig:row.vuzgAanwezig, bijtellingViaSalaris:row.bijtellingViaSalaris });
-      toegevoegd++;
+        cataloguswaarde:row.cataloguswaarde, dagwaarde:row.dagwaarde, vuzgAanwezig:row.vuzgAanwezig, bijtellingViaSalaris:row.bijtellingViaSalaris };
+      const kentekenNorm = (row.kenteken||'').trim().toUpperCase();
+      const bestaande = kentekenNorm ? AUTOS.find(a=>a.klant===klant.id && (a.kenteken||'').trim().toUpperCase()===kentekenNorm) : null;
+      if(bestaande){ updateAuto(bestaande.id, data); bijgewerkt++; }
+      else { addAuto(data); toegevoegd++; }
     });
+    logActiviteit(`Auto-import uit "${file.name}": ${toegevoegd} toegevoegd, ${bijgewerkt} bijgewerkt${nietGevonden.length ? `, ${nietGevonden.length} klant(en) niet gevonden` : ''}`);
     const box = getResultBox();
     if(box){
       const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      box.innerHTML = `<div class="banner">✅ <b>${toegevoegd}</b> van de <b>${rows.length}</b> auto('s) in "${escaped(file.name)}" toegevoegd.`
+      box.innerHTML = `<div class="banner">✅ <b>${toegevoegd}</b> nieuwe auto('s) toegevoegd, <b>${bijgewerkt}</b> bestaande auto('s) bijgewerkt (op klant + kenteken) uit "${escaped(file.name)}".`
         + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> klant(en) niet gevonden op naam — voeg deze klant(en) eerst toe: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
         + `</div>`;
     }
@@ -2305,6 +2349,34 @@ async function handleAutoImport(e){
 }
 
 /* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
+function activiteitenlogboekHTML(){
+  const limiet = STATE.logboekLimiet || 50;
+  const items = ACTIVITEITENLOG.slice(0, limiet);
+  return `
+  <div class="section">
+    <div class="section-head">
+      <h3>Activiteitenlogboek</h3>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="hint">Alleen zichtbaar voor beheerders · ${ACTIVITEITENLOG.length} gebeurtenis(sen)</span>
+        ${ACTIVITEITENLOG.length ? `<button class="btn sm ghost" data-clear-log title="Logboek wissen" style="color:var(--red);">🗑 Wissen</button>` : ''}
+      </div>
+    </div>
+    <div class="section-body">
+      ${items.length ? `<table>
+        <thead><tr><th>Tijdstip</th><th>Door</th><th>Actie</th></tr></thead>
+        <tbody>
+          ${items.map(a=>`<tr>
+            <td style="white-space:nowrap;">${new Date(a.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+            <td>${escHtml(a.door)}</td>
+            <td>${escHtml(a.actie)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      ${ACTIVITEITENLOG.length > items.length ? `<div style="padding:12px 20px;"><button class="btn sm ghost" data-log-meer-tonen>Meer tonen (nog ${ACTIVITEITENLOG.length - items.length})</button></div>` : ''}
+      ` : `<div class="empty-state">Nog geen activiteit gelogd.</div>`}
+    </div>
+  </div>`;
+}
 function instellingenHTML(){
   const runningLocally = window.location.protocol === 'file:';
   return `
@@ -2364,6 +2436,8 @@ function instellingenHTML(){
       </div>
     </div>
   </div>` : ''}
+
+  ${isAdmin() ? activiteitenlogboekHTML() : ''}
 
   <div class="section">
     <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
@@ -2877,6 +2951,26 @@ function attachHandlers(){
   document.querySelectorAll('[data-delete-auto]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); confirmDeleteAuto(el.getAttribute('data-delete-auto'));
   }));
+  document.querySelectorAll('[data-log-meer-tonen]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.logboekLimiet = (STATE.logboekLimiet||50) + 50;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-clear-log]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!isAdmin()) return;
+    if(!confirm(`Weet je zeker dat je het hele activiteitenlogboek (${ACTIVITEITENLOG.length} gebeurtenis(sen)) wilt wissen? Dit kan niet ongedaan worden gemaakt.`)) return;
+    ACTIVITEITENLOG = [];
+    persistMeta();
+    toast('Activiteitenlogboek gewist.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-clear-all-autos]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!confirm(`Weet je zeker dat je ALLE ${AUTOS.length} auto('s) wilt verwijderen? Dit kan niet ongedaan worden gemaakt — gebruik dit alleen als je met een schone lei opnieuw wilt importeren.`)) return;
+    logActiviteit(`Alle ${AUTOS.length} auto('s) verwijderd (Alles wissen)`);
+    AUTOS = [];
+    persistMeta();
+    toast('Alle auto\'s verwijderd.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   const filterAutoKlant = document.getElementById('filterAutoKlant');
   if(filterAutoKlant) filterAutoKlant.addEventListener('change', e=>{ STATE.autoKlantFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const filterAutoElektrisch = document.getElementById('filterAutoElektrisch');
@@ -2888,6 +2982,7 @@ function attachHandlers(){
   document.querySelectorAll('[data-bt-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
     const jaar = Number(el.getAttribute('data-bt-verwijder'));
     if(!confirm(`Jaartarief ${jaar} verwijderen?`)) return;
+    logActiviteit(`Bijtellingstarief ${jaar} verwijderd`);
     BIJTELLING_TABEL = BIJTELLING_TABEL.filter(r=>r.jaar!==jaar);
     persistMeta();
     toast('Jaartarief verwijderd.');
@@ -2898,6 +2993,7 @@ function attachHandlers(){
     if(BIJTELLING_TABEL.some(r=>r.jaar===nieuwJaar)){ toast('Dat jaar staat al in de tabel.'); return; }
     const laatste = BIJTELLING_TABEL.find(r=>r.jaar===laatsteBijtellingJaar());
     BIJTELLING_TABEL.push({jaar:nieuwJaar, laag:laatste?laatste.laag:null, cap:laatste?laatste.cap:null, algemeen:laatste?laatste.algemeen:0.22});
+    logActiviteit(`Bijtellingstarief ${nieuwJaar} toegevoegd`);
     persistMeta();
     STATE.showBijtellingBeheer = true;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -2917,6 +3013,7 @@ function attachHandlers(){
     });
     if(nieuweTabel.some(r=>isNaN(r.jaar))){ toast('Ongeldig jaartal ingevoerd.'); return; }
     BIJTELLING_TABEL = nieuweTabel;
+    logActiviteit('Bijtellingstabel gewijzigd en opgeslagen');
     persistMeta();
     toast('Bijtellingstabel opgeslagen.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -3154,6 +3251,7 @@ function attachHandlers(){
     const ids = [];
     checks.forEach(c=>{ if(c.checked) ids.push(c.getAttribute('value')); });
     RECHTEN.lhBevoegdeBhIds = ids;
+    logActiviteit('Loonheffingen-bevoegdheid gewijzigd');
     persistMeta();
     toast('Bevoegdheid opgeslagen — komt door bij collega\'s zodra zij synchroniseren.');
     render();
@@ -3216,6 +3314,7 @@ function attachHandlers(){
     // Beheerders staat in de GEDEELDE data (RECHTEN), niet in de lokale SYNC-instellingen, zodat de lijst
     // ook bij collega's doorkomt zodra zij synchroniseren.
     RECHTEN.adminEmails = document.getElementById('syncAdminEmails').value.split(',').map(s=>s.trim()).filter(Boolean);
+    logActiviteit('Lijst met beheerders gewijzigd');
     persistMeta();
     msalInstance = null; msalInitPromise = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
     toast('Instellingen opgeslagen.');
@@ -3435,6 +3534,7 @@ async function handleLhKlantenImport(e){
       if(klant.doetLoonaangifte){ algeactiveerd++; }
       else { klant.doetLoonaangifte = true; nieuwGemarkeerd++; }
     });
+    logActiviteit(`LH-klantenimport uit "${file.name}": ${nieuwGemarkeerd} nieuw gemarkeerd, ${algeactiveerd} stonden al aan${nietGevonden.length ? `, ${nietGevonden.length} niet gevonden` : ''}`);
     persistMeta(); persist();
     const box = getResultBox();
     if(box){
@@ -3525,6 +3625,7 @@ function handleKlantenCSVUpload(e){
       }
     });
 
+    logActiviteit(`Klantenimport uit "${file.name}": ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt${report.overgeslagen?`, ${report.overgeslagen} overgeslagen`:''}`);
     persistMeta(); persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
 
