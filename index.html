@@ -766,6 +766,7 @@ function toast(msg){
 
 /* ============================= STATE ============================= */
 let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null };
+let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
 const ICONS = {
@@ -2115,8 +2116,23 @@ function attachEditKlantHandlers(klant){
 }
 
 /* ============================= HANDLERS ============================= */
+// Elementen buiten #contentArea (de zoekbalk, de sidebar-navigatie, de sync-knop, de overlay) blijven
+// bij een "lichte" update (alleen #contentArea vervangen) gewoon dezelfde DOM-node — zonder deze guard
+// zou elke aanroep van attachHandlers()/attachHandlersLite() daar een NIEUWE listener bovenop de oude
+// zetten. Bij honderden klanten en veel interacties per sessie stapelen die zich op, waardoor bijv. het
+// zoekveld na verloop van tijd bij elke toetsaanslag de zware klantentabel-herbouw tien, twintig, dertig
+// keer achter elkaar uitvoert — precies het "pagina reageert niet"-gedrag. bindOnce() zorgt dat zo'n
+// element maar één keer per DOM-node een listener krijgt; na een volledige render() is de node sowieso
+// vervangen en telt het weer opnieuw als "nog niet gebonden".
+function bindOnce(el, event, handler){
+  if(!el) return;
+  const key = '__bound_'+event;
+  if(el[key]) return;
+  el[key] = true;
+  el.addEventListener(event, handler);
+}
 function attachHandlers(){
-  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>{
+  document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{
     STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false;
     render();
   }));
@@ -2145,7 +2161,7 @@ function attachHandlers(){
     toast('Boekhouder uit team gehaald.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-nav-bh]').forEach(el=>el.addEventListener('click', ()=>{
+  document.querySelectorAll('[data-nav-bh]').forEach(el=>bindOnce(el, 'click', ()=>{
     STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render();
   }));
   document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -2158,17 +2174,32 @@ function attachHandlers(){
     e.stopPropagation(); confirmDeleteBoekhouder(el.getAttribute('data-delete-bh'));
   }));
   const searchInput = document.getElementById('searchInput');
-  if(searchInput) searchInput.addEventListener('input', (e)=>{
+  bindOnce(searchInput, 'input', (e)=>{
+    // STATE.search wordt meteen bijgewerkt, maar het herbouwen van de (mogelijk grote) klantentabel
+    // wordt gedebouncet: bij honderden klanten is die herbouw op ELKE toetsaanslag zwaar genoeg om de
+    // pagina tijdelijk te laten "vastlopen" tijdens snel typen. Door pas 200ms na de laatste
+    // toetsaanslag te herbouwen, gebeurt dat zware werk maar één keer per zoekactie in plaats van
+    // eenmaal per letter. Cursorpositie wordt na de herbouw hersteld, anders spring je terug naar het
+    // begin van het zoekveld.
     STATE.search = e.target.value;
-    document.getElementById('contentArea').innerHTML = viewHTML();
-    attachHandlers();
+    const cursorPos = e.target.selectionStart;
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(()=>{
+      document.getElementById('contentArea').innerHTML = viewHTML();
+      attachHandlers();
+      const newSearchInput = document.getElementById('searchInput');
+      if(newSearchInput){
+        newSearchInput.focus();
+        try{ newSearchInput.setSelectionRange(cursorPos, cursorPos); }catch(err){}
+      }
+    }, 200);
   });
   const filterBh = document.getElementById('filterBh');
   if(filterBh) filterBh.addEventListener('change', e=>{ STATE.bhFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const filterStatus = document.getElementById('filterStatus');
   if(filterStatus) filterStatus.addEventListener('change', e=>{ STATE.statusFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const overlay = document.getElementById('overlay');
-  if(overlay) overlay.addEventListener('click', closePanel);
+  bindOnce(overlay, 'click', closePanel);
 
   document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
     e.stopPropagation();
@@ -2372,7 +2403,7 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
 
-  document.querySelectorAll('[data-sync-now]').forEach(el=>el.addEventListener('click', ()=>{
+  document.querySelectorAll('[data-sync-now]').forEach(el=>bindOnce(el, 'click', ()=>{
     if(!SYNC.enabled || !SYNC.account){ toast('Stel eerst de Microsoft-koppeling in bij Instellingen en log in.'); return; }
     fetchRemoteAndMerge(true);
   }));
@@ -2935,8 +2966,10 @@ function refreshPanel(klant){
 }
 function attachHandlersLite(){
   // reattach only nav-independent listeners needed after a background refresh (avoid full re-render to keep panel state)
-  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>{ STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; render(); }));
-  document.querySelectorAll('[data-nav-bh]').forEach(el=>el.addEventListener('click', ()=>{ STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render(); }));
+  // [data-nav] zit in de vaste sidebar (buiten #contentArea) en blijft dus dezelfde DOM-node over
+  // opeenvolgende attachHandlersLite()-aanroepen — bindOnce() voorkomt dat daar listeners opstapelen.
+  document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{ STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; render(); }));
+  document.querySelectorAll('[data-nav-bh]').forEach(el=>bindOnce(el, 'click', ()=>{ STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render(); }));
   document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); openPanel(el.getAttribute('data-open-klant')); }));
   document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
     e.stopPropagation();
