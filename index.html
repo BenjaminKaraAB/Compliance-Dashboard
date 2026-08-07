@@ -222,6 +222,7 @@
 
 <script>
 
+
 /* ============================= DATA ============================= */
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 
@@ -234,6 +235,25 @@ let TEAMS = [];
    lokale SYNC-instellingen — zodat een wijziging door de beheerder ook echt bij collega's doorkomt zodra
    zij synchroniseren. Voorheen stonden deze velden per ongeluk alleen lokaal in de browser. */
 let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[] };
+/* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
+let AUTOS = [];
+/* Bijtellingspercentages per jaar — overneemt exact de tabel uit "Bijtelling" in het Excel-bestand.
+   laag/cap = alleen relevant voor elektrische auto's (verlaagd tarief tot de cap, algemeen tarief
+   daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
+   later gewoon een nieuw jaar aan toevoegen zodra de Belastingdienst nieuwe percentages publiceert —
+   geen codewijziging nodig. Auto's van vóór 2017 gebruiken altijd 25% (net als in het Excel-bestand). */
+let BIJTELLING_TABEL = [
+  {jaar:2017, laag:null, cap:null, algemeen:0.22},
+  {jaar:2018, laag:null, cap:null, algemeen:0.22},
+  {jaar:2019, laag:0.04, cap:50000, algemeen:0.22},
+  {jaar:2020, laag:0.08, cap:45000, algemeen:0.22},
+  {jaar:2021, laag:0.12, cap:40000, algemeen:0.22},
+  {jaar:2022, laag:0.16, cap:35000, algemeen:0.22},
+  {jaar:2023, laag:0.16, cap:30000, algemeen:0.22},
+  {jaar:2024, laag:0.16, cap:30000, algemeen:0.22},
+  {jaar:2025, laag:0.17, cap:30000, algemeen:0.22},
+  {jaar:2026, laag:0.18, cap:30000, algemeen:0.22},
+];
 
 function d(offsetDays){ const dt=new Date(TODAY); dt.setDate(dt.getDate()+offsetDays); return dt.toISOString().slice(0,10); }
 function DL(datum, status=null){ return {datum, status}; }
@@ -252,13 +272,15 @@ function loadMeta(){
       if(parsed.klanten && parsed.klanten.length) RAW_KLANTEN = parsed.klanten;
       if(parsed.teams && parsed.teams.length) TEAMS = parsed.teams;
       if(parsed.rechten) RECHTEN = Object.assign({}, RECHTEN, parsed.rechten);
+      if(parsed.autos && parsed.autos.length) AUTOS = parsed.autos;
+      if(parsed.bijtellingTabel && parsed.bijtellingTabel.length) BIJTELLING_TABEL = parsed.bijtellingTabel;
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -325,6 +347,53 @@ function confirmDeleteKlant(id){
   if(!confirm(`Weet je zeker dat je "${k.naam}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
   deleteKlant(id);
   toast(`Klant "${k.naam}" verwijderd.`);
+  closePanel();
+  render();
+}
+function addAuto(data){
+  const id = nextId(AUTOS,'auto');
+  const auto = {
+    id, klant:data.klant,
+    merk:(data.merk||'').trim(), kenteken:(data.kenteken||'').trim().toUpperCase(),
+    klantBtwVrijgesteld: data.klantBtwVrijgesteld==='ja' ? 'ja' : 'nee',
+    btwAuto: data.btwAuto==='ja' ? 'ja' : 'nee',
+    gebruik: data.gebruik==='Enkel zakelijk (onder 500 km prive)' ? 'Enkel zakelijk (onder 500 km prive)' : 'Zakelijk en prive (boven 500km prive)',
+    elektrisch: data.elektrisch==='ja' ? 'ja' : 'nee',
+    type: ['personenauto','bestelauto','motor','fiets'].includes(data.type) ? data.type : 'personenauto',
+    aankoopdatum: data.aankoopdatum || '',
+    verkoopdatum: data.verkoopdatum || '',
+    datumEersteInschrijving: data.datumEersteInschrijving || '',
+    cataloguswaarde: Number(data.cataloguswaarde)||0,
+    dagwaarde: (data.dagwaarde!==undefined && data.dagwaarde!=='' && data.dagwaarde!==null && !isNaN(Number(data.dagwaarde))) ? Number(data.dagwaarde) : null,
+    vuzgAanwezig: data.vuzgAanwezig==='ja' ? 'ja' : 'nee',
+    bijtellingViaSalaris: data.bijtellingViaSalaris==='Ja' ? 'Ja' : 'Nee',
+    notities: data.notities || '',
+  };
+  AUTOS.push(auto);
+  persistMeta();
+  return auto;
+}
+function updateAuto(id, data){
+  const auto = AUTOS.find(a=>a.id===id);
+  if(!auto) return null;
+  Object.assign(auto, data);
+  persistMeta();
+  return auto;
+}
+function deleteAuto(id){
+  const idx = AUTOS.findIndex(a=>a.id===id);
+  if(idx===-1) return false;
+  AUTOS.splice(idx,1);
+  persistMeta();
+  return true;
+}
+function confirmDeleteAuto(id){
+  const a = AUTOS.find(x=>x.id===id);
+  if(!a) return;
+  const omschrijving = [a.merk, a.kenteken].filter(Boolean).join(' · ') || 'deze auto';
+  if(!confirm(`Weet je zeker dat je "${omschrijving}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  deleteAuto(id);
+  toast(`Auto "${omschrijving}" verwijderd.`);
   closePanel();
   render();
 }
@@ -572,7 +641,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList(false);
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, false);
@@ -613,8 +682,10 @@ async function fetchRemoteAndMerge(showFeedback){
         TEAMS = json.teams && json.teams.length ? json.teams : TEAMS;
         STORE = json.store || STORE;
         RECHTEN = json.rechten ? Object.assign({}, RECHTEN, json.rechten) : RECHTEN;
+        AUTOS = json.autos && json.autos.length ? json.autos : AUTOS;
+        BIJTELLING_TABEL = json.bijtellingTabel && json.bijtellingTabel.length ? json.bijtellingTabel : BIJTELLING_TABEL;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -806,8 +877,138 @@ function toast(msg){
   setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .25s'; setTimeout(()=>el.remove(),250); }, 3200);
 }
 
+/* ============================= BIJTELLING-REKENMODULE (Autolijst) =============================
+   Deze module rekent bewust EXACT zoals het Excel-bestand "AUTOLIJST BIJTELLING" (kolommen N t/m X op
+   het tabblad Checklist, tarieventabel op tabblad Bijtelling): zelfde brontabel, zelfde 60-maanden-
+   regeling voor elektrische auto's, zelfde youngtimer- en pro-rata-logica. Twee bewuste verschillen
+   t.o.v. het Excel-bestand, allebei nodig om de berekening écht automatisch te laten meelopen met de
+   tijd (in plaats van elk jaar handmatig het jaartal in de formules te moeten aanpassen):
+     - waar Excel het jaartal 2026 hardcodeert (in de kolommen U/V/X), gebruiken wij hier altijd het
+       huidige jaar (TODAY.getFullYear());
+     - de tabel met bijtellingspercentages (BIJTELLING_TABEL) is voor beheerders uitbreidbaar met nieuwe
+       jaren, i.p.v. vast in een Excel-tabblad te staan. */
+function laatsteBijtellingJaar(){
+  if(!BIJTELLING_TABEL.length) return TODAY.getFullYear();
+  return Math.max(...BIJTELLING_TABEL.map(r=>r.jaar));
+}
+function eersteBijtellingJaar(){
+  if(!BIJTELLING_TABEL.length) return TODAY.getFullYear();
+  return Math.min(...BIJTELLING_TABEL.map(r=>r.jaar));
+}
+// Geeft het tarief (laag/cap/algemeen) voor een gegeven jaar. Jaren vóór het begin van de tabel
+// gebruiken altijd 25% (zoals de "<2017"-regel in het Excel-bestand); jaren ná het laatst ingevulde
+// tabeljaar (bijv. een auto die dit jaar is geregistreerd, maar de beheerder heeft het nieuwe jaar nog
+// niet toegevoegd) vallen terug op het laatst bekende jaar, zodat de berekening nooit vastloopt.
+function bijtellingRijVoorJaar(jaar){
+  if(!BIJTELLING_TABEL.length) return {laag:0, cap:0, algemeen: jaar<2017?0.25:0.22};
+  const minJaar = eersteBijtellingJaar(), maxJaar = laatsteBijtellingJaar();
+  if(jaar < minJaar) return {laag:0, cap:0, algemeen:0.25};
+  let rij = BIJTELLING_TABEL.find(r=>r.jaar===jaar);
+  if(!rij) rij = BIJTELLING_TABEL.find(r=>r.jaar===maxJaar);
+  return { laag: rij.laag||0, cap: rij.cap||0, algemeen: (rij.algemeen!==undefined && rij.algemeen!==null) ? rij.algemeen : 0.22 };
+}
+function bedragVoorTarief(catalogus, tarief){
+  const cap = tarief.cap||0;
+  return Math.min(catalogus,cap)*(tarief.laag||0) + Math.max(0,catalogus-cap)*tarief.algemeen;
+}
+function jongtimerGrensDatum(){
+  return new Date(TODAY.getFullYear()-16, TODAY.getMonth(), TODAY.getDate());
+}
+function isJongtimer(auto){
+  if(!auto || !auto.datumEersteInschrijving) return false;
+  const l = new Date(auto.datumEersteInschrijving+'T00:00:00');
+  if(isNaN(l.getTime())) return false;
+  return l <= jongtimerGrensDatum();
+}
+function vuzgMoetOpgevraagdWorden(auto){
+  return auto.type==='bestelauto' && auto.gebruik==='Enkel zakelijk (onder 500 km prive)';
+}
+function bijtellingVanToepassing(auto){
+  if(auto.gebruik==='Enkel zakelijk (onder 500 km prive)') return false;
+  if(vuzgMoetOpgevraagdWorden(auto)) return false;
+  return true;
+}
+// Aantal maanden dat de auto dit jaar in gebruik was (rekening houdend met aan-/verkoopdatum),
+// exact zoals de pro-rata-formule in kolom U/X van het Excel-bestand.
+function maandenGebruiktInJaar(auto){
+  const jaar = TODAY.getFullYear();
+  const jaarStart = new Date(jaar,0,1), jaarEind = new Date(jaar,11,31);
+  const aankoop = auto.aankoopdatum ? new Date(auto.aankoopdatum+'T00:00:00') : jaarStart;
+  const verkoop = auto.verkoopdatum ? new Date(auto.verkoopdatum+'T00:00:00') : jaarEind;
+  const eind = verkoop < jaarEind ? verkoop : jaarEind;
+  const start = aankoop > jaarStart ? aankoop : jaarStart;
+  const maanden = (eind.getFullYear()*12+eind.getMonth()) - (start.getFullYear()*12+start.getMonth()) + 1;
+  return Math.max(0, maanden);
+}
+// Bijtelling over 12 maanden (nog vóór de pro-rata-verrekening voor dit jaar) — komt overeen met kolom T.
+// Geeft null terug voor "n.v.t." (auto waar geen bijtelling op van toepassing is).
+function berekenBijtellingJaarbedrag(auto){
+  if(!bijtellingVanToepassing(auto)) return null;
+  const catalogus = Number(auto.cataloguswaarde) || 0;
+  if(isJongtimer(auto)){
+    const dagwaarde = Number(auto.dagwaarde);
+    return (isFinite(dagwaarde) ? dagwaarde : 0) * 0.35;
+  }
+  if(auto.elektrisch === 'ja' && auto.datumEersteInschrijving){
+    const l = new Date(auto.datumEersteInschrijving+'T00:00:00');
+    if(isNaN(l.getTime())) return null;
+    const eindeWindow = new Date(l.getFullYear(), l.getMonth()+60, l.getDate());
+    const origTarief = bijtellingRijVoorJaar(l.getFullYear());
+    if(TODAY <= eindeWindow){
+      // Nog binnen de 60-maanden-periode: het (verlaagde) tarief van het registratiejaar geldt volledig.
+      return bedragVoorTarief(catalogus, origTarief);
+    }
+    const eindJaar = eindeWindow.getFullYear();
+    const laatsteJaar = laatsteBijtellingJaar();
+    if(eindJaar < laatsteJaar){
+      // De 60 maanden zijn al in een eerder jaar verstreken: gebruik het laatst bekende jaartarief.
+      return bedragVoorTarief(catalogus, bijtellingRijVoorJaar(laatsteJaar));
+    }
+    if(eindJaar > laatsteJaar){
+      // Randgeval: de tabel is nog niet bijgewerkt tot het jaar waarin de 60 maanden aflopen — val terug
+      // op het tarief van het registratiejaar totdat de beheerder het nieuwe jaar toevoegt.
+      return bedragVoorTarief(catalogus, origTarief);
+    }
+    // De 60 maanden lopen af in het huidige laatste tabeljaar: splits naar rato van vóór/na die datum.
+    const laatsteTarief = bijtellingRijVoorJaar(laatsteJaar);
+    const eersteDeelMaanden = eindeWindow.getMonth(); // 0-11 (komt overeen met MONTH(eindeWindow)-1 in Excel)
+    const tweedeDeelMaanden = 12 - eersteDeelMaanden;
+    return bedragVoorTarief(catalogus, origTarief)*(eersteDeelMaanden/12) + bedragVoorTarief(catalogus, laatsteTarief)*(tweedeDeelMaanden/12);
+  }
+  // Elektrisch zonder (geldige) datum 1e inschrijving, of een gewone (niet-elektrische) auto.
+  const jaarInschrijving = auto.datumEersteInschrijving ? new Date(auto.datumEersteInschrijving+'T00:00:00').getFullYear() : TODAY.getFullYear();
+  return catalogus * (jaarInschrijving < 2017 ? 0.25 : 0.22);
+}
+// Uiteindelijke, pro-rata bijtelling voor dit jaar — komt overeen met kolom U.
+function berekenBijtellingProRata(auto){
+  const jaarbedrag = berekenBijtellingJaarbedrag(auto);
+  if(jaarbedrag===null) return null;
+  return jaarbedrag * (maandenGebruiktInJaar(auto)/12);
+}
+// BTW-correctiepercentage — komt overeen met kolom V.
+function berekenBtwCorrectiePercentage(auto){
+  if(auto.gebruik === 'Enkel zakelijk (onder 500 km prive)') return null;
+  const jaar = TODAY.getFullYear();
+  const aankoopJaar = auto.aankoopdatum ? new Date(auto.aankoopdatum+'T00:00:00').getFullYear() : jaar;
+  if(jaar >= aankoopJaar + 5) return 0.015;
+  return auto.btwAuto === 'ja' ? 0.027 : 0.015;
+}
+// BTW-correctie over 12 maanden — komt overeen met kolom W.
+function berekenBtwCorrectieJaarbedrag(auto){
+  const perc = berekenBtwCorrectiePercentage(auto);
+  if(perc===null) return null;
+  return (Number(auto.cataloguswaarde)||0) * perc;
+}
+// Uiteindelijke, pro-rata BTW-correctie voor dit jaar — komt overeen met kolom X.
+function berekenBtwCorrectieProRata(auto){
+  const jaarbedrag = berekenBtwCorrectieJaarbedrag(auto);
+  if(jaarbedrag===null) return null;
+  return jaarbedrag * (maandenGebruiktInJaar(auto)/12);
+}
+function klantVanAuto(auto){ return RAW_KLANTEN.find(k=>k.id===auto.klant) || null; }
+
 /* ============================= STATE ============================= */
-const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','instellingen'];
+const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen'];
 const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
 function onthoudHuidigePagina(view){
   // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
@@ -821,7 +1022,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -838,6 +1039,7 @@ const ICONS = {
   gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   team:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   loon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 12l2 2 4-4"/></svg>',
+  auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l1.5-5.5A2 2 0 0 1 7.4 9h9.2a2 2 0 0 1 1.9 1.5L20 16"/><rect x="2.5" y="16" width="19" height="4.5" rx="1.5"/><circle cx="7" cy="20.5" r="1.6"/><circle cx="17" cy="20.5" r="1.6"/><path d="M4 13h16"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
@@ -857,6 +1059,7 @@ function render(){
         ${navItem('klanten','users','Klanten')}
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('loonheffing','loon','Loonheffingen')}
+        ${navItem('autolijst','auto','Autolijst')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       <div class="nav-foot">Ingelogd als<br><b>Benjamin</b> · administratiebox.nl</div>
@@ -883,6 +1086,7 @@ function render(){
   else if(STATE.showAddKlant) openAddKlantPanel(true);
   else if(STATE.showAddBh) openAddBhPanel(true);
   else if(STATE.showAddTeam) openAddTeamPanel(true);
+  else if(STATE.showAddAuto || STATE.editAuto) openAddAutoPanel(true);
   else closePanelDom();
   attachHandlers();
   updateSyncIndicator();
@@ -891,7 +1095,7 @@ function navItem(view, icon, label){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span></button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', instellingen:'Instellingen'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -901,6 +1105,7 @@ function pageSub(){
     klanten:'Alle klanten met deadlinestatus per categorie',
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
     loonheffing:`Maandelijkse loonaangifte-taken en voortgang per collega · ${RAW_KLANTEN.filter(k=>k.doetLoonaangifte).length} klant(en) totaal`,
+    autolijst:`Auto's per klant met automatische bijtelling- en btw-correctieberekening · ${AUTOS.length} auto('s)`,
     instellingen:'Live synchronisatie tussen collega\'s'
   }[STATE.view];
 }
@@ -913,6 +1118,7 @@ function viewHTML(){
   if(STATE.view==='klanten') return klantenHTML();
   if(STATE.view==='aanlevering') return aanleveringHTML();
   if(STATE.view==='loonheffing') return loonheffingHTML();
+  if(STATE.view==='autolijst') return autolijstHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
   return '';
 }
@@ -1092,6 +1298,50 @@ function migrateData(){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
     }
   });
+  // Auto's (Autolijst): net als bij klanten migreert elke auto in zijn eigen try/catch, zodat één
+  // beschadigd record nooit de hele opstart (en dus de hele pagina) kan laten crashen.
+  if(!Array.isArray(AUTOS)) AUTOS = [];
+  AUTOS.forEach(a=>{
+    try{
+      if(a.klant===undefined) a.klant = null;
+      if(typeof a.merk !== 'string') a.merk = a.merk ? String(a.merk) : '';
+      if(typeof a.kenteken !== 'string') a.kenteken = a.kenteken ? String(a.kenteken).toUpperCase() : '';
+      if(a.klantBtwVrijgesteld !== 'ja') a.klantBtwVrijgesteld = 'nee';
+      if(a.btwAuto !== 'ja') a.btwAuto = 'nee';
+      if(a.gebruik !== 'Enkel zakelijk (onder 500 km prive)') a.gebruik = 'Zakelijk en prive (boven 500km prive)';
+      if(a.elektrisch !== 'ja') a.elektrisch = 'nee';
+      if(!['personenauto','bestelauto','motor','fiets'].includes(a.type)) a.type = 'personenauto';
+      if(typeof a.aankoopdatum !== 'string') a.aankoopdatum = '';
+      if(typeof a.verkoopdatum !== 'string') a.verkoopdatum = '';
+      if(typeof a.datumEersteInschrijving !== 'string') a.datumEersteInschrijving = '';
+      if(a.cataloguswaarde===undefined || a.cataloguswaarde===null || isNaN(Number(a.cataloguswaarde))) a.cataloguswaarde = 0;
+      else a.cataloguswaarde = Number(a.cataloguswaarde);
+      if(a.dagwaarde!==null && a.dagwaarde!==undefined && (a.dagwaarde==='' || isNaN(Number(a.dagwaarde)))) a.dagwaarde = null;
+      else if(a.dagwaarde!==null && a.dagwaarde!==undefined) a.dagwaarde = Number(a.dagwaarde);
+      else a.dagwaarde = null;
+      if(a.vuzgAanwezig !== 'ja') a.vuzgAanwezig = 'nee';
+      if(a.bijtellingViaSalaris !== 'Ja') a.bijtellingViaSalaris = 'Nee';
+      if(typeof a.notities !== 'string') a.notities = '';
+    }catch(e){
+      console.error('Migratie van auto "'+(a && a.id)+'" mislukt:', e);
+    }
+  });
+  // Bijtellingstabel: nooit leeg laten (anders vallen alle berekeningen terug op het forfaitaire
+  // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
+  if(!Array.isArray(BIJTELLING_TABEL) || !BIJTELLING_TABEL.length){
+    BIJTELLING_TABEL = [
+      {jaar:2017, laag:null, cap:null, algemeen:0.22},
+      {jaar:2018, laag:null, cap:null, algemeen:0.22},
+      {jaar:2019, laag:0.04, cap:50000, algemeen:0.22},
+      {jaar:2020, laag:0.08, cap:45000, algemeen:0.22},
+      {jaar:2021, laag:0.12, cap:40000, algemeen:0.22},
+      {jaar:2022, laag:0.16, cap:35000, algemeen:0.22},
+      {jaar:2023, laag:0.16, cap:30000, algemeen:0.22},
+      {jaar:2024, laag:0.16, cap:30000, algemeen:0.22},
+      {jaar:2025, laag:0.17, cap:30000, algemeen:0.22},
+      {jaar:2026, laag:0.18, cap:30000, algemeen:0.22},
+    ];
+  }
 }
 
 function dashboardHTML(){
@@ -1293,6 +1543,11 @@ function klantenHTML(){
     list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
   }
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${STATE.bhFilter===b.id?'selected':''}>${b.naam}</option>`).join('');
+  // isAdmin() en de boekhouder-lookup zijn hetzelfde voor de héle lijst — buiten de loop berekenen
+  // i.p.v. per rij (tot 2x per klant) scheelt merkbaar werk bij een grote klantenlijst.
+  const magVerwijderen = isAdmin();
+  const bhCache = new Map();
+  const bhVoor = (id)=>{ if(!bhCache.has(id)) bhCache.set(id, bh(id)); return bhCache.get(id); };
 
   return `
   <div class="section">
@@ -1321,9 +1576,10 @@ function klantenHTML(){
           ${list.map(k=>{
             const ov = STORE[k.id].dl.overige||[];
             const ovWorst = ov.length ? ov.map(o=>statusOf(o).key).sort((a,b)=>({actie:0,nadert:1,ingediend:2,schema:3}[a]-{actie:0,nadert:1,ingediend:2,schema:3}[b]))[0] : null;
+            const boekhouder = bhVoor(k.bh);
             return `<tr class="row-click" data-open-klant="${k.id}">
-            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${bh(k.bh).naam}</div></td>
-            <td>${bh(k.bh).naam}</td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${boekhouder.naam}</div></td>
+            <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
             <td>${badge(effDL(k,'LH'))}</td>
@@ -1331,7 +1587,7 @@ function klantenHTML(){
             <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
             <td>${fmtEUR(STORE[k.id].saldo)}</td>
             <td style="text-align:right; white-space:nowrap;">
-              ${isAdmin() ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);">🗑</button>` : ''}
+              ${magVerwijderen ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);">🗑</button>` : ''}
               <button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button>
             </td>
           </tr>`;}).join('')}
@@ -1704,6 +1960,328 @@ function loonheffingHTML(){
   ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga), false, 'Geen-DGA-klanten')}
   ${loonheffingOpHoldHTML()}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
+}
+
+
+/* ============================= VIEW: AUTOLIJST ============================= */
+function autoBedragCel(bedrag){
+  if(bedrag===null) return `<span class="badge gray"><span class="dot gray"></span>N.v.t.</span>`;
+  return fmtEUR(bedrag);
+}
+function autoWaarschuwingen(auto){
+  const w = [];
+  if(!auto.datumEersteInschrijving) w.push('Geen datum 1e inschrijving ingevuld — berekening kan niet kloppen.');
+  if(!auto.cataloguswaarde) w.push('Geen cataloguswaarde ingevuld.');
+  if(isJongtimer(auto) && (auto.dagwaarde===null || auto.dagwaarde===undefined)) w.push('Youngtimer zonder dagwaarde — bijtelling staat nu op €0.');
+  return w;
+}
+function autolijstHTML(){
+  let list = AUTOS.slice();
+  if(STATE.autoKlantFilter) list = list.filter(a=>a.klant===STATE.autoKlantFilter);
+  if(STATE.autoElektrischFilter) list = list.filter(a=>a.elektrisch===STATE.autoElektrischFilter);
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(a=>{
+      const k = klantVanAuto(a);
+      return (a.kenteken||'').toLowerCase().includes(q) || (a.merk||'').toLowerCase().includes(q) || (k && k.naam.toLowerCase().includes(q));
+    });
+  }
+  const klantOptions = RAW_KLANTEN.slice().sort((a,b)=>a.naam.localeCompare(b.naam)).map(k=>`<option value="${k.id}" ${STATE.autoKlantFilter===k.id?'selected':''}>${k.naam}</option>`).join('');
+  const admin = isAdmin();
+
+  return `
+  <div class="banner">💡 De bijtelling en BTW-correctie worden hier automatisch berekend — op dezelfde manier als in het oude Excel-bestand (inclusief de 60-maanden-regeling voor elektrische auto's en de youngtimer-regeling). Vul de datum 1e inschrijving en cataloguswaarde in en de rest volgt vanzelf.</div>
+  <div class="section">
+    <div class="section-head">
+      <h3>Autolijst</h3>
+      <div style="display:flex; gap:8px;">
+        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Auto's importeren (Excel)<input type="file" id="autoExcelUpload" accept=".xlsx,.xls" style="display:none;"></label>
+        <button class="btn sm primary" data-add-auto-btn>+ Nieuwe auto</button>
+      </div>
+    </div>
+    <div id="autoImportResult" style="padding:0 20px;"></div>
+    <div class="filters">
+      <select id="filterAutoKlant"><option value="">Alle klanten</option>${klantOptions}</select>
+      <select id="filterAutoElektrisch">
+        <option value="">Elektrisch en niet-elektrisch</option>
+        <option value="ja" ${STATE.autoElektrischFilter==='ja'?'selected':''}>Alleen elektrisch</option>
+        <option value="nee" ${STATE.autoElektrischFilter==='nee'?'selected':''}>Alleen niet-elektrisch</option>
+      </select>
+      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${list.length} van ${AUTOS.length} auto's</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Kenteken</th><th>Merk</th><th>Klant</th><th>Type</th><th>Cataloguswaarde</th><th>Bijtelling (${TODAY.getFullYear()})</th><th>BTW-correctie (${TODAY.getFullYear()})</th><th></th></tr></thead>
+        <tbody>
+          ${list.map(a=>{
+            const k = klantVanAuto(a);
+            const bijtelling = berekenBijtellingProRata(a);
+            const btw = berekenBtwCorrectieProRata(a);
+            const warn = autoWaarschuwingen(a);
+            return `<tr>
+            <td><b>${a.kenteken||'—'}</b>${warn.length ? ` <span title="${warn.join(' ').replace(/"/g,'&quot;')}" style="color:var(--amber);">⚠️</span>` : ''}</td>
+            <td>${a.merk||'—'}</td>
+            <td>${k ? k.naam : '<span style="color:var(--red);">Onbekende klant</span>'}</td>
+            <td>${a.type}${a.elektrisch==='ja'?' · ⚡':''}${isJongtimer(a)?' · youngtimer':''}</td>
+            <td>${fmtEUR(a.cataloguswaarde)}</td>
+            <td>${autoBedragCel(bijtelling)}</td>
+            <td>${autoBedragCel(btw)}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="btn sm ghost" data-edit-auto="${a.id}">Bewerk</button>
+              ${admin ? `<button class="btn sm ghost" data-delete-auto="${a.id}" title="Auto verwijderen" style="color:var(--red);">🗑</button>` : ''}
+            </td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>
+      ${list.length===0?'<div class="empty-state">Geen auto\'s gevonden.</div>':''}
+    </div>
+  </div>
+  ${admin ? bijtellingBeheerHTML() : ''}`;
+}
+function bijtellingBeheerHTML(){
+  const rijen = BIJTELLING_TABEL.slice().sort((a,b)=>a.jaar-b.jaar);
+  return `
+  <div class="section" style="margin-top:18px;">
+    <div class="section-head">
+      <h3>Bijtellingspercentages beheren</h3>
+      <button class="btn sm ghost" data-toggle-bijtelling-beheer>${STATE.showBijtellingBeheer ? 'Verbergen ✕' : 'Tonen / bewerken ⚙️'}</button>
+    </div>
+    ${STATE.showBijtellingBeheer ? `
+    <div class="section-body pad">
+      <p style="font-size:12px; color:var(--muted); margin:0 0 10px;">Deze tabel bepaalt het verlaagde bijtellingstarief voor elektrische auto's (tot de cap) en het algemene tarief daarboven, per jaar — precies zoals het tabblad "Bijtelling" in het oude Excel-bestand. Voeg elk jaar een nieuwe regel toe zodra de Belastingdienst de percentages voor het volgende jaar bekendmaakt; auto's die nog geen jaartarief hebben, gebruiken automatisch het laatst ingevulde jaar totdat je het nieuwe jaar toevoegt.</p>
+      <table>
+        <thead><tr><th>Jaar</th><th>Verlaagd tarief (elektrisch)</th><th>Cap (€)</th><th>Algemeen tarief</th><th></th></tr></thead>
+        <tbody>
+        ${rijen.map(r=>`<tr>
+          <td><input type="number" class="bijtelling-input" data-bt-jaar="${r.jaar}" value="${r.jaar}" style="width:80px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
+          <td><input type="number" step="0.001" class="bijtelling-input" data-bt-laag="${r.jaar}" value="${r.laag===null||r.laag===undefined?'':r.laag}" placeholder="—" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
+          <td><input type="number" class="bijtelling-input" data-bt-cap="${r.jaar}" value="${r.cap===null||r.cap===undefined?'':r.cap}" placeholder="—" style="width:110px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
+          <td><input type="number" step="0.001" class="bijtelling-input" data-bt-algemeen="${r.jaar}" value="${r.algemeen}" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
+          <td><button class="btn sm ghost" data-bt-verwijder="${r.jaar}" style="color:var(--red);">🗑</button></td>
+        </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:14px;">
+        <button class="btn sm primary" data-bt-opslaan>Wijzigingen opslaan</button>
+        <button class="btn sm ghost" data-bt-jaar-toevoegen>+ Jaar toevoegen</button>
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+function autoFormHTML(auto){
+  const editing = !!auto;
+  const klantOptions = RAW_KLANTEN.slice().sort((a,b)=>a.naam.localeCompare(b.naam)).map(k=>`<option value="${k.id}" ${auto && auto.klant===k.id?'selected':''}>${k.naam}</option>`).join('');
+  const v = (field, dflt)=> editing ? (auto[field]!==undefined && auto[field]!==null ? auto[field] : (dflt||'')) : (dflt||'');
+  const sel = (field, value)=> editing && auto[field]===value ? 'selected' : (!editing && value===(field==='gebruik'?'Zakelijk en prive (boven 500km prive)':(field==='type'?'personenauto':'nee')) ? 'selected' : '');
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${editing?'Bewerken':'Nieuw'}</div><div class="panel-klant-name">${editing ? (auto.kenteken||auto.merk||'Auto bewerken') : 'Auto toevoegen'}</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Gegevens</h4><div class="inner">
+      <div class="field-row"><label>Klant*</label><select id="autoKlant" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${klantOptions || '<option value="">Voeg eerst een klant toe</option>'}</select></div>
+      <div class="field-row"><label>Merk</label><input type="text" id="autoMerk" value="${v('merk')}"></div>
+      <div class="field-row"><label>Kenteken</label><input type="text" id="autoKenteken" value="${v('kenteken')}" placeholder="AB-123-C"></div>
+      <div class="field-row"><label>Type</label><select id="autoType" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="personenauto" ${sel('type','personenauto')}>Personenauto</option>
+        <option value="bestelauto" ${sel('type','bestelauto')}>Bestelauto</option>
+        <option value="motor" ${sel('type','motor')}>Motor</option>
+        <option value="fiets" ${sel('type','fiets')}>Fiets</option>
+      </select></div>
+      <div class="field-row"><label>Gebruik</label><select id="autoGebruik" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Zakelijk en prive (boven 500km prive)" ${sel('gebruik','Zakelijk en prive (boven 500km prive)')}>Zakelijk en privé (boven 500km privé)</option>
+        <option value="Enkel zakelijk (onder 500 km prive)" ${sel('gebruik','Enkel zakelijk (onder 500 km prive)')}>Enkel zakelijk (onder 500km privé)</option>
+      </select></div>
+      <div class="field-row"><label>Elektrisch</label><select id="autoElektrisch" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="nee" ${sel('elektrisch','nee')}>Nee</option>
+        <option value="ja" ${sel('elektrisch','ja')}>Ja</option>
+      </select></div>
+      <div class="field-row"><label>BTW auto</label><select id="autoBtwAuto" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="nee" ${sel('btwAuto','nee')}>Nee</option>
+        <option value="ja" ${sel('btwAuto','ja')}>Ja</option>
+      </select></div>
+      <div class="field-row"><label>Klant btw vrijgesteld</label><select id="autoKlantBtwVrijgesteld" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="nee" ${sel('klantBtwVrijgesteld','nee')}>Nee</option>
+        <option value="ja" ${sel('klantBtwVrijgesteld','ja')}>Ja</option>
+      </select></div>
+    </div></div>
+    <div class="panel-section"><h4>Data & waarde</h4><div class="inner">
+      <div class="field-row"><label>Aankoopdatum</label><input type="text" id="autoAankoopdatum" value="${datumNaarInvoer(v('aankoopdatum'))}" placeholder="DD-MM-JJJJ"></div>
+      <div class="field-row"><label>Verkoopdatum</label><input type="text" id="autoVerkoopdatum" value="${datumNaarInvoer(v('verkoopdatum'))}" placeholder="DD-MM-JJJJ"></div>
+      <div class="field-row"><label>Datum 1e inschrijving</label><input type="text" id="autoDatumEersteInschrijving" value="${datumNaarInvoer(v('datumEersteInschrijving'))}" placeholder="DD-MM-JJJJ"></div>
+      <div class="field-row"><label>Cataloguswaarde</label><input type="number" id="autoCataloguswaarde" value="${v('cataloguswaarde',0)}"></div>
+      <div class="field-row"><label>Dagwaarde (youngtimer)</label><input type="number" id="autoDagwaarde" value="${editing && auto.dagwaarde!==null && auto.dagwaarde!==undefined ? auto.dagwaarde : ''}" placeholder="Alleen voor youngtimers"></div>
+      <div style="font-size:11.5px; color:var(--muted);">Formaat datums: DD-MM-JJJJ. Bijtelling en BTW-correctie worden automatisch berekend zodra klant, elektrisch, type, gebruik, datum 1e inschrijving en cataloguswaarde zijn ingevuld.</div>
+    </div></div>
+    <div class="panel-section"><h4>Overig</h4><div class="inner">
+      <div class="field-row"><label>VUZG aanwezig</label><select id="autoVuzgAanwezig" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="nee" ${sel('vuzgAanwezig','nee')}>Nee</option>
+        <option value="ja" ${sel('vuzgAanwezig','ja')}>Ja</option>
+      </select></div>
+      <div class="field-row"><label>Bijtelling via salaris</label><select id="autoBijtellingViaSalaris" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Nee" ${editing && auto.bijtellingViaSalaris==='Nee' ? 'selected':''}>Nee</option>
+        <option value="Ja" ${editing && auto.bijtellingViaSalaris==='Ja' ? 'selected':''}>Ja</option>
+      </select></div>
+      <div class="field-row"><label>Notities</label><input type="text" id="autoNotities" value="${(v('notities')||'').replace(/"/g,'&quot;')}"></div>
+    </div></div>
+    <button class="btn primary" data-save-auto="${editing?auto.id:''}" style="width:100%; justify-content:center; padding:11px;">${editing?'Wijzigingen opslaan':'Auto toevoegen'}</button>
+  </div>`;
+}
+function openAddAutoPanel(silent){
+  const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
+  const auto = STATE.editAuto ? AUTOS.find(a=>a.id===STATE.editAuto) : null;
+  panel.innerHTML = autoFormHTML(auto);
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  document.querySelector('[data-save-auto]').addEventListener('click', ()=>{
+    const klantId = document.getElementById('autoKlant').value;
+    if(!klantId){ toast('Kies een klant.'); return; }
+    const data = {
+      klant: klantId,
+      merk: document.getElementById('autoMerk').value,
+      kenteken: document.getElementById('autoKenteken').value,
+      type: document.getElementById('autoType').value,
+      gebruik: document.getElementById('autoGebruik').value,
+      elektrisch: document.getElementById('autoElektrisch').value,
+      btwAuto: document.getElementById('autoBtwAuto').value,
+      klantBtwVrijgesteld: document.getElementById('autoKlantBtwVrijgesteld').value,
+      aankoopdatum: invoerNaarDatum(document.getElementById('autoAankoopdatum').value),
+      verkoopdatum: invoerNaarDatum(document.getElementById('autoVerkoopdatum').value),
+      datumEersteInschrijving: invoerNaarDatum(document.getElementById('autoDatumEersteInschrijving').value),
+      cataloguswaarde: document.getElementById('autoCataloguswaarde').value,
+      dagwaarde: document.getElementById('autoDagwaarde').value,
+      vuzgAanwezig: document.getElementById('autoVuzgAanwezig').value,
+      bijtellingViaSalaris: document.getElementById('autoBijtellingViaSalaris').value,
+      notities: document.getElementById('autoNotities').value,
+    };
+    if(STATE.editAuto){
+      updateAuto(STATE.editAuto, data);
+      toast('Auto bijgewerkt.');
+    } else {
+      addAuto(data);
+      toast('Auto toegevoegd.');
+    }
+    STATE.showAddAuto=false; STATE.editAuto=null;
+    closePanel();
+    render();
+  });
+}
+/* Excel-import voor de Autolijst: leest het bestaande "Checklist"-werkblad (kolomkoppen op rij 5,
+   data vanaf rij 6) en koppelt elke rij aan een klant op naam — dezelfde matching als bij de
+   Loonheffingen-import, zodat bestaande workflows en verwachtingen herbruikt worden. */
+function leesJaJa(v){ return String(v||'').trim().toLowerCase()==='ja' ? 'ja' : 'nee'; }
+function leesExcelDatum(v){
+  if(v===null || v===undefined || v==='') return '';
+  if(v instanceof Date && !isNaN(v.getTime())){
+    const y=v.getFullYear(), m=String(v.getMonth()+1).padStart(2,'0'), d=String(v.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+function leesExcelGetal(v){
+  if(v===null || v===undefined || v==='') return 0;
+  const n = Number(String(v).replace(/[^\d.,-]/g,'').replace(/\./g,'').replace(',','.'));
+  return isNaN(n) ? 0 : n;
+}
+function readAutoExcelRowsPromise(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error('Bestand kon niet gelezen worden'));
+    reader.onload = (ev)=>{
+      try{
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        const ws = wb.Sheets['Checklist'] || wb.Sheets[wb.SheetNames[0]];
+        const grid = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:null, dateNF:'yyyy-mm-dd'});
+        const gridRaw = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+        // Kolomkoppen staan op rij 5 (index 4); data begint op rij 6 (index 5).
+        const headerRow = (grid[4]||[]).map(h=>(h||'').toString().trim().toLowerCase());
+        const col = (naam)=> headerRow.indexOf(naam.toLowerCase());
+        const idx = {
+          klantnaam: col('Klantnaam'), merk: col('Merk'), kenteken: col('Kenteken'),
+          klantBtwVrijgesteld: col('Klant BTW vrijgesteld'), btwAuto: col('BTW auto'),
+          gebruik: col('Enkel zakelijk of zakelijk en prive'), elektrisch: col('Elektrische auto'),
+          type: col('Type transportmiddel'), aankoopdatum: col('Aankoopdatum'), verkoopdatum: col('Verkoopdatum'),
+          datumInschrijving: col('Datum 1e inschrijving'), cataloguswaarde: col('Cataloguswaarde'),
+          dagwaarde: col('Dagwaarde'), vuzgAanwezig: col('VUZG aanwezig'), bijtellingViaSalaris: col('Bijtelling via salaris'),
+        };
+        if(idx.klantnaam===-1) throw new Error('Kon de kolom "Klantnaam" niet vinden op rij 5. Is dit het juiste bestand?');
+        const rows = [];
+        for(let r=5; r<grid.length; r++){
+          const row = grid[r]; const rowRaw = gridRaw[r];
+          if(!row || !row[idx.klantnaam] || String(row[idx.klantnaam]).trim()==='') continue;
+          rows.push({
+            klantnaam: String(row[idx.klantnaam]).trim(),
+            merk: idx.merk>-1 ? (row[idx.merk]||'') : '',
+            kenteken: idx.kenteken>-1 ? (row[idx.kenteken]||'') : '',
+            klantBtwVrijgesteld: idx.klantBtwVrijgesteld>-1 ? leesJaJa(row[idx.klantBtwVrijgesteld]) : 'nee',
+            btwAuto: idx.btwAuto>-1 ? leesJaJa(row[idx.btwAuto]) : 'nee',
+            gebruik: idx.gebruik>-1 && row[idx.gebruik] ? row[idx.gebruik] : 'Zakelijk en prive (boven 500km prive)',
+            elektrisch: idx.elektrisch>-1 ? leesJaJa(row[idx.elektrisch]) : 'nee',
+            type: idx.type>-1 && row[idx.type] ? String(row[idx.type]).trim().toLowerCase() : 'personenauto',
+            aankoopdatum: idx.aankoopdatum>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.aankoopdatum] : row[idx.aankoopdatum]) : '',
+            verkoopdatum: idx.verkoopdatum>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.verkoopdatum] : row[idx.verkoopdatum]) : '',
+            datumEersteInschrijving: idx.datumInschrijving>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.datumInschrijving] : row[idx.datumInschrijving]) : '',
+            cataloguswaarde: idx.cataloguswaarde>-1 ? leesExcelGetal(row[idx.cataloguswaarde]) : 0,
+            dagwaarde: idx.dagwaarde>-1 && row[idx.dagwaarde]!==null && row[idx.dagwaarde]!=='' && !isNaN(Number(String(row[idx.dagwaarde]).replace(',','.'))) ? leesExcelGetal(row[idx.dagwaarde]) : null,
+            vuzgAanwezig: idx.vuzgAanwezig>-1 ? leesJaJa(row[idx.vuzgAanwezig]) : 'nee',
+            bijtellingViaSalaris: idx.bijtellingViaSalaris>-1 && String(row[idx.bijtellingViaSalaris]||'').trim().toLowerCase()==='ja' ? 'Ja' : 'Nee',
+          });
+        }
+        resolve(rows);
+      }catch(err){ reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+async function handleAutoImport(e){
+  const getResultBox = ()=> document.getElementById('autoImportResult');
+  try{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const box0 = getResultBox();
+    if(box0) box0.innerHTML = '<div class="hint">Bestand wordt gelezen…</div>';
+    if(typeof XLSX === 'undefined'){
+      throw new Error('De Excel-bibliotheek (XLSX) kon niet geladen worden. Controleer je internetverbinding en herlaad de pagina, en probeer het daarna opnieuw.');
+    }
+    const rows = await readAutoExcelRowsPromise(file);
+    if(!rows.length){
+      const boxEmpty = getResultBox();
+      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;">⚠️ Er zijn geen auto's herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is (tabblad "Checklist", koppen op rij 5).</div>`;
+      return;
+    }
+    let toegevoegd = 0; const nietGevonden = [];
+    rows.forEach(row=>{
+      const klant = vindKlantOpNaam(row.klantnaam);
+      if(!klant){ nietGevonden.push(row.klantnaam); return; }
+      addAuto({ klant: klant.id, merk:row.merk, kenteken:row.kenteken, klantBtwVrijgesteld:row.klantBtwVrijgesteld,
+        btwAuto:row.btwAuto, gebruik:row.gebruik, elektrisch:row.elektrisch, type:row.type,
+        aankoopdatum:row.aankoopdatum, verkoopdatum:row.verkoopdatum, datumEersteInschrijving:row.datumEersteInschrijving,
+        cataloguswaarde:row.cataloguswaarde, dagwaarde:row.dagwaarde, vuzgAanwezig:row.vuzgAanwezig, bijtellingViaSalaris:row.bijtellingViaSalaris });
+      toegevoegd++;
+    });
+    const box = getResultBox();
+    if(box){
+      const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      box.innerHTML = `<div class="banner">✅ <b>${toegevoegd}</b> van de <b>${rows.length}</b> auto('s) in "${escaped(file.name)}" toegevoegd.`
+        + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> klant(en) niet gevonden op naam — voeg deze klant(en) eerst toe: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
+        + `</div>`;
+    }
+    render();
+  }catch(err){
+    console.error('Autolijst-import mislukt:', err);
+    const boxErr = getResultBox();
+    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);">❌ Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
+    if(boxErr) boxErr.innerHTML = msg; else alert('Fout bij inlezen van het Excel-bestand: '+((err&&err.message)||err));
+  }
 }
 
 /* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
@@ -2204,7 +2782,7 @@ function closePanelDom(){
   if(panel) panel.classList.remove('open');
   if(overlay) overlay.classList.remove('open');
 }
-function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; closePanelDom(); }
+function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; closePanelDom(); }
 function attachEditKlantHandlers(klant){
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   const cancelBtn = document.querySelector('[data-cancel-edit-klant]');
@@ -2262,7 +2840,7 @@ function bindOnce(el, event, handler){
 }
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{
-    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false;
+    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null;
     render();
   }));
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
@@ -2270,6 +2848,59 @@ function attachHandlers(){
   if(klantenCsvUpload) klantenCsvUpload.addEventListener('change', handleKlantenCSVUpload);
   const lhKlantenImportFile = document.getElementById('lhKlantenImportFile');
   if(lhKlantenImportFile) lhKlantenImportFile.addEventListener('change', handleLhKlantenImport);
+  const autoExcelUpload = document.getElementById('autoExcelUpload');
+  if(autoExcelUpload) autoExcelUpload.addEventListener('change', handleAutoImport);
+  document.querySelectorAll('[data-add-auto-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.editAuto=null; STATE.showAddAuto=true; render(); }));
+  document.querySelectorAll('[data-edit-auto]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); STATE.editAuto = el.getAttribute('data-edit-auto'); STATE.showAddAuto=true; render();
+  }));
+  document.querySelectorAll('[data-delete-auto]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation(); confirmDeleteAuto(el.getAttribute('data-delete-auto'));
+  }));
+  const filterAutoKlant = document.getElementById('filterAutoKlant');
+  if(filterAutoKlant) filterAutoKlant.addEventListener('change', e=>{ STATE.autoKlantFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  const filterAutoElektrisch = document.getElementById('filterAutoElektrisch');
+  if(filterAutoElektrisch) filterAutoElektrisch.addEventListener('change', e=>{ STATE.autoElektrischFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  document.querySelectorAll('[data-toggle-bijtelling-beheer]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.showBijtellingBeheer = !STATE.showBijtellingBeheer;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-bt-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
+    const jaar = Number(el.getAttribute('data-bt-verwijder'));
+    if(!confirm(`Jaartarief ${jaar} verwijderen?`)) return;
+    BIJTELLING_TABEL = BIJTELLING_TABEL.filter(r=>r.jaar!==jaar);
+    persistMeta();
+    toast('Jaartarief verwijderd.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-bt-jaar-toevoegen]').forEach(el=>el.addEventListener('click', ()=>{
+    const nieuwJaar = laatsteBijtellingJaar()+1;
+    if(BIJTELLING_TABEL.some(r=>r.jaar===nieuwJaar)){ toast('Dat jaar staat al in de tabel.'); return; }
+    const laatste = BIJTELLING_TABEL.find(r=>r.jaar===laatsteBijtellingJaar());
+    BIJTELLING_TABEL.push({jaar:nieuwJaar, laag:laatste?laatste.laag:null, cap:laatste?laatste.cap:null, algemeen:laatste?laatste.algemeen:0.22});
+    persistMeta();
+    STATE.showBijtellingBeheer = true;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-bt-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const nieuweTabel = [];
+    document.querySelectorAll('[data-bt-jaar]').forEach(input=>{
+      const origJaar = Number(input.getAttribute('data-bt-jaar'));
+      const nieuwJaar = Number(input.value) || origJaar;
+      const laagInput = document.querySelector(`[data-bt-laag="${origJaar}"]`);
+      const capInput = document.querySelector(`[data-bt-cap="${origJaar}"]`);
+      const algInput = document.querySelector(`[data-bt-algemeen="${origJaar}"]`);
+      const laag = laagInput && laagInput.value!=='' ? Number(laagInput.value) : null;
+      const cap = capInput && capInput.value!=='' ? Number(capInput.value) : null;
+      const algemeen = algInput && algInput.value!=='' ? Number(algInput.value) : 0.22;
+      nieuweTabel.push({jaar:nieuwJaar, laag, cap, algemeen});
+    });
+    if(nieuweTabel.some(r=>isNaN(r.jaar))){ toast('Ongeldig jaartal ingevoerd.'); return; }
+    BIJTELLING_TABEL = nieuweTabel;
+    persistMeta();
+    toast('Bijtellingstabel opgeslagen.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-add-bh-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddBh=true; render(); }));
   document.querySelectorAll('[data-add-team-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddTeam=true; render(); }));
   document.querySelectorAll('[data-delete-team]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -3163,6 +3794,7 @@ window.addEventListener('beforeunload', ()=>{
   try{ flushPersistStore(); }catch(e){}
   try{ flushPersistMeta(); }catch(e){}
 });
+
 
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
