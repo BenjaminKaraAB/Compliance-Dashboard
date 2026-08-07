@@ -801,26 +801,18 @@ function toast(msg){
 
 /* ============================= STATE ============================= */
 const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','instellingen'];
-function huidigeHashView(){
-  const v = (location.hash||'').replace(/^#\/?/, '').split('?')[0];
-  return GELDIGE_VIEWS.includes(v) ? v : null;
+const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
+function onthoudHuidigePagina(view){
+  // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
+  // URL/hash-manipulatie: dat bleek te botsen met de Microsoft-inlog-pop-up (die de hash gebruikt
+  // om de inlogrespons te herkennen) en gaf daarnaast een onverklaard wit scherm bij verversen.
+  try{ localStorage.setItem(LAATSTE_PAGINA_KEY, view); }catch(e){}
 }
-function zetHashVoorView(view){
-  // history.replaceState (i.p.v. location.hash=) voorkomt dat elke render() (die veel vaker draait dan
-  // alleen bij paginawisselingen) een nieuwe entry aan de browsergeschiedenis toevoegt — de terug-knop
-  // blijft daardoor bruikbaar. Elke pagina krijgt zo wél een eigen, ververs-bestendige URL.
-  //
-  // BELANGRIJK: de Microsoft-inlog-pop-up (en het onzichtbare iframe voor stille token-vernieuwing)
-  // laden dezelfde pagina en voeren dus ook deze code uit. Die pop-up/iframe gebruikt het hash-
-  // fragment van de URL om de inlogrespons van Microsoft te herkennen — als wij daar de hash
-  // overschrijven vóórdat MSAL 'm heeft kunnen lezen, faalt het inloggen met de foutmelding
-  // "Hash does not contain known properties". Daarom raken we de hash NOOIT aan als deze pagina in
-  // een pop-up (window.opener) of iframe (window.parent !== window) draait.
+function laatstBekekenPagina(){
   try{
-    if(window.opener || window.parent !== window) return;
-    const doel = '#/' + view;
-    if(location.hash !== doel) history.replaceState(null, '', doel);
-  }catch(e){}
+    const v = localStorage.getItem(LAATSTE_PAGINA_KEY);
+    return GELDIGE_VIEWS.includes(v) ? v : null;
+  }catch(e){ return null; }
 }
 let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null };
 let searchDebounceTimer = null;
@@ -843,7 +835,7 @@ const ICONS = {
 
 /* ============================= RENDER ROOT ============================= */
 function render(){
-  zetHashVoorView(STATE.view);
+  onthoudHuidigePagina(STATE.view);
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="sidebar">
@@ -3103,11 +3095,11 @@ try{
   Object.keys(sessionStorage).forEach(k=>{ if(k.indexOf('interaction.status')>-1) sessionStorage.removeItem(k); });
 }catch(e){}
 
-// Pagina-URL (hash) bepaalt bij het laden op welke pagina we starten, zodat een refresh je niet
-// terugzet naar het Overzicht.
+// De laatst bekeken pagina (uit localStorage) bepaalt bij het laden op welke pagina we starten,
+// zodat een refresh je niet terugzet naar het Overzicht.
 try{
-  const hashView = huidigeHashView();
-  if(hashView) STATE.view = hashView;
+  const laatstePagina = laatstBekekenPagina();
+  if(laatstePagina) STATE.view = laatstePagina;
 }catch(e){}
 
 try{ loadSync(); }catch(e){ console.error('Sync-instellingen laden mislukt:', e); }
@@ -3126,14 +3118,6 @@ setInterval(()=>{
   }
 }, 45000);
 
-// Terug/vooruit-navigatie of een handmatig aangepaste hash moet ook de juiste pagina tonen.
-window.addEventListener('hashchange', ()=>{
-  const hashView = huidigeHashView();
-  if(hashView && hashView !== STATE.view){
-    STATE.view = hashView; STATE.bhFilter=''; STATE.statusFilter='';
-    render();
-  }
-});
 
 // Vang op dat gedebouncede localStorage-writes (persist/persistMeta) niet verloren gaan als het
 // tabblad direct na een wijziging wordt gesloten.
