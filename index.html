@@ -2186,9 +2186,29 @@ function leesExcelDatum(v){
   if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
   return '';
 }
+// Leest een getal uit een Excel-cel. Bij een numerieke cel (raw:true-waarde) geven we het getal
+// gewoon direct terug — géén tekst-parsing nodig, dus geen risico dat Excel's eigen (Engelstalige)
+// getalnotatie ("1,234.56") per ongeluk wordt aangezien voor de Nederlandse notatie ("1.234,56").
+// Alleen als er daadwerkelijk een TEKST-waarde binnenkomt (bijv. een cel die als tekst is opgemaakt,
+// of handmatig ingevoerd/geplakt) passen we de Nederlandse notatie toe: "." is dan een duizendtal-
+// scheidingsteken en "," de decimaalscheiding — zoals in "42.170,00" = 42170,00 euro.
 function leesExcelGetal(v){
   if(v===null || v===undefined || v==='') return 0;
-  const n = Number(String(v).replace(/[^\d.,-]/g,'').replace(/\./g,'').replace(',','.'));
+  if(typeof v === 'number') return isNaN(v) ? 0 : v;
+  let s = String(v).trim().replace(/[^\d.,-]/g,'');
+  const laatsteKomma = s.lastIndexOf(',');
+  const laatstePunt = s.lastIndexOf('.');
+  if(laatsteKomma > -1 && laatsteKomma > laatstePunt){
+    // Nederlandse notatie: "." = duizendtallen, "," = decimaal (bijv. "42.170,00").
+    s = s.replace(/\./g,'').replace(',', '.');
+  } else if(laatstePunt > -1 && laatstePunt > laatsteKomma){
+    // Engelse/Excel-notatie: "," = duizendtallen, "." = decimaal (bijv. "42,170.00").
+    s = s.replace(/,/g,'');
+  } else {
+    // Geen duizendtalscheiding, hooguit één scheidingsteken dat als decimaal bedoeld is.
+    s = s.replace(',', '.');
+  }
+  const n = Number(s);
   return isNaN(n) ? 0 : n;
 }
 function readAutoExcelRowsPromise(file){
@@ -2230,8 +2250,8 @@ function readAutoExcelRowsPromise(file){
             aankoopdatum: idx.aankoopdatum>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.aankoopdatum] : row[idx.aankoopdatum]) : '',
             verkoopdatum: idx.verkoopdatum>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.verkoopdatum] : row[idx.verkoopdatum]) : '',
             datumEersteInschrijving: idx.datumInschrijving>-1 ? leesExcelDatum(rowRaw ? rowRaw[idx.datumInschrijving] : row[idx.datumInschrijving]) : '',
-            cataloguswaarde: idx.cataloguswaarde>-1 ? leesExcelGetal(row[idx.cataloguswaarde]) : 0,
-            dagwaarde: idx.dagwaarde>-1 && row[idx.dagwaarde]!==null && row[idx.dagwaarde]!=='' && !isNaN(Number(String(row[idx.dagwaarde]).replace(',','.'))) ? leesExcelGetal(row[idx.dagwaarde]) : null,
+            cataloguswaarde: idx.cataloguswaarde>-1 ? leesExcelGetal(rowRaw ? rowRaw[idx.cataloguswaarde] : row[idx.cataloguswaarde]) : 0,
+            dagwaarde: idx.dagwaarde>-1 && rowRaw && rowRaw[idx.dagwaarde]!==null && rowRaw[idx.dagwaarde]!==undefined && rowRaw[idx.dagwaarde]!=='' ? leesExcelGetal(rowRaw[idx.dagwaarde]) : null,
             vuzgAanwezig: idx.vuzgAanwezig>-1 ? leesJaJa(row[idx.vuzgAanwezig]) : 'nee',
             bijtellingViaSalaris: idx.bijtellingViaSalaris>-1 && String(row[idx.bijtellingViaSalaris]||'').trim().toLowerCase()==='ja' ? 'Ja' : 'Nee',
           });
