@@ -521,7 +521,7 @@ function signOutOfMsal(){
   SYNC.account = null; SYNC.siteId = null; SYNC.listId = null;
   persistSync();
 }
-async function getGraphToken(){
+async function getGraphToken(allowInteractive){
   const app = await getMsalInstance();
   if(!app) throw new Error('Geen App ID geconfigureerd');
   const accounts = app.getAllAccounts();
@@ -530,12 +530,19 @@ async function getGraphToken(){
     const res = await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: accounts[0] });
     return res.accessToken;
   }catch(e){
+    // Automatische achtergrond-sync (bij het laden van de pagina en elke 45s) mag NOOIT ongevraagd
+    // een Microsoft-inlog-pop-up openen: browsers blokkeren pop-ups die niet direct uit een klik van
+    // de gebruiker voortkomen, dus die poging mislukt toch alleen maar stilletjes — en gaf hier
+    // bovendien de verwarrende "Sync mislukt"-status na elke verversing. Alleen een expliciete,
+    // door de gebruiker aangeklikte actie (de "Sync nu"-knop, of opnieuw inloggen) mag interactief
+    // een pop-up openen.
+    if(!allowInteractive) throw e;
     const res = await app.acquireTokenPopup({ scopes: GRAPH_SCOPES });
     return res.accessToken;
   }
 }
-async function graphFetch(url, opts={}){
-  const token = await getGraphToken();
+async function graphFetch(url, opts={}, allowInteractive){
+  const token = await getGraphToken(allowInteractive);
   const res = await fetch(url, Object.assign({}, opts, {
     headers: Object.assign({ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, opts.headers||{})
   }));
@@ -543,14 +550,14 @@ async function graphFetch(url, opts={}){
   if(res.status === 204) return null;
   return res.json();
 }
-async function resolveSiteAndList(){
+async function resolveSiteAndList(allowInteractive){
   if(SYNC.siteId && SYNC.listId) return;
   if(!SYNC.siteUrl) throw new Error('Vul eerst het SharePoint site-adres in bij Instellingen.');
   const u = new URL(SYNC.siteUrl);
-  const siteRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${u.hostname}:${u.pathname}`);
+  const siteRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${u.hostname}:${u.pathname}`, {}, allowInteractive);
   SYNC.siteId = siteRes.id;
   const filter = encodeURIComponent(`displayName eq '${SYNC.listName}'`);
-  const listsRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists?$filter=${filter}`);
+  const listsRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists?$filter=${filter}`, {}, allowInteractive);
   if(!listsRes.value || !listsRes.value.length) throw new Error(`Lijst '${SYNC.listName}' niet gevonden op deze site.`);
   SYNC.listId = listsRes.value[0].id;
   persistSync();
@@ -564,11 +571,11 @@ function pushRemoteDebounced(){
 async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
-    await resolveSiteAndList();
+    await resolveSiteAndList(false);
     const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
-    });
+    }, false);
     SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
   }catch(e){
     SYNC.lastError = e.message || 'Onbekende fout';
@@ -589,8 +596,8 @@ async function fetchRemoteAndMerge(showFeedback){
   if(syncInFlight) return;
   syncInFlight = true;
   try{
-    await resolveSiteAndList();
-    const itemRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1?expand=fields`);
+    await resolveSiteAndList(showFeedback);
+    const itemRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1?expand=fields`, {}, showFeedback);
     const rawData = itemRes && itemRes.fields ? itemRes.fields.Data : null;
     if(typeof rawData === 'string' && rawData === laatstVerwerkteSyncData){
       // Ongewijzigd t.o.v. de vorige keer: alleen de sync-status bijwerken, verder niets doen.
