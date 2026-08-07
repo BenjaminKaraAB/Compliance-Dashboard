@@ -3599,7 +3599,13 @@ function handleKlantenCSVUpload(e){
         bhId = getFallbackBh();
       }
 
-      const bestaand = extId ? RAW_KLANTEN.find(k=>k.extId===extId) : null;
+      // Eerst proberen te matchen op extId (het exportbestand se eigen klant-Id/klantnummer, als dat
+      // aanwezig is). Is er geen extId of geen match, dan valt de import terug op de klantnaam — zelfde
+      // normalisatie (hoofdletters/leestekens/BV-schrijfwijzen genegeerd) als bij de Loonheffingen- en
+      // Autolijst-import — zodat eenzelfde klant nooit twee keer wordt aangemaakt, ook niet als het
+      // klantnummer een keer ontbreekt of tussen exports verandert.
+      let bestaand = extId ? RAW_KLANTEN.find(k=>k.extId===extId) : null;
+      if(!bestaand) bestaand = vindKlantOpNaam(naam);
       if(bestaand){
         bestaand.naam = naam;
         if(vorm) bestaand.vorm = vorm;
@@ -3607,6 +3613,7 @@ function handleKlantenCSVUpload(e){
         if(contact) bestaand.contact = contact;
         if(email) bestaand.email = email;
         if(tel) bestaand.tel = tel;
+        if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
         if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
