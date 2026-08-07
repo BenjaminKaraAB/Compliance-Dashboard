@@ -701,6 +701,21 @@ function readTabularFile(file, callback){
 /* ============================= HELPERS ============================= */
 function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
 function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
+function datumNaarInvoer(iso){
+  // Zet interne ISO-datum (JJJJ-MM-DD) om naar het invoerformaat DD-MM-JJJJ voor formuliervelden.
+  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
+  const [j,m,d] = iso.split('-');
+  return `${d}-${m}-${j}`;
+}
+function invoerNaarDatum(str){
+  // Zet een DD-MM-JJJJ invoer om naar de interne ISO-datum (JJJJ-MM-DD). Geeft '' terug bij een ongeldige invoer.
+  str = (str||'').trim();
+  const m = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if(!m) return '';
+  const dag = +m[1], maand = +m[2];
+  if(maand<1 || maand>12 || dag<1 || dag>31) return '';
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
 function daysDiff(str){ const dt=new Date(str+'T00:00:00'); return Math.round((dt-TODAY)/86400000); }
 
 function statusOf(entry){
@@ -1803,7 +1818,7 @@ function panelHTML(klant){
       <div class="inner" style="padding-top:10px;">
         <div class="add-item-row">
           <input type="text" id="newOvNaam" placeholder="Naam deadline (bv. Intrastat)">
-          <input type="text" id="newOvDatum" placeholder="JJJJ-MM-DD" style="width:120px;">
+          <input type="text" id="newOvDatum" placeholder="DD-MM-JJJJ" style="width:120px;">
           <button class="btn sm primary" data-add-overige>Toevoegen</button>
         </div>
       </div>
@@ -1897,7 +1912,7 @@ function vormSelectHTML(id, current){
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
   const f = STORE[klant.id];
-  const dateVal = (type)=> f.dl[type] && !f.dl[type].na ? f.dl[type].datum : '';
+  const dateVal = (type)=> f.dl[type] && !f.dl[type].na ? datumNaarInvoer(f.dl[type].datum) : '';
   const herhOptsHTML = (type)=>{
     const cur = f.dl[type] && !f.dl[type].na ? (f.dl[type].herhaling||'geen') : 'geen';
     const opties = [['geen','Geen herhaling'],['maandelijks','Maandelijks'],['kwartaal','Per kwartaal'],['jaarlijks','Jaarlijks']];
@@ -1921,19 +1936,19 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
     </div></div>
     <div class="panel-section"><h4>Deadlines</h4><div class="inner">
-      <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="DD-MM-JJJJ">
         <select id="editKlantOBHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('OB')}</select>
       </div>
-      <div class="field-row"><label>VPB</label><input type="text" id="editKlantVPBDatum" value="${dateVal('VPB')}" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>VPB</label><input type="text" id="editKlantVPBDatum" value="${dateVal('VPB')}" placeholder="DD-MM-JJJJ">
         <select id="editKlantVPBHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('VPB')}</select>
       </div>
-      <div class="field-row"><label>LH</label><input type="text" id="editKlantLHDatum" value="${dateVal('LH')}" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>LH</label><input type="text" id="editKlantLHDatum" value="${dateVal('LH')}" placeholder="DD-MM-JJJJ">
         <select id="editKlantLHHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('LH')}</select>
       </div>
-      <div class="field-row"><label>JR/JA</label><input type="text" id="editKlantJRDatum" value="${dateVal('JR')}" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>JR/JA</label><input type="text" id="editKlantJRDatum" value="${dateVal('JR')}" placeholder="DD-MM-JJJJ">
         <select id="editKlantJRHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('JR')}</select>
       </div>
-      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD.</div>
+      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: DD-MM-JJJJ.</div>
     </div></div>
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
@@ -1962,7 +1977,7 @@ function addKlantFormHTML(){
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
     </div></div>
     <div class="panel-section"><h4>Eerstvolgende deadlines (optioneel)</h4><div class="inner">
-      <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="DD-MM-JJJJ">
         <select id="newKlantObHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
           <option value="geen">Geen herhaling</option>
           <option value="maandelijks">Maandelijks</option>
@@ -1970,26 +1985,26 @@ function addKlantFormHTML(){
           <option value="jaarlijks">Jaarlijks</option>
         </select>
       </div>
-      <div class="field-row"><label>VPB</label><input type="text" id="newKlantVpb" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>VPB</label><input type="text" id="newKlantVpb" placeholder="DD-MM-JJJJ">
         <select id="newKlantVpbHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
           <option value="geen" selected>Geen herhaling</option>
           <option value="jaarlijks">Jaarlijks</option>
         </select>
       </div>
-      <div class="field-row"><label>LH</label><input type="text" id="newKlantLh" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>LH</label><input type="text" id="newKlantLh" placeholder="DD-MM-JJJJ">
         <select id="newKlantLhHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
           <option value="geen">Geen herhaling</option>
           <option value="maandelijks" selected>Maandelijks</option>
           <option value="kwartaal">Per kwartaal</option>
         </select>
       </div>
-      <div class="field-row"><label>JR/JA</label><input type="text" id="newKlantJr" placeholder="JJJJ-MM-DD">
+      <div class="field-row"><label>JR/JA</label><input type="text" id="newKlantJr" placeholder="DD-MM-JJJJ">
         <select id="newKlantJrHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
           <option value="geen" selected>Geen herhaling</option>
           <option value="jaarlijks">Jaarlijks</option>
         </select>
       </div>
-      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: JJJJ-MM-DD. Bij een herhaling schuift de deadline automatisch door zodra je 'm markeert als ingediend — je hoeft de datum dan niet steeds opnieuw in te stellen.</div>
+      <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: DD-MM-JJJJ. Bij een herhaling schuift de deadline automatisch door zodra je 'm markeert als ingediend — je hoeft de datum dan niet steeds opnieuw in te stellen.</div>
     </div></div>
     <div class="panel-section"><h4>Loonheffing</h4><div class="inner">
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
@@ -2052,7 +2067,7 @@ function openAddKlantPanel(silent){
     const bhId = document.getElementById('newKlantBh').value;
     if(!naam){ toast('Vul een klantnaam in.'); return; }
     if(!bhId){ toast('Voeg eerst een boekhouder toe.'); return; }
-    const dateOrEmpty = (v)=>{ v=(v||'').trim(); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; };
+    const dateOrEmpty = (v)=> invoerNaarDatum(v);
     addKlant({
       naam, vorm:document.getElementById('newKlantVorm').value, bh:bhId,
       kvk:document.getElementById('newKlantKvk').value.trim(),
@@ -2137,10 +2152,11 @@ function attachEditKlantHandlers(klant){
 
     const f = STORE[klant.id];
     [['OB','editKlantOBDatum','editKlantOBHerh'],['VPB','editKlantVPBDatum','editKlantVPBHerh'],['LH','editKlantLHDatum','editKlantLHHerh'],['JR','editKlantJRDatum','editKlantJRHerh']].forEach(([type,dateId,herhId])=>{
-      const dateVal = document.getElementById(dateId).value.trim();
+      const dateValRaw = document.getElementById(dateId).value.trim();
+      const dateVal = invoerNaarDatum(dateValRaw);
       const herhVal = document.getElementById(herhId).value;
       const existing = f.dl[type];
-      if(/^\d{4}-\d{2}-\d{2}$/.test(dateVal)){
+      if(dateVal){
         const unchanged = existing && !existing.na && existing.datum === dateVal;
         f.dl[type] = { datum: dateVal, status: unchanged ? existing.status : null, herhaling: herhVal };
       } else {
@@ -2947,8 +2963,8 @@ function attachPanelHandlers(klant){
   const addOv = document.querySelector('[data-add-overige]');
   if(addOv) addOv.addEventListener('click', ()=>{
     const naam = document.getElementById('newOvNaam').value.trim();
-    const datum = document.getElementById('newOvDatum').value.trim();
-    if(!naam || !/^\d{4}-\d{2}-\d{2}$/.test(datum)){ toast('Vul een geldige naam en datum (JJJJ-MM-DD) in.'); return; }
+    const datum = invoerNaarDatum(document.getElementById('newOvDatum').value);
+    if(!naam || !datum){ toast('Vul een geldige naam en datum (DD-MM-JJJJ) in.'); return; }
     STORE[klant.id].dl.overige.push({naam, datum, status:null}); persist(); refreshPanel(klant);
   });
 
