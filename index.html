@@ -765,7 +765,7 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1366,6 +1366,44 @@ function bulkSetLhDeadlines(klantList){
   persist();
   return datum;
 }
+function lhNotitiesJaarHTML(k, f){
+  const jaarFilter = STATE.lhNotitiesJaar || TODAY.getFullYear();
+  const alle = [];
+  (f.lh.taken||[]).forEach(t=>{
+    (t.aantekeningen||[]).forEach(n=>{
+      if(n.ts) alle.push({ taak:t.naam, tekst:n.tekst, door:n.door, ts:n.ts });
+    });
+  });
+  const jarenSet = new Set(alle.map(n=>new Date(n.ts).getFullYear()));
+  jarenSet.add(TODAY.getFullYear());
+  const jaren = Array.from(jarenSet).sort((a,b)=>b-a);
+  const gefilterd = alle.filter(n=>new Date(n.ts).getFullYear()===jaarFilter).sort((a,b)=> new Date(b.ts) - new Date(a.ts));
+  const maandNaam = (ts)=> new Date(ts).toLocaleString('nl-NL',{month:'long'});
+  const maandenVolgorde = [];
+  gefilterd.forEach(n=>{ const m = maandNaam(n.ts); if(!maandenVolgorde.includes(m)) maandenVolgorde.push(m); });
+  const perMaand = {};
+  gefilterd.forEach(n=>{ const m = maandNaam(n.ts); (perMaand[m] = perMaand[m]||[]).push(n); });
+  const inhoud = maandenVolgorde.length ? maandenVolgorde.map(maand => `
+    <div style="margin-top:10px;">
+      <div style="font-weight:600; font-size:11.5px; text-transform:capitalize; color:var(--muted); margin-bottom:4px;">${maand}</div>
+      ${perMaand[maand].map(n => `
+        <div style="padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; margin-top:4px; max-width:460px;">
+          <div style="font-size:10px; color:var(--muted); margin-bottom:2px;">${n.taak}</div>
+          <div style="font-size:11.5px; word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
+          <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+        </div>`).join('')}
+    </div>`).join('') : `<div class="hint" style="margin-top:8px;">Geen notities in ${jaarFilter}.</div>`;
+  return `
+    <div style="margin-top:14px; padding:12px; background:#fff; border:1px solid var(--border); border-radius:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <b style="font-size:12px;">Notities ${jaarFilter} <span style="font-weight:400; color:var(--muted);">(${gefilterd.length})</span></b>
+        ${jaren.length>1 ? `<select data-lh-notities-jaar="${k.id}" style="font-size:11.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px;">
+          ${jaren.map(j=>`<option value="${j}" ${j===jaarFilter?'selected':''}>${j}</option>`).join('')}
+        </select>` : ''}
+      </div>
+      ${inhoud}
+    </div>`;
+}
 function loonheffingKlantDetailHTML(k){
   const f = syncLhTaken(k);
   const bewerkbaar = magLhBewerken();
@@ -1453,12 +1491,14 @@ function loonheffingKlantDetailHTML(k){
         <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
         ${volgendeMaandNotitieHTML}
       </div>
-      <div style="display:flex; gap:8px; flex-shrink:0;">
+      <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap;">
         <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
+        <button class="btn sm ghost" data-lh-notities-toggle="${k.id}">${STATE.lhNotitiesKlant===k.id ? 'Notities verbergen ✕' : 'Notities terugkijken 🕘'}</button>
         ${bewerkbaar ? `<button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>` : ''}
       </div>
     </div>
     ${taakRows}
+    ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
     <div class="rem-log" style="margin-top:14px;">
       <b style="font-size:12px;">Recente activiteit</b>
       ${recentLog.length ? recentLog.map(l=>`<div class="rem-log-item" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
@@ -2384,6 +2424,20 @@ function attachHandlers(){
     if(!confirm(`Periode afronden voor "${klant.naam}"? Alle taken worden gereset voor de volgende periode en de LH-deadline schuift door indien een herhaling is ingesteld.`)) return;
     completeLhPeriode(klant, huidigeGebruiker());
     toast('Periode afgerond voor '+klant.naam);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-notities-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    const klantId = el.getAttribute('data-lh-notities-toggle');
+    if(STATE.lhNotitiesKlant === klantId){
+      STATE.lhNotitiesKlant = null;
+    } else {
+      STATE.lhNotitiesKlant = klantId;
+      STATE.lhNotitiesJaar = TODAY.getFullYear();
+    }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-notities-jaar]').forEach(el=>el.addEventListener('change', ()=>{
+    STATE.lhNotitiesJaar = parseInt(el.value, 10);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-toggle-detail]').forEach(el=>el.addEventListener('click', (e)=>{
