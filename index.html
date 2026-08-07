@@ -339,12 +339,21 @@ function addKlant(data){
   persistMeta(); persist();
   return klant;
 }
+const BH_KLEUREN_CYCLUS = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
+function volgendeAutoKleur(){ return BH_KLEUREN_CYCLUS[BOEKHOUDERS.length % BH_KLEUREN_CYCLUS.length]; }
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
-  const kleuren = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
-  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur:kleuren[BOEKHOUDERS.length % kleuren.length]};
+  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur: data.kleur || volgendeAutoKleur()};
   BOEKHOUDERS.push(b);
   logActiviteit(`Boekhouder toegevoegd: "${b.naam}"`);
+  persistMeta();
+  return b;
+}
+function updateBoekhouder(id, data){
+  const b = BOEKHOUDERS.find(x=>x.id===id);
+  if(!b) return null;
+  Object.assign(b, data);
+  logActiviteit(`Boekhouder bewerkt: "${b.naam}"`);
   persistMeta();
   return b;
 }
@@ -1055,7 +1064,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50 };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1120,6 +1129,7 @@ function render(){
   else if(STATE.showAddBh) openAddBhPanel(true);
   else if(STATE.showAddTeam) openAddTeamPanel(true);
   else if(STATE.showAddAuto || STATE.editAuto) openAddAutoPanel(true);
+  else if(STATE.editBh) openEditBhPanel(STATE.editBh, true);
   else closePanelDom();
   attachHandlers();
   updateSyncIndicator();
@@ -1218,10 +1228,20 @@ function isTypingInField(){
   }
   return false;
 }
+// Zoekt de kleur van de boekhouder die een taak heeft afgevinkt. "naam" komt van huidigeGebruiker(),
+// dus dat is de naam/gebruikersnaam van het INGELOGDE MICROSOFT-ACCOUNT — dat komt lang niet altijd
+// letterlijk overeen met wat er als boekhouder-"naam" in het dashboard staat (bijv. account "Gemma de
+// Vries" vs. boekhouder "Gemma", of net andersom). Daarom eerst een exacte match proberen (naam of
+// e-mail), en pas als dat niets oplevert een soepelere "bevat elkaar"-match, zodat het bolletje toch de
+// juiste kleur krijgt in plaats van grijs te blijven.
 function boekhouderKleurVoorNaam(naam){
   if(!naam) return null;
   const n = naam.trim().toLowerCase();
-  const match = BOEKHOUDERS.find(b => (b.naam && b.naam.trim().toLowerCase()===n) || (b.email && b.email.trim().toLowerCase()===n));
+  let match = BOEKHOUDERS.find(b => (b.naam && b.naam.trim().toLowerCase()===n) || (b.email && b.email.trim().toLowerCase()===n));
+  if(match) return match.kleur;
+  match = BOEKHOUDERS.find(b => b.naam && b.naam.trim().length>=2 && (n.includes(b.naam.trim().toLowerCase()) || b.naam.trim().toLowerCase().includes(n)));
+  if(match) return match.kleur;
+  match = BOEKHOUDERS.find(b => b.email && b.email.includes('@') && n === b.email.split('@')[0].trim().toLowerCase());
   return match ? match.kleur : null;
 }
 function advanceDate(datum, herhaling){
@@ -1483,7 +1503,10 @@ function boekhoudersHTML(){
     const c = {actie:0, nadert:0, schema:0};
     klanten.forEach(k=>{ const w = worstStatus(k); if(c[w]!==undefined) c[w]++; else c.schema++; });
     return `<div class="bh-card" data-nav-bh="${b.id}" style="position:relative;">
-      ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="position:absolute; top:10px; right:10px; padding:4px 7px; color:var(--red);">🗑</button>` : ''}
+      <div style="position:absolute; top:10px; right:10px; display:flex; gap:4px;">
+        <button class="btn sm ghost" data-edit-bh-btn="${b.id}" title="Boekhouder bewerken (o.a. kleur)" style="padding:4px 7px;">✎</button>
+        ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="padding:4px 7px; color:var(--red);">🗑</button>` : ''}
+      </div>
       <div class="bh-top">
         <div class="avatar" style="background:${b.kleur}">${initials(b.naam)}</div>
         <div><div class="bh-name">${b.naam}</div><div class="bh-role">${b.rol}${b.team && teamOf(b.team) ? ' · '+teamOf(b.team).naam : ''}</div></div>
@@ -2783,8 +2806,31 @@ function addBhFormHTML(){
       <div class="field-row"><label>Rol</label><input type="text" id="newBhRol" placeholder="Boekhouder"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newBhEmail" placeholder="naam@administratiebox.nl"></div>
       <div class="field-row"><label>Team</label><select id="newBhTeam" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="">Geen team</option>${teamOptions}</select></div>
+      <div class="field-row"><label>Kleur</label><input type="color" id="newBhKleur" value="${volgendeAutoKleur()}" style="width:60px; height:34px; padding:2px; border:1px solid var(--border); border-radius:8px; cursor:pointer;"></div>
+      <div style="font-size:11.5px; color:var(--muted);">Deze kleur wordt gebruikt voor het bolletje bij afgevinkte taken op Loonheffingen en voor de avatar/legenda — je kunt 'm later altijd wijzigen via "Bewerk".</div>
     </div></div>
     <button class="btn primary" data-save-new-bh style="width:100%; justify-content:center; padding:11px;">Boekhouder toevoegen</button>
+  </div>`;
+}
+function editBhFormHTML(b){
+  const teamOptions = TEAMS.map(t=>`<option value="${t.id}" ${b.team===t.id?'selected':''}>${t.naam}</option>`).join('');
+  return `
+  <div class="panel-head">
+    <div class="panel-head-top">
+      <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Bewerken</div><div class="panel-klant-name">${b.naam}</div></div>
+      <button class="panel-close" data-close-panel>✕</button>
+    </div>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section"><h4>Gegevens</h4><div class="inner">
+      <div class="field-row"><label>Naam*</label><input type="text" id="editBhNaam" value="${escHtml(b.naam)}"></div>
+      <div class="field-row"><label>Rol</label><input type="text" id="editBhRol" value="${escHtml(b.rol||'')}" placeholder="Boekhouder"></div>
+      <div class="field-row"><label>E-mail</label><input type="text" id="editBhEmail" value="${escHtml(b.email||'')}" placeholder="naam@administratiebox.nl"></div>
+      <div class="field-row"><label>Team</label><select id="editBhTeam" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="">Geen team</option>${teamOptions}</select></div>
+      <div class="field-row"><label>Kleur</label><input type="color" id="editBhKleur" value="${b.kleur}" style="width:60px; height:34px; padding:2px; border:1px solid var(--border); border-radius:8px; cursor:pointer;"></div>
+      <div style="font-size:11.5px; color:var(--muted);">Deze kleur wordt gebruikt voor het bolletje bij afgevinkte taken op Loonheffingen, de avatar en de legenda.</div>
+    </div></div>
+    <button class="btn primary" data-save-edit-bh="${b.id}" style="width:100%; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
   </div>`;
 }
 function addTeamFormHTML(){
@@ -2840,9 +2886,32 @@ function openAddBhPanel(silent){
   document.querySelector('[data-save-new-bh]').addEventListener('click', ()=>{
     const naam = document.getElementById('newBhNaam').value.trim();
     if(!naam){ toast('Vul een naam in.'); return; }
-    addBoekhouder({naam, rol:document.getElementById('newBhRol').value.trim(), email:document.getElementById('newBhEmail').value.trim(), team:document.getElementById('newBhTeam').value});
+    const kleurInput = document.getElementById('newBhKleur');
+    addBoekhouder({naam, rol:document.getElementById('newBhRol').value.trim(), email:document.getElementById('newBhEmail').value.trim(), team:document.getElementById('newBhTeam').value, kleur: kleurInput ? kleurInput.value : undefined});
     STATE.showAddBh=false;
     toast('Boekhouder toegevoegd: '+naam);
+    render();
+  });
+}
+function openEditBhPanel(bhId, silent){
+  const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
+  const b = BOEKHOUDERS.find(x=>x.id===bhId);
+  if(!b){ STATE.editBh=null; return; }
+  panel.innerHTML = editBhFormHTML(b);
+  requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  document.querySelector('[data-save-edit-bh]').addEventListener('click', ()=>{
+    const naam = document.getElementById('editBhNaam').value.trim();
+    if(!naam){ toast('Vul een naam in.'); return; }
+    updateBoekhouder(b.id, {
+      naam, rol:document.getElementById('editBhRol').value.trim(),
+      email:document.getElementById('editBhEmail').value.trim(),
+      team:document.getElementById('editBhTeam').value,
+      kleur:document.getElementById('editBhKleur').value,
+    });
+    STATE.editBh=null;
+    toast('Boekhouder bijgewerkt: '+naam);
+    closePanel();
     render();
   });
 }
@@ -2876,7 +2945,7 @@ function closePanelDom(){
   if(panel) panel.classList.remove('open');
   if(overlay) overlay.classList.remove('open');
 }
-function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; closePanelDom(); }
+function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; STATE.editBh=null; closePanelDom(); }
 function attachEditKlantHandlers(klant){
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   const cancelBtn = document.querySelector('[data-cancel-edit-klant]');
@@ -2934,7 +3003,7 @@ function bindOnce(el, event, handler){
 }
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{
-    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null;
+    STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; STATE.editBh=null;
     render();
   }));
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
@@ -3049,6 +3118,11 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-delete-bh]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation(); confirmDeleteBoekhouder(el.getAttribute('data-delete-bh'));
+  }));
+  document.querySelectorAll('[data-edit-bh-btn]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    STATE.editBh = el.getAttribute('data-edit-bh-btn');
+    render();
   }));
   const searchInput = document.getElementById('searchInput');
   bindOnce(searchInput, 'input', (e)=>{
