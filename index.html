@@ -809,7 +809,15 @@ function zetHashVoorView(view){
   // history.replaceState (i.p.v. location.hash=) voorkomt dat elke render() (die veel vaker draait dan
   // alleen bij paginawisselingen) een nieuwe entry aan de browsergeschiedenis toevoegt — de terug-knop
   // blijft daardoor bruikbaar. Elke pagina krijgt zo wél een eigen, ververs-bestendige URL.
+  //
+  // BELANGRIJK: de Microsoft-inlog-pop-up (en het onzichtbare iframe voor stille token-vernieuwing)
+  // laden dezelfde pagina en voeren dus ook deze code uit. Die pop-up/iframe gebruikt het hash-
+  // fragment van de URL om de inlogrespons van Microsoft te herkennen — als wij daar de hash
+  // overschrijven vóórdat MSAL 'm heeft kunnen lezen, faalt het inloggen met de foutmelding
+  // "Hash does not contain known properties". Daarom raken we de hash NOOIT aan als deze pagina in
+  // een pop-up (window.opener) of iframe (window.parent !== window) draait.
   try{
+    if(window.opener || window.parent !== window) return;
     const doel = '#/' + view;
     if(location.hash !== doel) history.replaceState(null, '', doel);
   }catch(e){}
