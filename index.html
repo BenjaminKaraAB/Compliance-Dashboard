@@ -400,7 +400,7 @@ function loadStore(){
   return seed;
 }
 let STORE = loadStore();
-migrateData();
+try{ migrateData(); }catch(e){ console.error('migrateData() mislukt bij het opstarten:', e); }
 let persistStoreTimer = null;
 function flushPersistStore(){
   clearTimeout(persistStoreTimer); persistStoreTimer = null;
@@ -1021,37 +1021,68 @@ function verwijderLhLogEntry(klant, logId){
 }
 function migrateData(){
   RAW_KLANTEN.forEach(k=>{
-    if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
-    if(k.heeftDga===undefined) k.heeftDga=false;
-    if(k.staatOpHold===undefined) k.staatOpHold=false;
-    if(k.opHoldReden===undefined) k.opHoldReden='';
-    ['OB','VPB','LH','JR'].forEach(t=>{
-      if(k.dl[t] && !k.dl[t].na && k.dl[t].herhaling===undefined) k.dl[t].herhaling='geen';
-    });
-    const f = STORE[k.id];
-    if(f){
+    // Elke klant wordt in zijn eigen try/catch gemigreerd: als één klant een onverwachte/beschadigde
+    // vorm heeft (bijv. door een oude import of handmatige data-aanpassing), mag dat nooit de migratie
+    // van alle ANDERE klanten — en daarmee het opstarten van de hele pagina — laten crashen. Vroeger
+    // gebeurde dat wel: één rare klant gaf een volledig wit scherm, alleen op te lossen door de hele
+    // browsergeschiedenis (en dus alle lokale data) te wissen.
+    try{
+      if(!k.dl || typeof k.dl !== 'object') k.dl = {};
+      if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
+      if(k.heeftDga===undefined) k.heeftDga=false;
+      if(k.staatOpHold===undefined) k.staatOpHold=false;
+      if(k.opHoldReden===undefined) k.opHoldReden='';
       ['OB','VPB','LH','JR'].forEach(t=>{
-        if(f.dl[t] && !f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
+        // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
+        // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
+        // ergens getoond wordt.
+        if(!k.dl[t] || typeof k.dl[t] !== 'object') k.dl[t] = {na:true};
+        else if(!k.dl[t].na && k.dl[t].herhaling===undefined) k.dl[t].herhaling='geen';
       });
-      // syncLhTaken() en de aantekeningen/log-migratie zijn alleen relevant voor klanten die
-      // daadwerkelijk loonaangifte doen — dat scheelt bij honderden klanten een hoop overbodig werk
-      // op elke sync-cyclus, voor data die toch nergens getoond wordt.
-      if(k.doetLoonaangifte){
-        syncLhTaken(k);
-        if(f.lh && f.lh.taken){
-          f.lh.taken.forEach(t=>{
-            if(t.aantekeningen===undefined){
-              t.aantekeningen = t.notitie ? [{id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst:t.notitie, door:'Onbekend (gemigreerd)', ts:new Date().toISOString()}] : [];
-              delete t.notitie;
-            }
-          });
+      if(!Array.isArray(k.dl.overige)) k.dl.overige = [];
+      const f = STORE[k.id];
+      if(f){
+        if(!f.dl || typeof f.dl !== 'object') f.dl = JSON.parse(JSON.stringify(k.dl));
+        ['OB','VPB','LH','JR'].forEach(t=>{
+          if(!f.dl[t] || typeof f.dl[t] !== 'object') f.dl[t] = {na:true};
+          else if(!f.dl[t].na && f.dl[t].herhaling===undefined) f.dl[t].herhaling='geen';
+        });
+        if(!Array.isArray(f.dl.overige)) f.dl.overige = [];
+        // syncLhTaken() en de aantekeningen/log-migratie zijn alleen relevant voor klanten die
+        // daadwerkelijk loonaangifte doen — dat scheelt bij honderden klanten een hoop overbodig werk
+        // op elke sync-cyclus, voor data die toch nergens getoond wordt.
+        if(k.doetLoonaangifte){
+          syncLhTaken(k);
+          if(f.lh && f.lh.taken){
+            f.lh.taken.forEach(t=>{
+              if(t.aantekeningen===undefined){
+                t.aantekeningen = t.notitie ? [{id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst:t.notitie, door:'Onbekend (gemigreerd)', ts:new Date().toISOString()}] : [];
+                delete t.notitie;
+              }
+            });
+          }
+          if(f.lh && f.lh.log){
+            f.lh.log.forEach(l=>{ if(!l.id) l.id = 'log'+Date.now()+Math.floor(Math.random()*10000); });
+          }
         }
-        if(f.lh && f.lh.log){
-          f.lh.log.forEach(l=>{ if(!l.id) l.id = 'log'+Date.now()+Math.floor(Math.random()*10000); });
-        }
+        if(f.saldoDebet===undefined) f.saldoDebet = 0;
+        if(f.saldoCredit===undefined) f.saldoCredit = 0;
+        if(f.saldo===undefined) f.saldo = 0;
+        if(f.txn===undefined) f.txn = 0;
+        if(!f.sync) f.sync = new Date().toISOString().slice(0,10);
+        if(!Array.isArray(f.items)) f.items = [];
+        if(!Array.isArray(f.kanalen)) f.kanalen = ['email'];
+        if(f.dagen1===undefined) f.dagen1 = 7;
+        if(f.dagen2===undefined) f.dagen2 = 14;
+        if(!Array.isArray(f.log)) f.log = [];
+        if(f.notities===undefined) f.notities = '';
+      } else {
+        // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
+        // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'' };
       }
-      if(f.saldoDebet===undefined) f.saldoDebet = 0;
-      if(f.saldoCredit===undefined) f.saldoCredit = 0;
+    }catch(e){
+      console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
     }
   });
 }
