@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Compliance Dashboard — Administratiebox</title>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <style>
   :root{
     --navy:#0b1220; --navy2:#141f38; --navy3:#1c2a4a;
@@ -254,8 +255,14 @@ function loadMeta(){
     }
   }catch(e){}
 }
-function persistMeta(){
+let persistMetaTimer = null;
+function flushPersistMeta(){
+  clearTimeout(persistMetaTimer); persistMetaTimer = null;
   try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN})); }catch(e){}
+}
+function persistMeta(){
+  clearTimeout(persistMetaTimer);
+  persistMetaTimer = setTimeout(flushPersistMeta, 400);
   pushRemoteDebounced();
 }
 loadMeta();
@@ -394,7 +401,20 @@ function loadStore(){
 }
 let STORE = loadStore();
 migrateData();
-function persist(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){} pushRemoteDebounced(); }
+let persistStoreTimer = null;
+function flushPersistStore(){
+  clearTimeout(persistStoreTimer); persistStoreTimer = null;
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
+}
+function persist(){
+  // De lokale opslag-write (JSON.stringify van de volledige STORE) is de duurste stap bij elke
+  // klik/wijziging en wordt zwaarder naarmate er meer klanten/data bijkomen. Door dit te debouncen
+  // (net als de zoekbalk en de externe sync) voelt de app sneller aan zonder dat er data verloren
+  // gaat: bij het sluiten van het tabblad wordt alsnog direct weggeschreven (zie beforeunload hieronder).
+  clearTimeout(persistStoreTimer);
+  persistStoreTimer = setTimeout(flushPersistStore, 400);
+  pushRemoteDebounced();
+}
 
 /* ============================= CLOUD SYNC (Microsoft-login via Graph API) =============================
    Dit dashboard werkt standaard lokaal (per browser). Om data live te delen tussen collega's koppel je
@@ -780,6 +800,20 @@ function toast(msg){
 }
 
 /* ============================= STATE ============================= */
+const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','instellingen'];
+function huidigeHashView(){
+  const v = (location.hash||'').replace(/^#\/?/, '').split('?')[0];
+  return GELDIGE_VIEWS.includes(v) ? v : null;
+}
+function zetHashVoorView(view){
+  // history.replaceState (i.p.v. location.hash=) voorkomt dat elke render() (die veel vaker draait dan
+  // alleen bij paginawisselingen) een nieuwe entry aan de browsergeschiedenis toevoegt — de terug-knop
+  // blijft daardoor bruikbaar. Elke pagina krijgt zo wél een eigen, ververs-bestendige URL.
+  try{
+    const doel = '#/' + view;
+    if(location.hash !== doel) history.replaceState(null, '', doel);
+  }catch(e){}
+}
 let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null };
 let searchDebounceTimer = null;
 
@@ -801,6 +835,7 @@ const ICONS = {
 
 /* ============================= RENDER ROOT ============================= */
 function render(){
+  zetHashVoorView(STATE.view);
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="sidebar">
@@ -2269,10 +2304,12 @@ function attachHandlers(){
   document.querySelectorAll('[data-confirm-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
     e.stopPropagation();
     const id = el.getAttribute('data-confirm-saldo');
+    if(!STORE[id]){ toast('Deze klant bestaat niet meer.'); document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); return; }
     const val = parseFloat(document.getElementById('inlineSaldo-'+id).value)||0;
     STORE[id].saldo = val; persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-    toast('Saldo bijgewerkt voor '+RAW_KLANTEN.find(k=>k.id===id).naam);
+    const klantVoorToast = RAW_KLANTEN.find(k=>k.id===id);
+    toast('Saldo bijgewerkt' + (klantVoorToast ? ' voor '+klantVoorToast.naam : '') + '.');
   }));
 
   const csvInput = document.getElementById('csvUpload');
@@ -3035,33 +3072,36 @@ function refreshPanel(klant){
   if(STATE.view!=='dashboard'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlersLite(); }
 }
 function attachHandlersLite(){
-  // reattach only nav-independent listeners needed after a background refresh (avoid full re-render to keep panel state)
-  // [data-nav] zit in de vaste sidebar (buiten #contentArea) en blijft dus dezelfde DOM-node over
-  // opeenvolgende attachHandlersLite()-aanroepen — bindOnce() voorkomt dat daar listeners opstapelen.
-  document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{ STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; render(); }));
-  document.querySelectorAll('[data-nav-bh]').forEach(el=>bindOnce(el, 'click', ()=>{ STATE.view='klanten'; STATE.bhFilter = el.getAttribute('data-nav-bh'); render(); }));
-  document.querySelectorAll('[data-open-klant]').forEach(el=>el.addEventListener('click', (e)=>{ e.stopPropagation(); openPanel(el.getAttribute('data-open-klant')); }));
-  document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
-    e.stopPropagation();
-    const id = el.getAttribute('data-edit-saldo');
-    const disp = document.getElementById('saldoDisplay-'+id);
-    const cur = STORE[id].saldo;
-    disp.innerHTML = `<input type="number" step="0.01" value="${cur}" id="inlineSaldo-${id}" style="width:90px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">`;
-    el.textContent='✓'; el.setAttribute('data-confirm-saldo', id); el.removeAttribute('data-edit-saldo');
-  }));
-  document.querySelectorAll('[data-confirm-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
-    e.stopPropagation();
-    const id = el.getAttribute('data-confirm-saldo');
-    const val = parseFloat(document.getElementById('inlineSaldo-'+id).value)||0;
-    STORE[id].saldo = val; persist();
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlersLite();
-    toast('Saldo bijgewerkt.');
-  }));
+  // Was ooit een handmatige deelverzameling van handlers (bedoeld om een dure volledige re-render te
+  // vermijden na een achtergrond-refresh), maar raakte daardoor telkens achter bij nieuwe knoppen op
+  // de pagina's (Loonheffingen, Teams, Klanten, enz.) — die werden dan onklikbaar zodra het klantpaneel
+  // open stond tijdens een refresh. Nu bindOnce() dubbele listeners op de vaste buiten-#contentArea
+  // elementen toch al voorkomt, is het veilig én correcter om gewoon de volledige attachHandlers() te
+  // hergebruiken.
+  attachHandlers();
 }
 
 // Elke stap hieronder is defensief in een try/catch gezet: een fout in de Microsoft-sync
 // (bijv. een verkeerd ingevuld App ID) mag de rest van het dashboard nooit blokkeren of
 // een blanco pagina veroorzaken — render() moet hoe dan ook draaien.
+
+// MSAL kan een 'interaction in progress'-vlag laten hangen in sessionStorage als een vorige
+// inlogpoging (bijv. een gesloten pop-up, of een gecrashte pagina) niet netjes werd afgerond.
+// Die vlag blokkeert daarna alle volgende inlogpogingen/stille token-ververste tot de gebruiker
+// zijn browsergeschiedenis (en daarmee sessionStorage) wist. Bij het laden van deze pagina is er
+// per definitie nog geen interactie bezig, dus we ruimen een eventueel achtergebleven vlag hier
+// veilig op — dat voorkomt dat de gebruiker steeds handmatig zijn browsergeschiedenis moet wissen.
+try{
+  Object.keys(sessionStorage).forEach(k=>{ if(k.indexOf('interaction.status')>-1) sessionStorage.removeItem(k); });
+}catch(e){}
+
+// Pagina-URL (hash) bepaalt bij het laden op welke pagina we starten, zodat een refresh je niet
+// terugzet naar het Overzicht.
+try{
+  const hashView = huidigeHashView();
+  if(hashView) STATE.view = hashView;
+}catch(e){}
+
 try{ loadSync(); }catch(e){ console.error('Sync-instellingen laden mislukt:', e); }
 try{ render(); }catch(e){
   console.error('Render mislukt:', e);
@@ -3078,6 +3118,24 @@ setInterval(()=>{
   }
 }, 45000);
 
+// Terug/vooruit-navigatie of een handmatig aangepaste hash moet ook de juiste pagina tonen.
+window.addEventListener('hashchange', ()=>{
+  const hashView = huidigeHashView();
+  if(hashView && hashView !== STATE.view){
+    STATE.view = hashView; STATE.bhFilter=''; STATE.statusFilter='';
+    render();
+  }
+});
+
+// Vang op dat gedebouncede localStorage-writes (persist/persistMeta) niet verloren gaan als het
+// tabblad direct na een wijziging wordt gesloten.
+window.addEventListener('beforeunload', ()=>{
+  try{ flushPersistStore(); }catch(e){}
+  try{ flushPersistMeta(); }catch(e){}
+});
+
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </body>
 </html>
