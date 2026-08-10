@@ -256,6 +256,10 @@ let KPI_TACTISCH = {
   Q4: { doel:'', pijlers:[] },
 };
 let KPI_COMMERCIEEL = { week:null, teams:{} };
+/* Actieve Chart.js-instanties op de KPI-lijndiagrammen, bijgehouden zodat we ze expliciet kunnen
+   opruimen (destroy) vóór een canvas opnieuw wordt getekend — anders klaagt Chart.js dat het canvas
+   al in gebruik is, of blijven er "spook"-grafieken in het geheugen hangen na elke re-render. */
+let KPI_CHARTS = {};
 /* Bijtellingspercentages per jaar — overneemt exact de tabel uit "Bijtelling" in het Excel-bestand.
    laag/cap = alleen relevant voor elektrische auto's (verlaagd tarief tot de cap, algemeen tarief
    daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
@@ -497,12 +501,53 @@ function kpiOpVoorTeam(teamId){
   return KPI_OPERATIONEEL[teamId];
 }
 function kpiCommVoorTeam(teamId){
-  if(!KPI_COMMERCIEEL.teams[teamId]) KPI_COMMERCIEEL.teams[teamId] = { kgWeek:0, kgTotaal:0, convWeek:0, convTotaal:0, nkWeek:0, nkTotaal:0 };
+  if(!KPI_COMMERCIEEL.teams[teamId]) KPI_COMMERCIEEL.teams[teamId] = { historie:[] };
+  if(!Array.isArray(KPI_COMMERCIEEL.teams[teamId].historie)) KPI_COMMERCIEEL.teams[teamId].historie = [];
   return KPI_COMMERCIEEL.teams[teamId];
+}
+/* Slaat (of overschrijft) één weekpunt op in de historie van een team — dit is de basis voor de
+   lijndiagrammen. Een tweede keer opslaan voor dezelfde week overschrijft dat punt in plaats van een
+   dubbele toe te voegen, zodat je een foutje in een eerder ingevulde week gewoon kunt corrigeren. */
+function kpiCommUpsertWeek(teamId, week, kg, conv, nk){
+  const d = kpiCommVoorTeam(teamId);
+  const bestaand = d.historie.find(h=>h.week===week);
+  if(bestaand){ Object.assign(bestaand, {kg, conv, nk}); }
+  else { d.historie.push({week, kg, conv, nk}); d.historie.sort((a,b)=>a.week-b.week); }
+}
+function kpiCommWeekData(teamId, week){
+  const d = kpiCommVoorTeam(teamId);
+  return d.historie.find(h=>h.week===week) || {week, kg:0, conv:0, nk:0};
+}
+function kpiCommTotalen(teamId){
+  const historie = kpiCommVoorTeam(teamId).historie;
+  if(!historie.length) return { kgTotaal:0, convTotaal:0, nkTotaal:0 };
+  const kgTotaal = historie.reduce((s,h)=>s+(h.kg||0),0);
+  const nkTotaal = historie.reduce((s,h)=>s+(h.nk||0),0);
+  const convTotaal = Math.round(historie.reduce((s,h)=>s+(h.conv||0),0) / historie.length);
+  return { kgTotaal, convTotaal, nkTotaal };
+}
+function kpiAlleWeken(){
+  const weken = new Set();
+  Object.keys(KPI_COMMERCIEEL.teams).forEach(teamId=>{
+    kpiCommVoorTeam(teamId).historie.forEach(h=>weken.add(h.week));
+  });
+  return [...weken].sort((a,b)=>a-b);
+}
+function kpiTeamKleur(idx){
+  const palet = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7','#e34948'];
+  return palet[idx % palet.length];
 }
 function kpiHuidigKwartaal(){
   const m = TODAY.getMonth();
   return 'Q' + (Math.floor(m/3)+1);
+}
+/* Ruwe weeknummer-schatting (geen strikte ISO-8601-weekberekening) — precies genoeg om als
+   standaardwaarde te dienen bij het invullen van de commerciele KPI's; de gebruiker kan het weeknummer
+   altijd zelf overschrijven. */
+function kpiHuidigeWeek(){
+  const start = new Date(TODAY.getFullYear(), 0, 1);
+  const dagen = Math.floor((TODAY - start) / 86400000);
+  return Math.max(1, Math.ceil((dagen + start.getDay() + 1) / 7));
 }
 function kpiStatusKlasse(status){
   if(status==='Afgerond') return 'green';
@@ -1126,7 +1171,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null };
+let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1451,58 +1496,83 @@ function migrateData(){
   });
   if(!KPI_COMMERCIEEL || typeof KPI_COMMERCIEEL !== 'object') KPI_COMMERCIEEL = { week:null, teams:{} };
   if(!KPI_COMMERCIEEL.teams || typeof KPI_COMMERCIEEL.teams !== 'object') KPI_COMMERCIEEL.teams = {};
+  /* Migratie van de allereerste, kortstondige versie van Commerciele KPI's (losse kgWeek/kgTotaal/...
+     velden per team, zonder historie) naar de huidige vorm met een historie-array per team. Dat maakt
+     de lijndiagrammen mogelijk: elke opgeslagen week wordt nu een apart punt op de lijn in plaats van
+     één overschreven "huidige stand". */
+  Object.keys(KPI_COMMERCIEEL.teams).forEach(teamId=>{
+    const t = KPI_COMMERCIEEL.teams[teamId];
+    if(!t || typeof t !== 'object') { KPI_COMMERCIEEL.teams[teamId] = { historie:[] }; return; }
+    if(!Array.isArray(t.historie)){
+      const oudeWeekWaarde = (typeof t.kgWeek==='number' || typeof t.convWeek==='number' || typeof t.nkWeek==='number');
+      t.historie = (oudeWeekWaarde && KPI_COMMERCIEEL.week) ? [{week:KPI_COMMERCIEEL.week, kg:t.kgWeek||0, conv:t.convWeek||0, nk:t.nkWeek||0}] : [];
+      delete t.kgWeek; delete t.kgTotaal; delete t.convWeek; delete t.convTotaal; delete t.nkWeek; delete t.nkTotaal;
+    }
+  });
 }
 
 function kpiPill(n, kls){
   const k = kls || kpiTellingKlasse(n);
   return `<span class="badge ${k}"><span class="dot ${k}"></span>${n}</span>`;
 }
-function kpiMetricCel(week, totaal, suffix){
-  suffix = suffix || '';
-  return `<div style="font-size:13.5px; font-weight:700;">${week}${suffix}</div><div style="font-size:10.5px; color:var(--muted); margin-top:2px;">totaal: ${totaal}${suffix}</div>`;
+function kpiLegendHTML(){
+  if(!TEAMS.length) return '';
+  return `<div style="display:flex; flex-wrap:wrap; gap:14px; margin:6px 0 10px; font-size:11.5px; color:var(--muted);">
+    ${TEAMS.map((t,i)=>`<span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:${kpiTeamKleur(i)}; display:inline-block;"></span>${t.naam}</span>`).join('')}
+  </div>`;
 }
 function kpiOperationeelHTML(){
   const bewerkbaar = isAdmin();
   const editMode = bewerkbaar && STATE.kpiOpEdit;
   const velden = [['inbox','Inbox'],['bankmutaties','Bankmut.'],['jaarrekeningen','Jaarrek.'],['klanten','Klanten']];
   const btwVelden = ['btwQ1','btwQ2','btwQ3','btwQ4'];
-  const rijen = TEAMS.map(t=>{
+  const editRijen = TEAMS.map(t=>{
     const d = kpiOpVoorTeam(t.id);
-    if(editMode){
-      const cellen = velden.map(([key])=>`<td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-op-input="${t.id}|${key}" value="${d[key]}" style="width:56px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>`).join('');
-      const btwCellen = btwVelden.map(key=>`<td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-op-input="${t.id}|${key}" value="${d[key]}" style="width:44px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>`).join('');
-      return `<tr><td style="padding:7px 4px; font-weight:700;">${t.naam}</td>${cellen}${btwCellen}</tr>`;
-    }
-    const cellen = velden.map(([key])=>`<td style="text-align:center; padding:7px 4px;">${d[key]}</td>`).join('');
-    const btwCellen = btwVelden.map(key=>`<td style="text-align:center; padding:7px 4px;">${kpiPill(d[key])}</td>`).join('');
+    const cellen = velden.map(([key])=>`<td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-op-input="${t.id}|${key}" value="${d[key]}" style="width:56px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>`).join('');
+    const btwCellen = btwVelden.map(key=>`<td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-op-input="${t.id}|${key}" value="${d[key]}" style="width:44px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>`).join('');
     return `<tr><td style="padding:7px 4px; font-weight:700;">${t.naam}</td>${cellen}${btwCellen}</tr>`;
   }).join('');
-  return `<div class="section" style="margin-bottom:18px;">
-    <div class="section-head">
-      <h3>📊 Operationele KPI's</h3>
-      <div style="display:flex; align-items:center; gap:10px;">
+  const kaarten = TEAMS.map((t,i)=>{
+    const d = kpiOpVoorTeam(t.id);
+    return `<div style="background:var(--bg); border-radius:8px; padding:10px 12px; border-left:3px solid ${kpiTeamKleur(i)};">
+      <div style="font-size:12px; font-weight:700; margin-bottom:5px;">${t.naam}</div>
+      <div style="font-size:11px; color:var(--muted);">Inbox ${d.inbox} · Bankmut. ${d.bankmutaties}</div>
+      <div style="font-size:11px; color:var(--muted);">Jaarrek. ${d.jaarrekeningen} · Klanten ${d.klanten}</div>
+    </div>`;
+  }).join('');
+  return `<div>
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+      <span style="font-size:13.5px; font-weight:700;">📊 Operationele KPI's</span>
+      <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
         <span class="hint">Per team · handmatig ingevuld</span>
         ${bewerkbaar ? (editMode
           ? `<div style="display:flex; gap:6px;"><button class="btn sm primary" data-kpi-op-save>Opslaan</button><button class="btn sm ghost" data-kpi-op-cancel>Annuleren</button></div>`
           : `<button class="btn sm ghost" data-kpi-op-edit>✎ Bewerken</button>`) : ''}
       </div>
     </div>
-    <div class="section-body" style="overflow-x:auto; padding:12px 20px;">
-      ${TEAMS.length ? `<table style="width:100%; min-width:600px; border-collapse:collapse; font-size:12px;">
+    ${!TEAMS.length ? `<div class="empty-state">Nog geen teams aangemaakt. Voeg teams toe bij "Teams" in het menu.</div>` : editMode ? `<div style="overflow-x:auto; margin-top:10px;">
+      <table style="width:100%; min-width:600px; border-collapse:collapse; font-size:12px;">
         <thead><tr style="border-bottom:1px solid var(--border);">
           <th style="text-align:left; padding:6px 4px; font-size:11.5px; color:var(--muted);">Team</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Inbox</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Bankmut.</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Jaarrek.</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Klanten</th>
-          <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Q1</th>
+          <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">BTW Q1</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Q2</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Q3</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Q4</th>
         </tr></thead>
-        <tbody>${rijen}</tbody>
-      </table>` : `<div class="empty-state">Nog geen teams aangemaakt. Voeg teams toe bij "Teams" in het menu.</div>`}
-    </div>
+        <tbody>${editRijen}</tbody>
+      </table>
+    </div>` : `
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:10px; margin-top:10px;">${kaarten}</div>
+      <div style="font-size:11.5px; color:var(--muted); margin:14px 0 2px;">Openstaande BTW-aangiftes per kwartaal</div>
+      ${kpiLegendHTML()}
+      <div style="position:relative; width:100%; height:190px;" data-kpi-chart-wrap>
+        <canvas id="kpiBtwChart" role="img" aria-label="Lijndiagram van openstaande BTW-aangiftes per kwartaal, per team"></canvas>
+      </div>
+    `}
   </div>`;
 }
 function kpiPijlerFormHTML(){
@@ -1570,69 +1640,135 @@ function kpiTactischHTML(){
       ${bewerkbaar ? `<button class="btn sm ghost" data-kpi-doel-edit="${kwartaal}" style="flex-shrink:0;">✎</button>` : ''}
     </div>`;
   })();
-  return `<div class="section" style="margin-bottom:18px;">
-    <div class="section-head">
-      <h3>🎯 Tactische KPI's</h3>
-      <span class="hint">Per team · handmatig ingevuld</span>
+  return `<div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--border);">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+      <span style="font-size:13.5px; font-weight:700;">🎯 Tactische KPI's</span>
+      <span class="hint" style="margin-left:auto;">Per team · handmatig ingevuld</span>
     </div>
-    <div class="section-body" style="padding:14px 20px;">
-      <div style="display:flex; gap:6px; margin-bottom:4px;">${tabs}</div>
-      ${doelHTML}
-      <div style="margin-top:16px;">${kpiTactischGroepenHTML(kwartaal)}</div>
-      ${bewerkbaar ? (STATE.kpiPijlerForm && STATE.kpiPijlerForm.kwartaal===kwartaal ? kpiPijlerFormHTML() : `<button class="btn sm ghost" data-kpi-pijler-add="${kwartaal}">+ Pijler toevoegen</button>`) : ''}
-    </div>
+    <div style="display:flex; gap:6px; margin:10px 0 4px;">${tabs}</div>
+    ${doelHTML}
+    <div style="margin-top:16px;">${kpiTactischGroepenHTML(kwartaal)}</div>
+    ${bewerkbaar ? (STATE.kpiPijlerForm && STATE.kpiPijlerForm.kwartaal===kwartaal ? kpiPijlerFormHTML() : `<button class="btn sm ghost" data-kpi-pijler-add="${kwartaal}">+ Pijler toevoegen</button>`) : ''}
   </div>`;
 }
 function kpiCommercieelHTML(){
   const bewerkbaar = isAdmin();
   const editMode = bewerkbaar && STATE.kpiCommEdit;
+  const week = KPI_COMMERCIEEL.week || kpiHuidigeWeek();
   const weekHTML = editMode
-    ? `<input type="number" min="1" max="53" id="kpiCommWeekInput" value="${KPI_COMMERCIEEL.week||''}" placeholder="Weeknr." style="width:70px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">`
-    : `<span class="hint">Week ${KPI_COMMERCIEEL.week||'–'} · ${TODAY.getFullYear()}</span>`;
-  const metricVelden = [['kgWeek','kgTotaal'],['convWeek','convTotaal'],['nkWeek','nkTotaal']];
-  const rijen = TEAMS.map(t=>{
-    const d = kpiCommVoorTeam(t.id);
-    if(editMode){
-      const cellen = metricVelden.map(([wk,tot])=>`<td style="padding:6px 4px;"><div style="display:flex; gap:4px; justify-content:center;">
-          <input type="number" min="0" data-kpi-comm-input="${t.id}|${wk}" value="${d[wk]}" placeholder="Week" style="width:52px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px; text-align:center;">
-          <input type="number" min="0" data-kpi-comm-input="${t.id}|${tot}" value="${d[tot]}" placeholder="Totaal" style="width:52px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px; text-align:center;">
-        </div></td>`).join('');
-      return `<tr><td style="padding:7px 4px; font-weight:700;">${t.naam}</td>${cellen}</tr>`;
-    }
+    ? `<span style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">Week <input type="number" min="1" max="53" id="kpiCommWeekInput" value="${week}" style="width:60px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></span>`
+    : `<span class="hint">Laatst ingevuld: week ${KPI_COMMERCIEEL.week||'–'} · ${TODAY.getFullYear()}</span>`;
+  const editRijen = TEAMS.map(t=>{
+    const d = kpiCommWeekData(t.id, week);
     return `<tr>
-      <td style="padding:8px 4px; font-weight:700; vertical-align:top;">${t.naam}</td>
-      <td style="text-align:center; padding:8px 4px;">${kpiMetricCel(d.kgWeek, d.kgTotaal)}</td>
-      <td style="text-align:center; padding:8px 4px;">${kpiMetricCel(d.convWeek, d.convTotaal, '%')}</td>
-      <td style="text-align:center; padding:8px 4px;">${kpiMetricCel(d.nkWeek, d.nkTotaal)}</td>
+      <td style="padding:7px 4px; font-weight:700;">${t.naam}</td>
+      <td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-comm-input="${t.id}|kg" value="${d.kg}" style="width:56px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>
+      <td style="text-align:center; padding:4px;"><input type="number" min="0" max="100" data-kpi-comm-input="${t.id}|conv" value="${d.conv}" style="width:56px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>
+      <td style="text-align:center; padding:4px;"><input type="number" min="0" data-kpi-comm-input="${t.id}|nk" value="${d.nk}" style="width:56px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; text-align:center;"></td>
     </tr>`;
   }).join('');
-  return `<div class="section" style="margin-bottom:18px;">
-    <div class="section-head">
-      <h3>📈 Commerciële KPI's</h3>
-      <div style="display:flex; align-items:center; gap:10px;">
+  const kpiCommTabelHTML = (metricKey, suffix)=>{
+    const weken = kpiAlleWeken();
+    suffix = suffix || '';
+    return `<div style="overflow-x:auto; margin-top:8px;">
+      <table style="width:100%; min-width:${120+TEAMS.length*70}px; border-collapse:collapse; font-size:11.5px;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:4px; color:var(--muted); font-weight:500;">Week</th>
+          ${TEAMS.map((t,i)=>`<th style="text-align:center; padding:4px; color:${kpiTeamKleur(i)}; font-weight:700;">${t.naam}</th>`).join('')}
+        </tr></thead>
+        <tbody>${weken.map(w=>`<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:4px; color:var(--muted);">${w}</td>
+          ${TEAMS.map(t=>{ const h = kpiCommVoorTeam(t.id).historie.find(x=>x.week===w); return `<td style="text-align:center; padding:4px;">${h ? h[metricKey]+suffix : '–'}</td>`; }).join('')}
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  };
+  const chartsHTML = ()=>{
+    const weken = kpiAlleWeken();
+    if(!weken.length) return `<div class="empty-state" style="margin-top:10px;">Nog geen weken ingevuld. Klik op "Bewerken" om de eerste week toe te voegen.</div>`;
+    return `
+      ${kpiLegendHTML()}
+      <div style="font-size:11.5px; color:var(--muted); margin:10px 0 2px;">Kennismakingsgesprekken</div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiKgChart" role="img" aria-label="Lijndiagram van kennismakingsgesprekken per week, per team"></canvas></div>
+      ${kpiCommTabelHTML('kg')}
+      <div style="font-size:11.5px; color:var(--muted); margin:16px 0 2px;">Conversieratio</div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiConvChart" role="img" aria-label="Lijndiagram van conversieratio per week, per team"></canvas></div>
+      ${kpiCommTabelHTML('conv', '%')}
+      <div style="font-size:11.5px; color:var(--muted); margin:16px 0 2px;">Nieuwe klanten</div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiNkChart" role="img" aria-label="Lijndiagram van nieuwe klanten per week, per team"></canvas></div>
+      ${kpiCommTabelHTML('nk')}
+    `;
+  };
+  return `<div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--border);">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+      <span style="font-size:13.5px; font-weight:700;">📈 Commerciële KPI's</span>
+      <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
         ${weekHTML}
         ${bewerkbaar ? (editMode
           ? `<div style="display:flex; gap:6px;"><button class="btn sm primary" data-kpi-comm-save>Opslaan</button><button class="btn sm ghost" data-kpi-comm-cancel>Annuleren</button></div>`
           : `<button class="btn sm ghost" data-kpi-comm-edit>✎ Bewerken</button>`) : ''}
       </div>
     </div>
-    <div class="section-body" style="overflow-x:auto; padding:12px 20px;">
-      ${TEAMS.length ? `<table style="width:100%; min-width:520px; border-collapse:collapse; font-size:12px;">
+    ${!TEAMS.length ? `<div class="empty-state">Nog geen teams aangemaakt.</div>` : editMode ? `<div style="overflow-x:auto; margin-top:10px;">
+      <table style="width:100%; min-width:420px; border-collapse:collapse; font-size:12px;">
         <thead><tr style="border-bottom:1px solid var(--border);">
           <th style="text-align:left; padding:6px 4px; font-size:11.5px; color:var(--muted);">Team</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Kennismakingsgesprekken</th>
-          <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Conversieratio</th>
+          <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Conversieratio (%)</th>
           <th style="padding:6px 4px; font-size:11.5px; color:var(--muted);">Nieuwe klanten</th>
         </tr></thead>
-        <tbody>${rijen}</tbody>
-      </table>` : `<div class="empty-state">Nog geen teams aangemaakt.</div>`}
-    </div>
+        <tbody>${editRijen}</tbody>
+      </table>
+    </div>` : chartsHTML()}
   </div>`;
 }
 function kpiOverzichtHTML(){
-  return `${kpiOperationeelHTML()}${kpiTactischHTML()}${kpiCommercieelHTML()}`;
+  const expanded = STATE.kpiExpanded;
+  return `<div class="section" style="margin-bottom:18px;">
+    <button data-kpi-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${expanded?'1px solid var(--border)':'none'};">
+      <h3 style="margin:0; font-size:14.5px; font-weight:700;">KPI overzicht</h3>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${expanded?'0':'-90'}deg);">▾</span>
+    </button>
+    ${expanded ? `<div style="padding:16px 20px;">
+      ${kpiOperationeelHTML()}
+      ${kpiTactischHTML()}
+      ${kpiCommercieelHTML()}
+    </div>` : ''}
+  </div>`;
 }
-
+/* Tekent (of hertekent) de KPI-lijndiagrammen. Wordt na elke render() / attachHandlers()-cyclus op de
+   Overzicht-pagina aangeroepen; no-opt vanzelf als de bijbehorende canvas niet in de DOM staat (paneel
+   ingeklapt of in bewerkmodus — dan bestaat de canvas simpelweg niet, en breken we het bestaande
+   Chart.js-object daarvoor gewoon af). Vereist dat Chart.js als losse <script> geladen is (zie
+   index.html); als dat om wat voor reden dan ook niet lukt, doet deze functie stilletjes niets. */
+function renderKpiCharts(){
+  if(typeof Chart === 'undefined') return;
+  const definities = [
+    { id:'kpiBtwChart', labels:['Q1','Q2','Q3','Q4'], data: TEAMS.map(t=>{ const d = kpiOpVoorTeam(t.id); return [d.btwQ1,d.btwQ2,d.btwQ3,d.btwQ4]; }) },
+    { id:'kpiKgChart', labels: kpiAlleWeken(), data: TEAMS.map(t=>{ const h = kpiCommVoorTeam(t.id).historie; return kpiAlleWeken().map(w=>{ const p = h.find(x=>x.week===w); return p ? p.kg : null; }); }) },
+    { id:'kpiConvChart', labels: kpiAlleWeken(), data: TEAMS.map(t=>{ const h = kpiCommVoorTeam(t.id).historie; return kpiAlleWeken().map(w=>{ const p = h.find(x=>x.week===w); return p ? p.conv : null; }); }) },
+    { id:'kpiNkChart', labels: kpiAlleWeken(), data: TEAMS.map(t=>{ const h = kpiCommVoorTeam(t.id).historie; return kpiAlleWeken().map(w=>{ const p = h.find(x=>x.week===w); return p ? p.nk : null; }); }) },
+  ];
+  definities.forEach(def=>{
+    if(KPI_CHARTS[def.id]){ KPI_CHARTS[def.id].destroy(); delete KPI_CHARTS[def.id]; }
+    const canvas = document.getElementById(def.id);
+    if(!canvas) return;
+    KPI_CHARTS[def.id] = new Chart(canvas, {
+      type:'line',
+      data:{ labels: def.labels, datasets: TEAMS.map((t,i)=>({
+        label: t.naam, data: def.data[i], borderColor: kpiTeamKleur(i), backgroundColor: kpiTeamKleur(i),
+        borderWidth:2, pointRadius:3, pointBackgroundColor: kpiTeamKleur(i), tension:0.25, spanGaps:true
+      })) },
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          y:{ beginAtZero:true, grid:{ color:'#e1e0d9' }, ticks:{ color:'#898781', font:{size:11} } },
+          x:{ grid:{ display:false }, ticks:{ color:'#898781', font:{size:11} } }
+        }
+      }
+    });
+  });
+}
 function dashboardHTML(){
   const rows = allDeadlineRows();
   const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
@@ -3721,6 +3857,140 @@ function attachHandlers(){
     signOutOfMsal();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   });
+  document.querySelectorAll('[data-kpi-op-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    STATE.kpiOpEdit = true;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-op-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiOpEdit = false;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-op-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    document.querySelectorAll('[data-kpi-op-input]').forEach(inp=>{
+      const [teamId, veld] = inp.getAttribute('data-kpi-op-input').split('|');
+      const d = kpiOpVoorTeam(teamId);
+      d[veld] = Math.max(0, parseInt(inp.value)||0);
+    });
+    STATE.kpiOpEdit = false;
+    logActiviteit("KPI: operationele KPI's bijgewerkt");
+    persistMeta();
+    toast("Operationele KPI's opgeslagen.");
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-kwartaal-tab]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiTactKwartaal = el.getAttribute('data-kpi-kwartaal-tab');
+    STATE.kpiPijlerForm = null;
+    STATE.kpiTactDoelEdit = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-doel-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    STATE.kpiTactDoelEdit = el.getAttribute('data-kpi-doel-edit');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-doel-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiTactDoelEdit = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-doel-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const kwartaal = el.getAttribute('data-kpi-doel-save');
+    const input = document.getElementById('kpiDoelInput');
+    KPI_TACTISCH[kwartaal].doel = input ? input.value.trim() : '';
+    STATE.kpiTactDoelEdit = null;
+    logActiviteit(`KPI: doel voor ${kwartaal} bijgewerkt`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-pijler-add]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    STATE.kpiPijlerForm = { kwartaal: el.getAttribute('data-kpi-pijler-add'), editId: null };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-pijler-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const [kwartaal, editId] = el.getAttribute('data-kpi-pijler-edit').split('|');
+    STATE.kpiPijlerForm = { kwartaal, editId };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-pijler-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiPijlerForm = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-pijler-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const [kwartaal, editId] = el.getAttribute('data-kpi-pijler-save').split('|');
+    const teamId = document.getElementById('kpiPijlerTeam') ? document.getElementById('kpiPijlerTeam').value : '';
+    const naam = document.getElementById('kpiPijlerNaam') ? document.getElementById('kpiPijlerNaam').value.trim() : '';
+    const week = parseInt(document.getElementById('kpiPijlerWeek') ? document.getElementById('kpiPijlerWeek').value : '') || null;
+    const target = document.getElementById('kpiPijlerTarget') ? document.getElementById('kpiPijlerTarget').value.trim() : '';
+    const status = document.getElementById('kpiPijlerStatus') ? document.getElementById('kpiPijlerStatus').value : 'Op schema';
+    if(!teamId || !naam){ toast('Vul in elk geval een team en een omschrijving in.'); return; }
+    const pijlers = KPI_TACTISCH[kwartaal].pijlers;
+    if(editId){
+      const bestaand = pijlers.find(p=>p.id===editId);
+      if(bestaand){ Object.assign(bestaand, {teamId, naam, week, target, status}); }
+      logActiviteit(`KPI: pijler "${naam}" bijgewerkt (${kwartaal})`);
+    } else {
+      const id = nextId(pijlers, 'pijler');
+      pijlers.push({id, teamId, naam, week, target, status});
+      logActiviteit(`KPI: pijler "${naam}" toegevoegd (${kwartaal})`);
+    }
+    STATE.kpiPijlerForm = null;
+    persistMeta();
+    toast('Pijler opgeslagen.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-pijler-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const [kwartaal, pijlerId] = el.getAttribute('data-kpi-pijler-delete').split('|');
+    const pijlers = KPI_TACTISCH[kwartaal].pijlers;
+    const idx = pijlers.findIndex(p=>p.id===pijlerId);
+    if(idx===-1) return;
+    if(!confirm('Deze pijler verwijderen?')) return;
+    const naam = pijlers[idx].naam;
+    pijlers.splice(idx,1);
+    logActiviteit(`KPI: pijler "${naam}" verwijderd (${kwartaal})`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-comm-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    STATE.kpiCommEdit = true;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-comm-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiCommEdit = false;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-comm-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const weekInput = document.getElementById('kpiCommWeekInput');
+    const week = weekInput ? (parseInt(weekInput.value)||kpiHuidigeWeek()) : (KPI_COMMERCIEEL.week||kpiHuidigeWeek());
+    KPI_COMMERCIEEL.week = week;
+    const waarden = {};
+    document.querySelectorAll('[data-kpi-comm-input]').forEach(inp=>{
+      const [teamId, veld] = inp.getAttribute('data-kpi-comm-input').split('|');
+      if(!waarden[teamId]) waarden[teamId] = {kg:0, conv:0, nk:0};
+      waarden[teamId][veld] = Math.max(0, parseInt(inp.value)||0);
+    });
+    Object.keys(waarden).forEach(teamId=>{
+      const w = waarden[teamId];
+      kpiCommUpsertWeek(teamId, week, w.kg, w.conv, w.nk);
+    });
+    STATE.kpiCommEdit = false;
+    logActiviteit(`KPI: commerciële KPI's bijgewerkt voor week ${week}`);
+    persistMeta();
+    toast(`Commerciële KPI's voor week ${week} opgeslagen.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kpi-toggle]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.kpiExpanded = !STATE.kpiExpanded;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  if(STATE.view==='dashboard') renderKpiCharts();
 }
 
 function handleCSVUpload(e){
@@ -4118,129 +4388,6 @@ function renderBulkTxnPreview(rows){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
     toast(`Bulk-import klaar: ${toegepast} klant(en) bijgewerkt${overgeslagen?`, ${overgeslagen} overgeslagen (geen klant gekoppeld)`:''}.`);
   });
-  document.querySelectorAll('[data-kpi-op-edit]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    STATE.kpiOpEdit = true;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-op-cancel]').forEach(el=>el.addEventListener('click',()=>{
-    STATE.kpiOpEdit = false;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-op-save]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    document.querySelectorAll('[data-kpi-op-input]').forEach(inp=>{
-      const [teamId, veld] = inp.getAttribute('data-kpi-op-input').split('|');
-      const d = kpiOpVoorTeam(teamId);
-      d[veld] = Math.max(0, parseInt(inp.value)||0);
-    });
-    STATE.kpiOpEdit = false;
-    logActiviteit("KPI: operationele KPI's bijgewerkt");
-    persistMeta();
-    toast("Operationele KPI's opgeslagen.");
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-kwartaal-tab]').forEach(el=>el.addEventListener('click',()=>{
-    STATE.kpiTactKwartaal = el.getAttribute('data-kpi-kwartaal-tab');
-    STATE.kpiPijlerForm = null;
-    STATE.kpiTactDoelEdit = null;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-doel-edit]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    STATE.kpiTactDoelEdit = el.getAttribute('data-kpi-doel-edit');
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-doel-cancel]').forEach(el=>el.addEventListener('click',()=>{
-    STATE.kpiTactDoelEdit = null;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-doel-save]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    const kwartaal = el.getAttribute('data-kpi-doel-save');
-    const input = document.getElementById('kpiDoelInput');
-    KPI_TACTISCH[kwartaal].doel = input ? input.value.trim() : '';
-    STATE.kpiTactDoelEdit = null;
-    logActiviteit(`KPI: doel voor ${kwartaal} bijgewerkt`);
-    persistMeta();
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-pijler-add]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    STATE.kpiPijlerForm = { kwartaal: el.getAttribute('data-kpi-pijler-add'), editId: null };
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-pijler-edit]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    const [kwartaal, editId] = el.getAttribute('data-kpi-pijler-edit').split('|');
-    STATE.kpiPijlerForm = { kwartaal, editId };
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-pijler-cancel]').forEach(el=>el.addEventListener('click',()=>{
-    STATE.kpiPijlerForm = null;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-pijler-save]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    const [kwartaal, editId] = el.getAttribute('data-kpi-pijler-save').split('|');
-    const teamId = document.getElementById('kpiPijlerTeam') ? document.getElementById('kpiPijlerTeam').value : '';
-    const naam = document.getElementById('kpiPijlerNaam') ? document.getElementById('kpiPijlerNaam').value.trim() : '';
-    const week = parseInt(document.getElementById('kpiPijlerWeek') ? document.getElementById('kpiPijlerWeek').value : '') || null;
-    const target = document.getElementById('kpiPijlerTarget') ? document.getElementById('kpiPijlerTarget').value.trim() : '';
-    const status = document.getElementById('kpiPijlerStatus') ? document.getElementById('kpiPijlerStatus').value : 'Op schema';
-    if(!teamId || !naam){ toast('Vul in elk geval een team en een omschrijving in.'); return; }
-    const pijlers = KPI_TACTISCH[kwartaal].pijlers;
-    if(editId){
-      const bestaand = pijlers.find(p=>p.id===editId);
-      if(bestaand){ Object.assign(bestaand, {teamId, naam, week, target, status}); }
-      logActiviteit(`KPI: pijler "${naam}" bijgewerkt (${kwartaal})`);
-    } else {
-      const id = nextId(pijlers, 'pijler');
-      pijlers.push({id, teamId, naam, week, target, status});
-      logActiviteit(`KPI: pijler "${naam}" toegevoegd (${kwartaal})`);
-    }
-    STATE.kpiPijlerForm = null;
-    persistMeta();
-    toast('Pijler opgeslagen.');
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-pijler-delete]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    const [kwartaal, pijlerId] = el.getAttribute('data-kpi-pijler-delete').split('|');
-    const pijlers = KPI_TACTISCH[kwartaal].pijlers;
-    const idx = pijlers.findIndex(p=>p.id===pijlerId);
-    if(idx===-1) return;
-    if(!confirm('Deze pijler verwijderen?')) return;
-    const naam = pijlers[idx].naam;
-    pijlers.splice(idx,1);
-    logActiviteit(`KPI: pijler "${naam}" verwijderd (${kwartaal})`);
-    persistMeta();
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-comm-edit]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    STATE.kpiCommEdit = true;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-comm-cancel]').forEach(el=>el.addEventListener('click',()=>{
-    STATE.kpiCommEdit = false;
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
-  document.querySelectorAll('[data-kpi-comm-save]').forEach(el=>el.addEventListener('click',()=>{
-    if(!isAdmin()) return;
-    const weekInput = document.getElementById('kpiCommWeekInput');
-    if(weekInput) KPI_COMMERCIEEL.week = parseInt(weekInput.value)||null;
-    document.querySelectorAll('[data-kpi-comm-input]').forEach(inp=>{
-      const [teamId, veld] = inp.getAttribute('data-kpi-comm-input').split('|');
-      const d = kpiCommVoorTeam(teamId);
-      d[veld] = Math.max(0, parseInt(inp.value)||0);
-    });
-    STATE.kpiCommEdit = false;
-    logActiviteit("KPI: commerciële KPI's bijgewerkt");
-    persistMeta();
-    toast("Commerciële KPI's opgeslagen.");
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
 }
 
 function attachPanelHandlers(klant){
@@ -4441,5 +4588,6 @@ window.addEventListener('beforeunload', ()=>{
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 </body>
 </html>
