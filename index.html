@@ -3229,7 +3229,7 @@ function akkoordverklaringHTML(klant){
 
     ${ib.urencriteriumVanToepassing ? `<p style="margin:0 0 12px; font-weight:700; font-style:italic;">Ondergetekende ${urenWeergave} verklaart dat er voor jaar ${jaar} ${ib.urencriteriumVoldaan?'WEL':'NIET'} is voldaan aan het urencriterium van 1.225 uur, zodat de zelfstandigenaftrek ${ib.urencriteriumVoldaan?'wel':'niet'} kan worden toegepast.</p>` : ''}
 
-    <div style="margin-top:40px;">${ib.plaats}, ${stip(55)}(datum)</div>
+    <div style="margin-top:40px;">${ib.plaats}, ${vandaag}</div>
     <div style="margin-top:34px; display:flex; gap:70px;">
       <div>${stip(34)}</div>
       ${meerdere ? `<div>${stip(34)}</div>` : ''}
