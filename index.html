@@ -241,12 +241,16 @@ let TEAMS = [];
 /* Rechten (wie is beheerder, wie mag Loonheffingen bewerken) horen bij de GEDEELDE data — niet bij de
    lokale SYNC-instellingen — zodat een wijziging door de beheerder ook echt bij collega's doorkomt zodra
    zij synchroniseren. Voorheen stonden deze velden per ongeluk alleen lokaal in de browser. */
-/* akkoordverklaringActief: kill-switch voor het automatisch VERSTUREN van de akkoordverklaring aangifte
-   IB (zie "Documenten" op de klantkaart). Staat bewust standaard UIT ("op hold") — pas als een beheerder
-   'm bij Instellingen expliciet aanzet, gaat er voor deze functie mail naar klanten. Voorbeeld/download
-   blijft altijd beschikbaar (die verstuurt niets). Hoort, net als adminEmails/lhBevoegdeBhIds, bij de
-   GEDEELDE data, zodat "aan/uit" ook echt voor iedereen geldt zodra ze synchroniseren. */
-let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], akkoordverklaringActief:false };
+/* documentenVersturenActief: kill-switch voor het automatisch VERSTUREN van klant-documenten (bijv.
+   de akkoordverklaring aangifte IB en VPB, zie "Documenten" op de klantkaart) — geldt voor ALLE
+   documenttypes tegelijk, dit is bewust één schakelaar en geen losse per-documenttype. Staat standaard
+   UIT ("op hold") — pas als een beheerder 'm bij Instellingen expliciet aanzet, gaat er voor deze
+   functie mail naar klanten. Voorbeeld/download blijft altijd beschikbaar (die verstuurt niets). Hoort,
+   net als adminEmails/lhBevoegdeBhIds, bij de GEDEELDE data, zodat "aan/uit" ook echt voor iedereen
+   geldt zodra ze synchroniseren.
+   Heette tot voor kort 'akkoordverklaringActief' (toen er nog maar één documenttype was) — migrateData()
+   neemt de oude sleutel over als iemand nog gesynchroniseerde data heeft van vóór de hernoeming. */
+let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
 /* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
 let AUTOS = [];
 /* Activiteitenlogboek: een gedeeld, alleen-lezen-voor-niet-beheerders overzicht van wie wat heeft
@@ -386,6 +390,30 @@ function normaliseerIbData(ib){
   });
   return ib;
 }
+/* Zelfde soort velden als bij de IB-akkoordverklaring, maar dan voor de VPB-akkoordverklaring: het
+   vestigingsadres van de B.V. zelf (niet het woonadres van een persoon) plus wie de klant vertegen-
+   woordigt bij ondertekening (meestal de directeur). De naam van de B.V. zelf staat al in klant.naam —
+   die hoeft hier niet nogmaals opgeslagen te worden. */
+function defaultVertegenwoordiger(){
+  return { aanhef:'Dhr', naam:'', functie:'Directeur' };
+}
+function defaultVpbData(){
+  return {
+    boekjaar:'', straat:'', postcode:'', plaats:'', fiscaalnummer:'',
+    vertegenwoordiger: defaultVertegenwoordiger(),
+  };
+}
+function normaliseerVpbData(vpb){
+  if(!vpb || typeof vpb !== 'object') vpb = {};
+  const defaults = defaultVpbData();
+  Object.keys(defaults).forEach(key=>{
+    if(vpb[key]===undefined || vpb[key]===null) vpb[key] = defaults[key];
+  });
+  const std = defaultVertegenwoordiger();
+  if(!vpb.vertegenwoordiger || typeof vpb.vertegenwoordiger !== 'object') vpb.vertegenwoordiger = std;
+  else Object.keys(std).forEach(k=>{ if(vpb.vertegenwoordiger[k]===undefined || vpb.vertegenwoordiger[k]===null) vpb.vertegenwoordiger[k] = std[k]; });
+  return vpb;
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -398,6 +426,7 @@ function addKlant(data){
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
     ib: defaultIbData(),
+    vpb: defaultVpbData(),
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
       VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
@@ -409,7 +438,7 @@ function addKlant(data){
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[],
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[],
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
@@ -1500,6 +1529,7 @@ function migrateData(){
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.opHoldReden===undefined) k.opHoldReden='';
       k.ib = normaliseerIbData(k.ib);
+      k.vpb = normaliseerVpbData(k.vpb);
       ['OB','VPB','LH','JR'].forEach(t=>{
         // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
         // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
@@ -1545,10 +1575,11 @@ function migrateData(){
         if(!Array.isArray(f.log)) f.log = [];
         if(f.notities===undefined) f.notities = '';
         if(!Array.isArray(f.akkoordLog)) f.akkoordLog = [];
+        if(!Array.isArray(f.vpbAkkoordLog)) f.vpbAkkoordLog = [];
       } else {
         // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
         // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
-        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[] };
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[] };
       }
     }catch(e){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
@@ -1599,10 +1630,14 @@ function migrateData(){
     ];
   }
   if(!Array.isArray(ACTIVITEITENLOG)) ACTIVITEITENLOG = [];
-  if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], akkoordverklaringActief:false };
+  if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
   if(!Array.isArray(RECHTEN.adminEmails)) RECHTEN.adminEmails = ['benjamin@administratiebox.nl'];
   if(!Array.isArray(RECHTEN.lhBevoegdeBhIds)) RECHTEN.lhBevoegdeBhIds = [];
-  if(RECHTEN.akkoordverklaringActief === undefined) RECHTEN.akkoordverklaringActief = false;
+  if(RECHTEN.documentenVersturenActief === undefined){
+    // Migratie van de oude, documenttype-specifieke sleutel (uit de tijd dat er alleen een IB-akkoordverklaring was).
+    RECHTEN.documentenVersturenActief = RECHTEN.akkoordverklaringActief !== undefined ? !!RECHTEN.akkoordverklaringActief : false;
+  }
+  delete RECHTEN.akkoordverklaringActief;
   if(!KPI_OPERATIONEEL || typeof KPI_OPERATIONEEL !== 'object') KPI_OPERATIONEEL = {};
   if(!KPI_TACTISCH || typeof KPI_TACTISCH !== 'object') KPI_TACTISCH = {};
   ['Q1','Q2','Q3','Q4'].forEach(q=>{
@@ -3088,7 +3123,7 @@ function instellingenHTML(){
     <div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Automatisch versturen van klant-documenten (bijv. de akkoordverklaring aangifte IB, zie "Documenten" op de klantkaart) staat hier standaard op hold. Zet dit pas aan zodra je klaar bent om dit systeem echt te gebruiken — zolang dit uitstaat kan er niemand per ongeluk een e-mail naar een klant sturen; voorbeeld/download blijft altijd gewoon werken.</p>
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
-        <input type="checkbox" id="akkoordActiefToggle" ${RECHTEN.akkoordverklaringActief?'checked':''}>
+        <input type="checkbox" id="akkoordActiefToggle" ${RECHTEN.documentenVersturenActief?'checked':''}>
         Akkoordverklaring aangifte IB: automatisch versturen inschakelen
       </label>
       <div style="margin-top:10px;">
@@ -3257,67 +3292,181 @@ function akkoordMailBodyHTML(klant){
 function akkoordverklaringBestandsnaam(klant){
   return `Akkoordverklaring IB ${klant.ib.boekjaar||''} - ${klant.naam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
 }
+/* ============================= DOCUMENT: AKKOORDVERKLARING AANGIFTE VPB =============================
+   Tweede documenttype in de "Documenten"-sectie, naast de IB-akkoordverklaring hierboven. Ditmaal gaat
+   het om de B.V. zelf (vestigingsadres + wie er namens de klant tekent) i.p.v. een privépersoon, en zit
+   er ook een akkoord voor deponering van de publicatiestukken bij de KvK in — geen urencriterium-
+   verklaring (die is IB-specifiek) en altijd enkelvoud (één ondergetekende namens de B.V.). Opmaak is,
+   net als bij de IB-versie, gebouwd aan de hand van het originele Word-sjabloon (logo linksboven,
+   briefgegevens rechtsboven, titel + Betreft/Terzake van/Fiscaalnummer op dezelfde inspring-kolom). */
+function vpbAkkoordverklaringValidatie(klant){
+  const vpb = klant.vpb;
+  if(!vpb) return 'Geen VPB-gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const ontbreekt = [];
+  if(!vpb.boekjaar) ontbreekt.push('boekjaar');
+  if(!vpb.fiscaalnummer) ontbreekt.push('fiscaalnummer');
+  if(!vpb.straat) ontbreekt.push('vestigingsadres');
+  if(!vpb.postcode) ontbreekt.push('postcode');
+  if(!vpb.plaats) ontbreekt.push('plaats');
+  if(!vpb.vertegenwoordiger || !vpb.vertegenwoordiger.naam) ontbreekt.push('naam vertegenwoordiger');
+  if(!klant.email) ontbreekt.push('e-mailadres van de klant');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document verstuurt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+function vpbAkkoordverklaringHTML(klant){
+  const vpb = klant.vpb;
+  const vt = vpb.vertegenwoordiger;
+  const vertegenwoordigerWeergave = `${ibAanhefLabel(vt.aanhef)} ${(vt.naam||'').trim()}`.replace(/\s+/g,' ').trim();
+  const vandaag = fmtDatumLang(new Date());
+  const jaar = vpb.boekjaar || String(new Date().getFullYear()-1);
+  const stip = (n)=> '.'.repeat(n);
+  const labelKolom = '150px';
+  const labelRij = (label, waardeRegels)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${Array.isArray(waardeRegels)?waardeRegels.join('<br>'):waardeRegels}</div></div>`;
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px;">
+      <img src="${AB_LOGO_B64}" style="height:30px; margin-top:4px;">
+      <div style="font-size:9.5pt; line-height:1.5; text-align:right;">
+        <div style="font-weight:700;">AdministratieBox B.V.</div>
+        <div>Demmersweg 42</div>
+        <div>7556 BN&nbsp;&nbsp;Hengelo</div>
+        <div>085-1093400</div>
+        <div>&nbsp;</div>
+        <div>www.administratiebox.nl</div>
+        <div>info@administratiebox.nl</div>
+        <div>&nbsp;</div>
+        <div>Bankrekening: NL70RABO0191895253</div>
+        <div>BTW nr.: NL854261096B01</div>
+        <div>KvK nr.: 61226734</div>
+      </div>
+    </div>
+
+    <div style="margin-left:${labelKolom}; font-weight:700; text-decoration:underline; font-size:10.5pt; margin-bottom:18px;">AKKOORDVERKLARING AANGIFTE VENNOOTSCHAPSBELASTING</div>
+
+    ${labelRij('Betreft:', ['Akkoordverklaring aangifte vennootschapsbelasting.', 'Akkoordverklaring deponering publicatiestukken in het handelsregister.'])}
+    ${labelRij('Terzake van:', [`Aangifte vennootschapsbelasting over boekjaar ${jaar}.`, `Opgemaakt d.d. ${vandaag}.`])}
+    <div style="margin-bottom:12px;"></div>
+    ${labelRij('Fiscaalnummer:', vpb.fiscaalnummer)}
+    <div style="margin-bottom:12px;"></div>
+
+    <p style="margin:0 0 12px;">De ondergetekende, ${klant.naam}, gevestigd te ${vpb.plaats}; ${vpb.straat}; ${vpb.postcode}, hierbij vertegenwoordigd door ${vertegenwoordigerWeergave} (${vt.functie || 'Directeur'}),</p>
+
+    <p style="margin:0 0 12px;">Heeft kennis genomen van de inhoud van de opgestelde aangifte vennootschapsbelasting en vastgesteld dat deze inhoud in overeenstemming is met de gegevens die, zonder voorbehoud, aan AdministratieBox B.V. zijn aangeleverd.</p>
+
+    <p style="margin:0 0 12px;">Ondergetekende gaat akkoord met de weergave en met de daarmee overeenstemmende aangifte en geeft toestemming aan AdministratieBox B.V. om het gemaakte aangiftebestand digitaal naar de belastingdienst te versturen.</p>
+
+    <p style="margin:0 0 12px;">Tevens geeft ondergetekende toestemming de publicatiebalans digitaal naar de Kamer van Koophandel ter deponering in het handelsregister te versturen.</p>
+
+    <div style="margin-top:40px;">${vpb.plaats}, ${vandaag}</div>
+    <div style="margin-top:34px;">${stip(50)}</div>
+    <div style="font-size:9pt; color:#555; margin-top:2px;">(Handtekening)</div>
+  </div>`;
+}
+function vpbAkkoordMailBodyHTML(klant){
+  const naam = (klant.contact || klant.naam || '').trim();
+  const boekhouderNaam = (bh(klant.bh)||{naam:'AdministratieBox'}).naam;
+  return `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Beste ${naam || klant.naam},</p>
+    <p>Bijgaand ontvangt u de akkoordverklaring voor de aangifte vennootschapsbelasting over boekjaar ${klant.vpb.boekjaar}, inclusief het akkoord voor deponering van de publicatiestukken bij de Kamer van Koophandel. Wilt u deze controleren, ondertekenen en aan ons retourneren?</p>
+    <p>Met vriendelijke groet,<br>${boekhouderNaam}<br>AdministratieBox</p>
+  </div>`;
+}
+function vpbAkkoordverklaringBestandsnaam(klant){
+  return `Akkoordverklaring VPB ${klant.vpb.boekjaar||''} - ${klant.naam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+function genereerVpbAkkoordverklaringPdfBase64(klant){
+  return genereerDocumentPdfBase64(vpbAkkoordverklaringHTML, klant, vpbAkkoordverklaringBestandsnaam(klant));
+}
+function downloadVpbAkkoordverklaringPdf(klant){
+  downloadDocumentPdf(vpbAkkoordverklaringHTML, klant, vpbAkkoordverklaringBestandsnaam(klant));
+}
 /* scrollX/scrollY:0 compenseren voor de scrollpositie van de pagina op het moment van genereren —
    zonder dit levert html2canvas soms een leeg canvas op als de gebruiker niet bovenaan de pagina staat. */
 const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.98}, html2canvas:{scale:2, useCORS:true, scrollX:0, scrollY:0}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'} };
-/* Rendert de akkoordverklaring in een tijdelijk, voor de gebruiker onzichtbaar element, zodat html2pdf.js
-   er een PDF van kan maken zonder dat er iets op het scherm flitst.
+/* Rendert willekeurige documenthtml (via htmlFn(klant)) in een tijdelijk, voor de gebruiker onzichtbaar
+   element, zodat html2pdf.js er een PDF van kan maken zonder dat er iets op het scherm flitst. Generiek
+   gemaakt zodat elk documenttype (IB, VPB, en toekomstige) dezelfde PDF-plumbing hergebruikt i.p.v. een
+   eigen kopie.
    BELANGRIJK: eerdere versie plaatste dit element ver buiten de pagina (left:-99999px). Daardoor leverde
    html2canvas soms een volledig LEEG canvas/PDF op — een bekend probleem: html2canvas berekent het te
    fotograferen gebied op basis van getBoundingClientRect(), en bij zulke extreme negatieve posities valt
    dat gebied buiten wat de (intern door html2canvas gekloonde) pagina daadwerkelijk rendert. Oplossing:
    het element blijft op een "normale" plek (links­boven, binnen het document), maar wordt onzichtbaar
    gemaakt met een negatieve z-index (zit dus achter de rest van de pagina) i.p.v. buiten beeld geschoven. */
-function maakVerborgenAkkoordElement(klant){
+function maakVerborgenDocumentElement(htmlFn, klant){
   const el = document.createElement('div');
   el.style.position = 'fixed'; el.style.top = '0'; el.style.left = '0'; el.style.zIndex = '-1000'; el.style.pointerEvents = 'none';
-  el.innerHTML = akkoordverklaringHTML(klant);
+  el.innerHTML = htmlFn(klant);
   document.body.appendChild(el);
   return el;
 }
-async function genereerAkkoordverklaringPdfBase64(klant){
+async function genereerDocumentPdfBase64(htmlFn, klant, bestandsnaam){
   if(typeof html2pdf === 'undefined') throw new Error('PDF-bibliotheek kon niet worden geladen (geen internetverbinding?).');
-  const el = maakVerborgenAkkoordElement(klant);
+  const el = maakVerborgenDocumentElement(htmlFn, klant);
   try{
-    const opt = Object.assign({filename: akkoordverklaringBestandsnaam(klant)}, AKKOORD_PDF_OPTS);
+    const opt = Object.assign({filename: bestandsnaam}, AKKOORD_PDF_OPTS);
     const dataUri = await html2pdf().set(opt).from(el.firstElementChild).outputPdf('datauristring');
     return dataUri.slice(dataUri.indexOf(',')+1);
   } finally {
     document.body.removeChild(el);
   }
 }
-function downloadAkkoordverklaringPdf(klant){
+function downloadDocumentPdf(htmlFn, klant, bestandsnaam){
   if(typeof html2pdf === 'undefined'){ toast('PDF-bibliotheek kon niet worden geladen (geen internetverbinding?).'); return; }
-  const el = maakVerborgenAkkoordElement(klant);
-  const opt = Object.assign({filename: akkoordverklaringBestandsnaam(klant)}, AKKOORD_PDF_OPTS);
+  const el = maakVerborgenDocumentElement(htmlFn, klant);
+  const opt = Object.assign({filename: bestandsnaam}, AKKOORD_PDF_OPTS);
   html2pdf().set(opt).from(el.firstElementChild).save().finally(()=>{ document.body.removeChild(el); });
+}
+function genereerAkkoordverklaringPdfBase64(klant){
+  return genereerDocumentPdfBase64(akkoordverklaringHTML, klant, akkoordverklaringBestandsnaam(klant));
+}
+function downloadAkkoordverklaringPdf(klant){
+  downloadDocumentPdf(akkoordverklaringHTML, klant, akkoordverklaringBestandsnaam(klant));
 }
 /* "Documenten"-sectie op de klantkaart: het eerste van (naar verwachting) meerdere geautomatiseerde
    document-versturingen op deze plek, naast de bestaande "Automatische herinneringen". Bewust als eigen
    functie i.p.v. inline in panelHTML() opgezet, zodat een volgend document-type hier straks gewoon een
    extra kaartje kan worden zonder panelHTML() zelf te hoeven aanpassen. */
+/* Eén herbruikbaar kaartje per documenttype binnen de "Documenten"-sectie — zo kan een volgend
+   documenttype hier straks gewoon een extra aanroep van deze functie worden. */
+function documentKaartHTML(opts){
+  return `<div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+    <div style="font-weight:700; font-size:12.5px;">${opts.titel}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">${opts.uitleg}</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn sm" ${opts.previewAttr}>⬇ Voorbeeld downloaden</button>
+      <button class="btn sm primary" ${opts.sendAttr} ${opts.actief?'':'disabled title="Staat op hold — zie Instellingen"'}>✉ Versturen</button>
+    </div>
+    <div class="rem-log" style="margin-top:10px;">
+      <b style="font-size:12px;">Verzendgeschiedenis</b>
+      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${opts.logLabel} ${l.boekjaar} verstuurd naar ${l.naar} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
+    </div>
+  </div>`;
+}
 function documentenSectieHTML(klant){
-  const log = (STORE[klant.id].akkoordLog || []);
   const ib = klant.ib || defaultIbData();
-  const actief = !!RECHTEN.akkoordverklaringActief;
+  const vpb = klant.vpb || defaultVpbData();
+  const actief = !!RECHTEN.documentenVersturenActief;
+  const ibLog = STORE[klant.id].akkoordLog || [];
+  const vpbLog = STORE[klant.id].vpbAkkoordLog || [];
   return `<div class="panel-section">
     <h4>Documenten</h4>
     <div class="inner">
       ${!actief ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; margin-bottom:10px;">
         ⏸ Automatisch versturen staat nog op hold.${isAdmin() ? ' Zet dit aan bij Instellingen → "Documenten & automatiseringen" zodra je zover bent.' : ' Vraag een beheerder om dit bij Instellingen aan te zetten.'} Voorbeeld downloaden werkt intussen gewoon.
       </div>` : ''}
-      <div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
-        <div style="font-weight:700; font-size:12.5px;">Akkoordverklaring aangifte IB${ib.boekjaar ? ' — boekjaar '+ib.boekjaar : ''}</div>
-        <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">Wordt automatisch ingevuld met de IB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn sm" data-akk-preview>⬇ Voorbeeld downloaden</button>
-          <button class="btn sm primary" data-akk-send ${actief?'':'disabled title="Staat op hold — zie Instellingen"'}>✉ Versturen</button>
-        </div>
-      </div>
-      <div class="rem-log" style="margin-top:10px;">
-        <b style="font-size:12px;">Verzendgeschiedenis</b>
-        ${log.length ? log.slice().reverse().map(l=>`<div class="rem-log-item">📨 Akkoordverklaring IB ${l.boekjaar} verstuurd naar ${l.naar} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
-      </div>
+      ${documentKaartHTML({
+        titel: `Akkoordverklaring aangifte IB${ib.boekjaar ? ' — boekjaar '+ib.boekjaar : ''}`,
+        uitleg: `Wordt automatisch ingevuld met de IB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
+        previewAttr: 'data-akk-ib-preview', sendAttr: 'data-akk-ib-send',
+        log: ibLog, logLabel: 'Akkoordverklaring IB', actief,
+      })}
+      ${documentKaartHTML({
+        titel: `Akkoordverklaring aangifte VPB${vpb.boekjaar ? ' — boekjaar '+vpb.boekjaar : ''}`,
+        uitleg: `Wordt automatisch ingevuld met de VPB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
+        previewAttr: 'data-akk-vpb-preview', sendAttr: 'data-akk-vpb-send',
+        log: vpbLog, logLabel: 'Akkoordverklaring VPB', actief,
+      })}
     </div>
   </div>`;
 }
@@ -3543,6 +3692,29 @@ function ibFormSectionHTML(ib){
     </div>
   </div></div>`;
 }
+/* Zelfde opzet als ibFormSectionHTML() hierboven, maar dan voor de VPB-akkoordverklaring: vestigingsadres
+   van de B.V. plus wie er tekent namens de klant (meestal de directeur). */
+function vpbFormSectionHTML(vpb){
+  const vt = vpb.vertegenwoordiger;
+  return `<div class="panel-section"><h4>VPB-akkoordverklaring</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het automatisch invullen en versturen van de akkoordverklaring aangifte vennootschapsbelasting (zie "Documenten" op de klantkaart). Datum van verzending wordt altijd automatisch ingevuld.</div>
+    <div class="field-row"><label>Boekjaar</label><input type="text" id="editVpbBoekjaar" value="${(vpb.boekjaar||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2025" style="max-width:110px;"></div>
+    <div class="field-row"><label>Fiscaalnummer</label><input type="text" id="editVpbFiscaal" value="${(vpb.fiscaalnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. 1234.56.789"></div>
+    <div class="field-row"><label>Vestigingsadres</label><input type="text" id="editVpbStraat" value="${(vpb.straat||'').replace(/"/g,'&quot;')}" placeholder="Straat + huisnummer"></div>
+    <div class="field-row"><label>Postcode</label><input type="text" id="editVpbPostcode" value="${(vpb.postcode||'').replace(/"/g,'&quot;')}" style="max-width:120px;"></div>
+    <div class="field-row"><label>Plaats</label><input type="text" id="editVpbPlaats" value="${(vpb.plaats||'').replace(/"/g,'&quot;')}"></div>
+
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Vertegenwoordigd door</div>
+    <div class="field-row"><label>Aanhef</label>
+      <select id="editVpbAanhef" style="width:90px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Dhr" ${vt.aanhef==='Dhr'?'selected':''}>Dhr.</option>
+        <option value="Mw" ${vt.aanhef==='Mw'?'selected':''}>Mw.</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Naam</label><input type="text" id="editVpbNaam" value="${(vt.naam||'').replace(/"/g,'&quot;')}" placeholder="Voorletters + achternaam"></div>
+    <div class="field-row"><label>Functie</label><input type="text" id="editVpbFunctie" value="${(vt.functie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Directeur"></div>
+  </div></div>`;
+}
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
   const f = STORE[klant.id];
@@ -3585,6 +3757,7 @@ function editKlantFormHTML(klant){
       <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: DD-MM-JJJJ.</div>
     </div></div>
     ${ibFormSectionHTML(klant.ib)}
+    ${vpbFormSectionHTML(klant.vpb)}
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
       <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
@@ -3877,6 +4050,19 @@ function attachEditKlantHandlers(klant){
     ib.urencriteriumVanToepassing = document.getElementById('editIbUrenVanToepassing').checked;
     ib.urencriteriumPersoon = document.getElementById('editIbUrenPersoon').value;
     ib.urencriteriumVoldaan = document.getElementById('editIbUrenVoldaan').value === 'ja';
+
+    if(!klant.vpb) klant.vpb = defaultVpbData();
+    const vpb = klant.vpb;
+    vpb.boekjaar = document.getElementById('editVpbBoekjaar').value.trim();
+    vpb.fiscaalnummer = document.getElementById('editVpbFiscaal').value.trim();
+    vpb.straat = document.getElementById('editVpbStraat').value.trim();
+    vpb.postcode = document.getElementById('editVpbPostcode').value.trim();
+    vpb.plaats = document.getElementById('editVpbPlaats').value.trim();
+    vpb.vertegenwoordiger = {
+      aanhef: document.getElementById('editVpbAanhef').value,
+      naam: document.getElementById('editVpbNaam').value.trim(),
+      functie: document.getElementById('editVpbFunctie').value.trim(),
+    };
 
     persistMeta(); persist();
     toast('Klantgegevens bijgewerkt.');
@@ -4282,8 +4468,8 @@ function attachHandlers(){
   document.querySelectorAll('[data-save-documenten-instellingen]').forEach(el=>el.addEventListener('click',()=>{
     if(!isAdmin()) return;
     const nieuweWaarde = !!document.getElementById('akkoordActiefToggle').checked;
-    const gewijzigd = nieuweWaarde !== RECHTEN.akkoordverklaringActief;
-    RECHTEN.akkoordverklaringActief = nieuweWaarde;
+    const gewijzigd = nieuweWaarde !== RECHTEN.documentenVersturenActief;
+    RECHTEN.documentenVersturenActief = nieuweWaarde;
     if(gewijzigd) logActiviteit(`Automatisch versturen akkoordverklaring IB ${nieuweWaarde ? 'ingeschakeld' : 'op hold gezet'}`);
     persistMeta();
     toast(nieuweWaarde ? 'Ingeschakeld — klanten kunnen nu een akkoordverklaring per e-mail ontvangen.' : 'Op hold gezet — er wordt geen mail verstuurd.');
@@ -4788,7 +4974,7 @@ function handleKlantenCSVUpload(e){
         if(tel) bestaand.tel = tel;
         if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -4798,10 +4984,11 @@ function handleKlantenCSVUpload(e){
           id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
           doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', extId,
           ib: defaultIbData(),
+          vpb: defaultVpbData(),
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
@@ -5028,22 +5215,22 @@ function attachPanelHandlers(klant){
     persist(); toast(`${ronde}e herinnering klaargezet voor ${klant.naam}.`); refreshPanel(klant);
   }));
 
-  const akkPreviewBtn = document.querySelector('[data-akk-preview]');
-  if(akkPreviewBtn) akkPreviewBtn.addEventListener('click', ()=>{
+  const akkIbPreviewBtn = document.querySelector('[data-akk-ib-preview]');
+  if(akkIbPreviewBtn) akkIbPreviewBtn.addEventListener('click', ()=>{
     const fout = akkoordverklaringValidatie(klant);
     if(fout){ toast(fout); return; }
     downloadAkkoordverklaringPdf(klant);
   });
-  const akkSendBtn = document.querySelector('[data-akk-send]');
-  if(akkSendBtn) akkSendBtn.addEventListener('click', async ()=>{
+  const akkIbSendBtn = document.querySelector('[data-akk-ib-send]');
+  if(akkIbSendBtn) akkIbSendBtn.addEventListener('click', async ()=>{
     // Verdediging in de diepte: de knop staat al 'disabled' als dit uitstaat, maar deze check voorkomt
     // ook verzending via een eventuele oude/gecachte weergave van het paneel.
-    if(!RECHTEN.akkoordverklaringActief){ toast('Automatisch versturen staat nog op hold — zet dit eerst aan bij Instellingen.'); return; }
+    if(!RECHTEN.documentenVersturenActief){ toast('Automatisch versturen staat nog op hold — zet dit eerst aan bij Instellingen.'); return; }
     const fout = akkoordverklaringValidatie(klant);
     if(fout){ toast(fout); return; }
     if(!confirm(`Akkoordverklaring IB ${klant.ib.boekjaar} versturen naar ${klant.email}?`)) return;
-    const origLabel = akkSendBtn.textContent;
-    akkSendBtn.disabled = true; akkSendBtn.textContent = 'Bezig met versturen…';
+    const origLabel = akkIbSendBtn.textContent;
+    akkIbSendBtn.disabled = true; akkIbSendBtn.textContent = 'Bezig met versturen…';
     try{
       const pdfBase64 = await genereerAkkoordverklaringPdfBase64(klant);
       await sendGraphMail(
@@ -5060,7 +5247,41 @@ function attachPanelHandlers(klant){
       refreshPanel(klant);
     }catch(e){
       toast('Versturen mislukt: ' + (e.message || e));
-      akkSendBtn.disabled = false; akkSendBtn.textContent = origLabel;
+      akkIbSendBtn.disabled = false; akkIbSendBtn.textContent = origLabel;
+    }
+  });
+
+  const akkVpbPreviewBtn = document.querySelector('[data-akk-vpb-preview]');
+  if(akkVpbPreviewBtn) akkVpbPreviewBtn.addEventListener('click', ()=>{
+    const fout = vpbAkkoordverklaringValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadVpbAkkoordverklaringPdf(klant);
+  });
+  const akkVpbSendBtn = document.querySelector('[data-akk-vpb-send]');
+  if(akkVpbSendBtn) akkVpbSendBtn.addEventListener('click', async ()=>{
+    if(!RECHTEN.documentenVersturenActief){ toast('Automatisch versturen staat nog op hold — zet dit eerst aan bij Instellingen.'); return; }
+    const fout = vpbAkkoordverklaringValidatie(klant);
+    if(fout){ toast(fout); return; }
+    if(!confirm(`Akkoordverklaring VPB ${klant.vpb.boekjaar} versturen naar ${klant.email}?`)) return;
+    const origLabel = akkVpbSendBtn.textContent;
+    akkVpbSendBtn.disabled = true; akkVpbSendBtn.textContent = 'Bezig met versturen…';
+    try{
+      const pdfBase64 = await genereerVpbAkkoordverklaringPdfBase64(klant);
+      await sendGraphMail(
+        klant.email,
+        `Akkoordverklaring aangifte vennootschapsbelasting ${klant.vpb.boekjaar}`,
+        vpbAkkoordMailBodyHTML(klant),
+        [{ name: vpbAkkoordverklaringBestandsnaam(klant), contentType:'application/pdf', base64: pdfBase64 }]
+      );
+      STORE[klant.id].vpbAkkoordLog = STORE[klant.id].vpbAkkoordLog || [];
+      STORE[klant.id].vpbAkkoordLog.push({ ts:new Date().toISOString().slice(0,10), boekjaar: klant.vpb.boekjaar, naar: klant.email });
+      logActiviteit(`Akkoordverklaring VPB ${klant.vpb.boekjaar} verstuurd naar "${klant.naam}"`);
+      persist(); persistMeta();
+      toast(`Akkoordverklaring verstuurd naar ${klant.email}.`);
+      refreshPanel(klant);
+    }catch(e){
+      toast('Versturen mislukt: ' + (e.message || e));
+      akkVpbSendBtn.disabled = false; akkVpbSendBtn.textContent = origLabel;
     }
   });
 
