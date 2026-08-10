@@ -242,6 +242,11 @@ let AUTOS = [];
    bijtellingstabel of aan de rechten). Alleen zichtbaar bij Instellingen voor beheerders. Wordt begrensd
    op de laatste 500 gebeurtenissen om de opslag niet onbeperkt te laten groeien. */
 let ACTIVITEITENLOG = [];
+/* Overige notities op de Loonheffingen-pagina: één gedeeld notitieveld onder de DGA-lijst en één onder
+   de geen-DGA-lijst, los van een specifieke klant. Blijven bewust bewaard ongeacht of een periode wordt
+   afgerond — "Periode afronden" reset alleen f.lh.taken/f.dl.LH van een klant, dit veld staat daar
+   volledig los van, dus het overleeft elke periodewissel vanzelf. */
+let LH_OVERIGE_NOTITIES = { dga: '', geenDga: '' };
 /* Bijtellingspercentages per jaar — overneemt exact de tabel uit "Bijtelling" in het Excel-bestand.
    laag/cap = alleen relevant voor elektrische auto's (verlaagd tarief tot de cap, algemeen tarief
    daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
@@ -280,13 +285,14 @@ function loadMeta(){
       if(parsed.autos && parsed.autos.length) AUTOS = parsed.autos;
       if(parsed.bijtellingTabel && parsed.bijtellingTabel.length) BIJTELLING_TABEL = parsed.bijtellingTabel;
       if(parsed.activiteitenlog && parsed.activiteitenlog.length) ACTIVITEITENLOG = parsed.activiteitenlog;
+      if(parsed.lhOverigeNotities) LH_OVERIGE_NOTITIES = Object.assign({}, LH_OVERIGE_NOTITIES, parsed.lhOverigeNotities);
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, lhOverigeNotities:LH_OVERIGE_NOTITIES})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -508,6 +514,23 @@ function loadStore(){
   });
   return seed;
 }
+/* Wel-DGA en geen-DGA klanten volgen een andere takenlijst en ander tijdsvenster (zoals in het
+   salarisadministratie-Excel-bestand). De aangifte-/LJP-taken vallen voor beide groepen uiterlijk in de
+   2e week van de eerstvolgende maand (dag 14) — dat is ook de datum die de LH-deadline/bulkbewerking
+   gebruikt. Het venster hierbeneden is puur informatief (hint-tekst per taak). */
+const LH_TAKEN_DGA = [
+  {naam:'Salarissen verwerken', hint:'Tussen de 10e en 25e van de huidige maand'},
+  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 10e en 25e van de huidige maand'},
+  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'},
+  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'}
+];
+const LH_TAKEN_GEEN_DGA = [
+  {naam:'Salarissen verwerken', hint:'Tussen de 20e en 30e van de huidige maand'},
+  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 20e en 30e van de huidige maand'},
+  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
+  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
+  {naam:'Salarisdossier werknemer', hint:'Geen vaste deadline — pas aanleveren zodra de werkgever heeft betaald'}
+];
 let STORE = loadStore();
 try{ migrateData(); }catch(e){ console.error('migrateData() mislukt bij het opstarten:', e); }
 let persistStoreTimer = null;
@@ -681,7 +704,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList(false);
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, lhOverigeNotities: LH_OVERIGE_NOTITIES });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, false);
@@ -725,8 +748,9 @@ async function fetchRemoteAndMerge(showFeedback){
         AUTOS = json.autos && json.autos.length ? json.autos : AUTOS;
         BIJTELLING_TABEL = json.bijtellingTabel && json.bijtellingTabel.length ? json.bijtellingTabel : BIJTELLING_TABEL;
         ACTIVITEITENLOG = json.activiteitenlog && json.activiteitenlog.length ? json.activiteitenlog : ACTIVITEITENLOG;
+        LH_OVERIGE_NOTITIES = json.lhOverigeNotities ? Object.assign({}, LH_OVERIGE_NOTITIES, json.lhOverigeNotities) : LH_OVERIGE_NOTITIES;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, lhOverigeNotities:LH_OVERIGE_NOTITIES})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1182,23 +1206,6 @@ function allDeadlineRows(){
 }
 const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
 const GEEN_VPB_VORMEN = ['Eenmanszaak','V.O.F.','VOF','Maatschap'];
-/* Wel-DGA en geen-DGA klanten volgen een andere takenlijst en ander tijdsvenster (zoals in het
-   salarisadministratie-Excel-bestand). De aangifte-/LJP-taken vallen voor beide groepen uiterlijk in de
-   2e week van de eerstvolgende maand (dag 14) — dat is ook de datum die de LH-deadline/bulkbewerking
-   gebruikt. Het venster hierbeneden is puur informatief (hint-tekst per taak). */
-const LH_TAKEN_DGA = [
-  {naam:'Salarissen verwerken', hint:'Tussen de 10e en 25e van de huidige maand'},
-  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 10e en 25e van de huidige maand'},
-  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'},
-  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'}
-];
-const LH_TAKEN_GEEN_DGA = [
-  {naam:'Salarissen verwerken', hint:'Tussen de 20e en 30e van de huidige maand'},
-  {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 20e en 30e van de huidige maand'},
-  {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
-  {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de eerste 2 weken van de eerstvolgende maand'},
-  {naam:'Salarisdossier werknemer', hint:'Geen vaste deadline — pas aanleveren zodra de werkgever heeft betaald'}
-];
 function lhTakenDefinitie(heeftDga){ return heeftDga ? LH_TAKEN_DGA : LH_TAKEN_GEEN_DGA; }
 function nieuwLhTaken(heeftDga){ return lhTakenDefinitie(heeftDga).map(t=>({naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]})); }
 /* Zorgt dat f.lh.taken altijd exact overeenkomt met de takenlijst die bij klant.heeftDga hoort (zowel
@@ -1396,6 +1403,12 @@ function migrateData(){
     ];
   }
   if(!Array.isArray(ACTIVITEITENLOG)) ACTIVITEITENLOG = [];
+  if(!LH_OVERIGE_NOTITIES || typeof LH_OVERIGE_NOTITIES !== 'object'){
+    LH_OVERIGE_NOTITIES = { dga:'', geenDga:'' };
+  } else {
+    if(typeof LH_OVERIGE_NOTITIES.dga !== 'string') LH_OVERIGE_NOTITIES.dga = '';
+    if(typeof LH_OVERIGE_NOTITIES.geenDga !== 'string') LH_OVERIGE_NOTITIES.geenDga = '';
+  }
 }
 
 function dashboardHTML(){
@@ -1898,6 +1911,7 @@ function loonheffingKlantDetailHTML(k){
         ${bewerkbaar ? `<button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>` : ''}
       </div>
     </div>
+    <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;">⚠️ Let op! Loon vandaag openen!</div>
     ${taakRows}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
     <div class="rem-log" style="margin-top:14px;">
@@ -1907,6 +1921,34 @@ function loonheffingKlantDetailHTML(k){
         ${bewerkbaar && l.id ? `<button class="btn sm ghost" title="Verwijderen uit logboek" data-lh-log-delete="${k.id}|${l.id}" style="padding:2px 6px; color:var(--red); flex-shrink:0;">🗑</button>` : ''}
       </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
     </div>`;
+}
+// Eén gedeelde, vrije notitie onder de DGA- resp. geen-DGA-tabel op de Loonheffingen-pagina — losstaand
+// van een specifieke klant, en dus (bewust) NIET geraakt door completeLhPeriode() bij "Periode afronden".
+function lhOverigeNotitiesHTML(sleutel, titel){
+  const bewerkbaar = magLhBewerken();
+  const editKey = `overige|${sleutel}`;
+  const tekst = (LH_OVERIGE_NOTITIES && LH_OVERIGE_NOTITIES[sleutel]) || '';
+  if(bewerkbaar && STATE.lhEditNote === editKey){
+    return `<div style="padding:14px 20px; border-top:1px solid var(--border);">
+      <b style="font-size:12px;">Overige notities — ${titel}</b>
+      <div style="display:flex; gap:6px; align-items:flex-start; margin-top:8px;">
+        <textarea data-lh-overige-input="${sleutel}" rows="3" placeholder="Vrije notitie voor deze groep — blijft altijd staan, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${tekst.replace(/</g,'&lt;')}</textarea>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <button class="btn sm primary" data-lh-overige-save="${sleutel}">Opslaan</button>
+          <button class="btn sm ghost" data-lh-overige-cancel="${sleutel}">Annuleren</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return `<div style="padding:14px 20px; border-top:1px solid var(--border);">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+      <div style="min-width:0;">
+        <b style="font-size:12px;">Overige notities — ${titel}</b>
+        <div style="font-size:12.5px; color:${tekst?'var(--text)':'var(--muted)'}; margin-top:6px; white-space:pre-wrap; word-break:break-word; max-width:520px;">${tekst ? tekst.replace(/</g,'&lt;') : 'Nog geen notitie.'}</div>
+      </div>
+      ${bewerkbaar ? `<button class="btn sm ghost" data-lh-overige-edit="${sleutel}" style="flex-shrink:0;">✎ Bewerken</button>` : ''}
+    </div>
+  </div>`;
 }
 function loonheffingOverzichtHTML(list, heeftDga, titel){
   if(!list.length) return '';
@@ -1949,6 +1991,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
         <tbody>${rijen}</tbody>
       </table>
     </div>
+    ${lhOverigeNotitiesHTML(heeftDga ? 'dga' : 'geenDga', titel)}
   </div>`;
 }
 function loonheffingOpHoldHTML(){
@@ -3191,6 +3234,7 @@ function attachHandlers(){
     f.lh.taken[idx].door = checked ? door : null;
     f.lh.taken[idx].ts = checked ? new Date().toISOString() : null;
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:f.lh.taken[idx].naam, actie: checked?'afgevinkt':'uitgevinkt', door});
+    logActiviteit(`Loonheffingen: "${f.lh.taken[idx].naam}" ${checked?'afgevinkt':'uitgevinkt'} bij "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -3208,6 +3252,7 @@ function attachHandlers(){
     const door = huidigeGebruiker();
     t.aantekeningen.push({id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst, door, ts:new Date().toISOString()});
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-toegevoegd', door});
+    logActiviteit(`Loonheffingen: aantekening toegevoegd bij "${t.naam}" voor "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -3234,6 +3279,8 @@ function attachHandlers(){
     if(note){
       note.tekst = tekst; note.door = huidigeGebruiker(); note.ts = new Date().toISOString();
       f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-bewerkt', door:huidigeGebruiker()});
+      const klantVoorLog = RAW_KLANTEN.find(k=>k.id===klantId);
+      logActiviteit(`Loonheffingen: aantekening bewerkt bij "${t.naam}" voor "${klantVoorLog?klantVoorLog.naam:klantId}"`);
     }
     STATE.lhEditNote = null;
     persist();
@@ -3249,6 +3296,8 @@ function attachHandlers(){
     const t = f.lh.taken[idx];
     t.aantekeningen = (t.aantekeningen||[]).filter(n=>n.id!==noteId);
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-verwijderd', door:huidigeGebruiker()});
+    const klantVoorLog = RAW_KLANTEN.find(k=>k.id===klantId);
+    logActiviteit(`Loonheffingen: aantekening verwijderd bij "${t.naam}" voor "${klantVoorLog?klantVoorLog.naam:klantId}"`);
     if(STATE.lhEditNote===key) STATE.lhEditNote = null;
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -3273,6 +3322,7 @@ function attachHandlers(){
     const f = syncLhTaken(klant);
     f.lh.volgendeMaandNotitie = tekst;
     STATE.lhEditNote = null;
+    logActiviteit(`Loonheffingen: notitie voor volgende maand ${tekst?'bijgewerkt':'geleegd'} bij "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -3284,6 +3334,7 @@ function attachHandlers(){
     if(!confirm('Deze notitie voor volgende maand verwijderen?')) return;
     const f = syncLhTaken(klant);
     f.lh.volgendeMaandNotitie = '';
+    logActiviteit(`Loonheffingen: notitie voor volgende maand verwijderd bij "${klant.naam}"`);
     if(STATE.lhEditNote===`volgendemaand|${klantId}`) STATE.lhEditNote = null;
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -3306,7 +3357,29 @@ function attachHandlers(){
     const input = document.querySelector(`[data-ophold-input="${klantId}"]`);
     klant.opHoldReden = input ? input.value.trim() : '';
     STATE.lhEditNote = null;
+    logActiviteit(`Loonheffingen: reden 'op hold' bijgewerkt bij "${klant.naam}"`);
     persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-overige-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    STATE.lhEditNote = `overige|${el.getAttribute('data-lh-overige-edit')}`;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-overige-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-overige-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const sleutel = el.getAttribute('data-lh-overige-save');
+    const input = document.querySelector(`[data-lh-overige-input="${sleutel}"]`);
+    if(!LH_OVERIGE_NOTITIES) LH_OVERIGE_NOTITIES = { dga:'', geenDga:'' };
+    LH_OVERIGE_NOTITIES[sleutel] = input ? input.value.trim() : '';
+    STATE.lhEditNote = null;
+    logActiviteit(`Loonheffingen: overige notitie (${sleutel==='dga'?'DGA-klanten':'geen-DGA-klanten'}) bijgewerkt`);
+    persistMeta();
+    toast('Notitie opgeslagen.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-log-delete]').forEach(el=>el.addEventListener('click',()=>{
@@ -3316,6 +3389,7 @@ function attachHandlers(){
     if(!klant) return;
     if(!confirm('Dit logboek-item verwijderen? Als het een afgeronde periode betreft, wordt de LH-deadline ook teruggezet naar de datum van vóór het afronden.')) return;
     verwijderLhLogEntry(klant, logId);
+    logActiviteit(`Loonheffingen: logboek-item verwijderd bij "${klant.naam}"`);
     toast('Logboek-item verwijderd.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -3337,6 +3411,7 @@ function attachHandlers(){
     if(!klant) return;
     if(!confirm(`Periode afronden voor "${klant.naam}"? Alle taken worden gereset voor de volgende periode en de LH-deadline schuift door indien een herhaling is ingesteld.`)) return;
     completeLhPeriode(klant, huidigeGebruiker());
+    logActiviteit(`Loonheffingen: periode afgerond voor "${klant.naam}"`);
     toast('Periode afgerond voor '+klant.naam);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -3367,6 +3442,7 @@ function attachHandlers(){
     const datum = volgendeMaandTweedeWeek();
     if(!confirm(`LH-deadline van alle ${list.length} loonheffing-klant(en) instellen op ${fmtDate(datum)} (2e week volgende maand)? Overschrijft de huidige LH-deadline per klant.`)) return;
     bulkSetLhDeadlines(list);
+    logActiviteit(`Loonheffingen: LH-deadline in bulk bijgewerkt voor ${list.length} klant(en) → ${fmtDate(datum)}`);
     toast(`LH-deadline bijgewerkt voor ${list.length} klant(en) → ${fmtDate(datum)}.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
