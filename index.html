@@ -242,11 +242,6 @@ let AUTOS = [];
    bijtellingstabel of aan de rechten). Alleen zichtbaar bij Instellingen voor beheerders. Wordt begrensd
    op de laatste 500 gebeurtenissen om de opslag niet onbeperkt te laten groeien. */
 let ACTIVITEITENLOG = [];
-/* Overige notities op de Loonheffingen-pagina: één gedeeld notitieveld onder de DGA-lijst en één onder
-   de geen-DGA-lijst, los van een specifieke klant. Blijven bewust bewaard ongeacht of een periode wordt
-   afgerond — "Periode afronden" reset alleen f.lh.taken/f.dl.LH van een klant, dit veld staat daar
-   volledig los van, dus het overleeft elke periodewissel vanzelf. */
-let LH_OVERIGE_NOTITIES = { dga: '', geenDga: '' };
 /* Bijtellingspercentages per jaar — overneemt exact de tabel uit "Bijtelling" in het Excel-bestand.
    laag/cap = alleen relevant voor elektrische auto's (verlaagd tarief tot de cap, algemeen tarief
    daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
@@ -285,14 +280,13 @@ function loadMeta(){
       if(parsed.autos && parsed.autos.length) AUTOS = parsed.autos;
       if(parsed.bijtellingTabel && parsed.bijtellingTabel.length) BIJTELLING_TABEL = parsed.bijtellingTabel;
       if(parsed.activiteitenlog && parsed.activiteitenlog.length) ACTIVITEITENLOG = parsed.activiteitenlog;
-      if(parsed.lhOverigeNotities) LH_OVERIGE_NOTITIES = Object.assign({}, LH_OVERIGE_NOTITIES, parsed.lhOverigeNotities);
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, lhOverigeNotities:LH_OVERIGE_NOTITIES})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -704,7 +698,7 @@ async function pushRemote(){
   if(!SYNC.enabled || !SYNC.account) return;
   try{
     await resolveSiteAndList(false);
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, lhOverigeNotities: LH_OVERIGE_NOTITIES });
+    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, false);
@@ -748,9 +742,8 @@ async function fetchRemoteAndMerge(showFeedback){
         AUTOS = json.autos && json.autos.length ? json.autos : AUTOS;
         BIJTELLING_TABEL = json.bijtellingTabel && json.bijtellingTabel.length ? json.bijtellingTabel : BIJTELLING_TABEL;
         ACTIVITEITENLOG = json.activiteitenlog && json.activiteitenlog.length ? json.activiteitenlog : ACTIVITEITENLOG;
-        LH_OVERIGE_NOTITIES = json.lhOverigeNotities ? Object.assign({}, LH_OVERIGE_NOTITIES, json.lhOverigeNotities) : LH_OVERIGE_NOTITIES;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, lhOverigeNotities:LH_OVERIGE_NOTITIES})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1215,8 +1208,9 @@ function nieuwLhTaken(heeftDga){ return lhTakenDefinitie(heeftDga).map(t=>({naam
 function syncLhTaken(klant){
   const f = STORE[klant.id];
   if(!f) return null;
-  if(!f.lh) f.lh = { taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' };
+  if(!f.lh) f.lh = { taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'', overigeNotitie:'' };
   if(f.lh.volgendeMaandNotitie===undefined) f.lh.volgendeMaandNotitie = '';
+  if(f.lh.overigeNotitie===undefined) f.lh.overigeNotitie = '';
   if(!f.lh.log) f.lh.log = [];
   const definitie = lhTakenDefinitie(klant.heeftDga);
   const bestaand = f.lh.taken || [];
@@ -1403,12 +1397,6 @@ function migrateData(){
     ];
   }
   if(!Array.isArray(ACTIVITEITENLOG)) ACTIVITEITENLOG = [];
-  if(!LH_OVERIGE_NOTITIES || typeof LH_OVERIGE_NOTITIES !== 'object'){
-    LH_OVERIGE_NOTITIES = { dga:'', geenDga:'' };
-  } else {
-    if(typeof LH_OVERIGE_NOTITIES.dga !== 'string') LH_OVERIGE_NOTITIES.dga = '';
-    if(typeof LH_OVERIGE_NOTITIES.geenDga !== 'string') LH_OVERIGE_NOTITIES.geenDga = '';
-  }
 }
 
 function dashboardHTML(){
@@ -1845,6 +1833,35 @@ function loonheffingKlantDetailHTML(k){
     }
     return bewerkbaar ? `<button class="btn sm ghost" data-lh-volgendemaand-edit="${k.id}" style="margin-top:6px;">+ Notitie voor volgende maand</button>` : '';
   })();
+  const overigeNotitieHTML = (()=>{
+    const huidigeTekst = f.lh.overigeNotitie || '';
+    const editKey = `klantnotitie|${k.id}`;
+    if(bewerkbaar && STATE.lhEditNote === editKey){
+      return `<div style="padding:12px 0 0;">
+        <b style="font-size:12px;">Overige notities</b>
+        <div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
+          <textarea data-lh-klantnotitie-input="${k.id}" rows="3" placeholder="Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <button class="btn sm primary" data-lh-klantnotitie-save="${k.id}">Opslaan</button>
+            <button class="btn sm ghost" data-lh-klantnotitie-cancel="${k.id}">Annuleren</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if(huidigeTekst){
+      return `<div style="padding:12px 0 0;">
+        <b style="font-size:12px;">Overige notities</b>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:520px;">
+          <div style="font-size:12.5px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
+          ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
+            <button class="btn sm ghost" title="Bewerken" data-lh-klantnotitie-edit="${k.id}" style="padding:3px 7px;">✎</button>
+            <button class="btn sm ghost" title="Verwijderen" data-lh-klantnotitie-delete="${k.id}" style="padding:3px 7px; color:var(--red);">🗑</button>
+          </div>` : ''}
+        </div>
+      </div>`;
+    }
+    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige notitie</button></div>` : '';
+  })();
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
     const noteItems = notes.map(n=>{
@@ -1913,6 +1930,7 @@ function loonheffingKlantDetailHTML(k){
     </div>
     <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;">⚠️ Let op! Loon vandaag openen!</div>
     ${taakRows}
+    ${overigeNotitieHTML}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
     <div class="rem-log" style="margin-top:14px;">
       <b style="font-size:12px;">Recente activiteit</b>
@@ -1921,34 +1939,6 @@ function loonheffingKlantDetailHTML(k){
         ${bewerkbaar && l.id ? `<button class="btn sm ghost" title="Verwijderen uit logboek" data-lh-log-delete="${k.id}|${l.id}" style="padding:2px 6px; color:var(--red); flex-shrink:0;">🗑</button>` : ''}
       </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>'}
     </div>`;
-}
-// Eén gedeelde, vrije notitie onder de DGA- resp. geen-DGA-tabel op de Loonheffingen-pagina — losstaand
-// van een specifieke klant, en dus (bewust) NIET geraakt door completeLhPeriode() bij "Periode afronden".
-function lhOverigeNotitiesHTML(sleutel, titel){
-  const bewerkbaar = magLhBewerken();
-  const editKey = `overige|${sleutel}`;
-  const tekst = (LH_OVERIGE_NOTITIES && LH_OVERIGE_NOTITIES[sleutel]) || '';
-  if(bewerkbaar && STATE.lhEditNote === editKey){
-    return `<div style="padding:14px 20px; border-top:1px solid var(--border);">
-      <b style="font-size:12px;">Overige notities — ${titel}</b>
-      <div style="display:flex; gap:6px; align-items:flex-start; margin-top:8px;">
-        <textarea data-lh-overige-input="${sleutel}" rows="3" placeholder="Vrije notitie voor deze groep — blijft altijd staan, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${tekst.replace(/</g,'&lt;')}</textarea>
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <button class="btn sm primary" data-lh-overige-save="${sleutel}">Opslaan</button>
-          <button class="btn sm ghost" data-lh-overige-cancel="${sleutel}">Annuleren</button>
-        </div>
-      </div>
-    </div>`;
-  }
-  return `<div style="padding:14px 20px; border-top:1px solid var(--border);">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-      <div style="min-width:0;">
-        <b style="font-size:12px;">Overige notities — ${titel}</b>
-        <div style="font-size:12.5px; color:${tekst?'var(--text)':'var(--muted)'}; margin-top:6px; white-space:pre-wrap; word-break:break-word; max-width:520px;">${tekst ? tekst.replace(/</g,'&lt;') : 'Nog geen notitie.'}</div>
-      </div>
-      ${bewerkbaar ? `<button class="btn sm ghost" data-lh-overige-edit="${sleutel}" style="flex-shrink:0;">✎ Bewerken</button>` : ''}
-    </div>
-  </div>`;
 }
 function loonheffingOverzichtHTML(list, heeftDga, titel){
   if(!list.length) return '';
@@ -1991,7 +1981,6 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
         <tbody>${rijen}</tbody>
       </table>
     </div>
-    ${lhOverigeNotitiesHTML(heeftDga ? 'dga' : 'geenDga', titel)}
   </div>`;
 }
 function loonheffingOpHoldHTML(){
@@ -3361,25 +3350,41 @@ function attachHandlers(){
     persistMeta();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-overige-edit]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-klantnotitie-edit]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
-    STATE.lhEditNote = `overige|${el.getAttribute('data-lh-overige-edit')}`;
+    STATE.lhEditNote = `klantnotitie|${el.getAttribute('data-lh-klantnotitie-edit')}`;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-overige-cancel]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-klantnotitie-cancel]').forEach(el=>el.addEventListener('click',()=>{
     STATE.lhEditNote = null;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-overige-save]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-klantnotitie-save]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
-    const sleutel = el.getAttribute('data-lh-overige-save');
-    const input = document.querySelector(`[data-lh-overige-input="${sleutel}"]`);
-    if(!LH_OVERIGE_NOTITIES) LH_OVERIGE_NOTITIES = { dga:'', geenDga:'' };
-    LH_OVERIGE_NOTITIES[sleutel] = input ? input.value.trim() : '';
+    const klantId = el.getAttribute('data-lh-klantnotitie-save');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    const input = document.querySelector(`[data-lh-klantnotitie-input="${klantId}"]`);
+    const tekst = input ? input.value.trim() : '';
+    const f = syncLhTaken(klant);
+    f.lh.overigeNotitie = tekst;
     STATE.lhEditNote = null;
-    logActiviteit(`Loonheffingen: overige notitie (${sleutel==='dga'?'DGA-klanten':'geen-DGA-klanten'}) bijgewerkt`);
-    persistMeta();
+    logActiviteit(`Loonheffingen: overige notitie ${tekst?'bijgewerkt':'geleegd'} bij "${klant.naam}"`);
+    persist();
     toast('Notitie opgeslagen.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-klantnotitie-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klantId = el.getAttribute('data-lh-klantnotitie-delete');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm('Deze overige notitie verwijderen?')) return;
+    const f = syncLhTaken(klant);
+    f.lh.overigeNotitie = '';
+    logActiviteit(`Loonheffingen: overige notitie verwijderd bij "${klant.naam}"`);
+    if(STATE.lhEditNote===`klantnotitie|${klantId}`) STATE.lhEditNote = null;
+    persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-log-delete]').forEach(el=>el.addEventListener('click',()=>{
