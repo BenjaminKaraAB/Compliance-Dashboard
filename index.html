@@ -225,6 +225,13 @@
 
 /* ============================= DATA ============================= */
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+const NL_MAANDEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+function fmtDatumLang(date){ return `${date.getDate()} ${NL_MAANDEN[date.getMonth()]} ${date.getFullYear()}`; }
+/* Logo uit het briefhoofd van AdministratieBox, ingebed als data-URI zodat gegenereerde PDF's
+   (bijv. de akkoordverklaring aangifte IB) zelfstandig blijven werken — geen externe afbeelding nodig,
+   werkt dus ook offline en zonder CORS-gedoe bij het client-side genereren van de PDF. */
+const AB_LOGO_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAY4AAAA9CAYAAAC6LY4TAAAAAXNSR0IArs4c6QAAAHhlWElmTU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAADcAAAAAQAAANwAAAABAAOgAQADAAAAAQABAACgAgAEAAAAAQAAAY6gAwAEAAAAAQAAAD0AAAAAdbhd4wAAAAlwSFlzAAAh1QAAIdUBBJy0nQAAJAhJREFUeAHtnQegVMXZv8/Z3Vu4wKUKCKigBIm9N6yRKGrsSvKJBbsm0Zgv+tnQYEHFEk0siTH2EhU/S0zUqH/FgGKJibErKqBYEUWRcsvu+T+/ZQeH4Wy59+5e7vWbN3k4M+/MmTPnnZn3nXN29xoEFZahz1+0/RrPXbJHhS/jm/cW8BbwFvAWaCcLhJW6zupTL+zVmMj8ojkRnsg1apOZ6Nbujanz3tnp1DmVuqZv11vAW8BbwFug8hYoe+CIgiAcNP3CnZsT0bmZKNg6akpzF1EQVlcFiSh6vaopM2Gbj4ffO3nMGBV48RbwFvAW8BboZBYoa+BYe9qkgV+lMmemo/S4TBDWBY3Ny5ujKhmEYaIpGQb3dFkcnDtrpzPeXL6Cz3kLeAt4C3gLdHQLlCVw6Clj4NMXjW1ORuOjMFo7UsDgcSNWwjAIa1JBGAUfEkYu79an61XvfO/Ehti6Xukt4C3gLeAt0OEs0ObAMXTapLUXJdK/TgfRGEJFMmhynjLy3XIqEYSJZJAIEw9XZ5onzNlm/PP5qnq9t4C3gLeAt0DHsUCrA8fgZ37TpTladHg6DM6IkolBUQMBI8rzlFHgfsOaKp33RXUYXpXINP52zjYTvihQ3Rd5C3gLeAt4C6xkC7QqcAycfsHI5ig4NxNEP4iiTBA0Q1skydMHn38kMtG/qoPk+Dlbn/ZwW5rz53oLeAt4C3gLVM4CLQocPGX0bk40nNScTp8QpBI9oyVN5e1ZdSpIpKOGRCJxXfeG5CT/1d3ymte35i3gLeAtUA4LlBw4Vn3mol2bo/R5USrcPPsV23QbnzLy9T7Bh+d8dTdszrzNt68mjmhoumPKThNK/OAkX6Ne7y3gLeAt4C1QLgsUDRyr8RXbprDpV+lEcFzsV2zL1RO3HX11l08/EkHilupEauKcrf5nhlvF570FvAW8BbwF2t8CeQPHjk9OSM2ord2vMUqfw4ffI6JGXkvl+4ptpfpN7/TheZiOPqwKw4v7fl11/cu7nrKwUpfz7XoLeAt4C3gLFLdAbOAY8sylIxaHjRP4iu3+URSlguyvv4s3VrEa2a/u8uwRBI9VR9F4/9Xdkiy9LrU2g77QDwbAjTAFOoPwdbtgA+gOL8PK+rZdkmtvBN3glZXYDy79f1Y0h9eHL+FV8K+uMcLKlOUCB08ZtW/XVB3ZHIb/k0kEq7f2K7YVuSH1dOmfLZmXyIRX1GTCq9/f7nRNpI4oI+jU0SCno+8oizuhPX+rcjnXOwlsOZLMDbaig6blpK+EQ0EjL4d9GLwE7Snqx29hHKgfr+XSL3L00j4W2JrLXAfrgD5YvR5Oga+hvWRtLmTWc7FrKqgtgHkwGxToZsF3SrQYsjJ46gVbNlaHEzKZzOgow/i09Su2puFyH/XV3RTfvoqi51LNmYkfbTf+wXJfogztXUIbJzvt3E5ejlCTvz0kLnCM48I3t8fF23iNozhfzsKWaWR2gcW2ssJpBV7Z0ZbnyGwHvLv1UmEL6GnzEdjGuc7PyF/j6CqZHU3jrfmJgNb6XNCG8Sp4FL4Tktjg2d8N7vP0uectqYoeykTR6Ei//O6oQUMm59tcUUNjwGu0LfmjV5P7TZ949fDHL1yzA41GL/oyJqY/cnqDYvRetaIF9IrKlY1R6AmgPWWLmIsNQdc/Rl8JlTZ2cp59gTe13wlJcRe9oWcJd6P7Xium3qYxukqq9AdZW7NR0JhpruwJ2uDq6bUOOr0khnbt+ULv6m7j003p3ukljUtfqnSG2+LvYaWbm2tSqaqf9unZ48ETZjxU00G6vRf9WC2mL6ugU5mX4hZ4J6bKG+ja+4sRr8b04yN0eg1RKaml4d3gZLgJpsO90FHmN11psegztoNhAtwD+sxqPBQT2fnDmEp6ZdjZpJoOnwgXgV5hd2pJdU/WDNi0tn8wJ6gN3l3yRbA43Rwk+UOEHVkiPjJIhomgR7I26Mkf4e0SpPp8MvebjrAj027qx5DPgGMpuw6I0F4KWECv9XaHXXN1ZnE8HRbl8u110FhtC3Lkkg9A/VisTIVEX2K4CeRsjbxoEp30KBve6vS9ysnHZfU5xnlwJQwGvfrRzr0jvG59gX7o8xZ7rcsH6YliDdgc9JSsgGHLcWTugydtZWdLp9LpNM/AYTCkS6+gb3XXYMbCz4OPm77BNUdZfUe6IX3CrEeiukR10KeqLqhNVJFDQt5cdQxZl25sX6Arm1Cm97VTCtTxRUt39PtjCNmyK8hxzoT2Fr2fPgB2ADmEf0Gl+2E7Ii6Xlew0N5lOeIzbYZd6T/dzv3rykxOeD1NhCaxseYsOXFugE9pE6g3DVbCqVU8B8yB40tJ1uqRuLut80/yBwq445A3qVw36NSwIZiyaF3yTbtBfr10upK6sO+STjaCKvvRKdQ16pGqzfVJwWz7gr6zeLbvufqTk6Iy4HdTrBjnEKaaCP+a1gF5LPZy3tP0K9JTT3v0o1am2nxXadqW23s87XF50JCn2hqOZzuoV4zCY5HR8JHkF046y4XW6Vzy73M3LOev/g2rqg63qVwuGdumdferI6ou3VZEaZsbVJ2voVw8CR5fsdYy+IhdtXaP64PZA51Q9kr7i6FRHryPKJZqA2g27j8Tlat9uR9fRK5Q+UMqrBp2rOdYL+kMPWFmiibMKqP+6j/YQjYmuld2glXjBOGei6S5HtDJFn7209nMWvWJyJU7n1ilnXv3XHIh7oivnddy2HkTR5CjryZfy5QDntGyw0Xwqx320aQ3ETmg9ffBnPoJ16voH/au6BW8tnht82bSYpw/+jlQ72l1PFFVhKujLa6luyaV+cWUGMXcUnfxO5L9n6eQAroc14BpLLwf6E7jC0rU0OZQTfgSbgh6DNQn0ucn78Bg8AKUuzN7U3RYUCOScngK9EjAiZz8a9oA1QUFD1/oMnoZb4V1wZX0U+8JWoD5qsi+A90AB9W7I10c5eO3KzMZGx1nwT7BlMJktcgotzkfAXqTq6y451uKovBzHF/Am3A5PQj5RP7azCtWPD+A5S2cn1fZmsCeMAF1PznYhfAovwxPwCtj91DpcHTTJdU/uutT4rgtLQH3Q+HwErgxEIXtL/g0zs6kV/9Ec1Bx6DRasWJzth+y1DWwI6pscncZrHrwH98MLoDkTJ3ryXg1UrvNd6YtC19A9y25z4GtwZXMUQyCdK9D9T4NPcvl8B7WrsdsVhoHmuc7V/c4FtfE3+BhKEfWxNfIVJ8lutiTJaL2VIsOppPW3KQwAzQVtJGQrzYHp8Ch8CIVE/dfmdmfYH7QmDwW1UUi0vjR+5h7UzjepfGfIaet/fau6BvVVNcGsxfODWXx43phJZz+YzndeOfS6roJUfbJL0JsnjKowSa9lqw4rmpAaDNues8lPhXfgc9BCMSKH+geQI2iJyDGcAf8FWghxchjKV6AhrjBG9z10t0B3kJEPh1tBu6Kx8FNYB3SProxCoeupjnmdowl+PPwYNFFdkWM9EHaHE0ALy5X1UdwB1bkCTVb1SX2zJ4Icm+pJ5FjkJKaA7HQQHAdrgs53ZSSKg+FKOBMawZX1UNxtKdWOXj+o/66sjeIc2Btq3UIrv5i0HO718ADo/vvAPTAcZGf3/O+jexp07+qD5tT24NpOi9z09y7ScgzG4ZLMBpXDOe4HGps94Akwon5obmncNQZy/vnkFxRofp8Fz8ZUkn11T+pvnJP8Cfp9c+WqcwNoPrhyIgqNpRl31f0RmPlGcgXZGc142AbMHHIrad6+DxeDxqKla5FTSpKh1LL9gk5S4P9ciQKiuXAaaKx6FKh3NGXalOgeLgNtiuLkKJRnwGqQzFXQvJfNM7m8exiBQvNJ5xj7N5E+Ns4ZoP9W0rSZ4jrD6/oGm/P6ahUCCb/3qJgjV9DQh96rVtUH/XjaSfG5RgcPGjLWENhHCUu0I1sAWuRPWXolt4ZNHF2xrBbBI/AzyBc01IYW1gagnVopovqa2JoLmlBy+LrWQ3ANrAeF5skQyjVpdY4m5uNwJHSDfKJrHgIT8lQwfVJ/hOmbW131TB05CDk9BQ/14RJYC1Qnn9RQcDLICcaJ3X6hfmgsZS/ZznX6brtdUGwPN8PoXKGuUwdy1Cp3+6z7N+U6anzlPF2x+7sXhRvmKgzleC08BseANjHq545gyzAyV8BWUCho6BzZbhT8HeLsJ3t1B80D1XVFwURluo7uaX9YFVzRvZvxN2Pg2secozmgvigg7wjKF5LVKbwKroZi42YcZ6H23DLd40mgftsymUyzrXDS8iUaq8Ohh1MWl+2PUmvvQdDGLE5molQ9uy9Hktd6iRP5hAtgDbDtrw3JbVIUFTnzNP/Bpp58/XWz+sHB+t36B11w7nqlVS4xTxl6whlU3SOo49WUdOW7Qrl6GtuOHJY9wNq93J2rqWh+cy5tDppQcpylyrZU1GJYv9QTWljPNrMm0sMw0mlDdbTbiBMteJ0zEXo6FbRA8i2SYynLN9HtPqlJNy+dKwej+At83ykwfc+3s/ol9eVcSxG3H3L0v4U1Y05Oo2sA2c09bxa66SCRIyzm5LIVrX+OIq1r5xM55eNhDDwJx4B0tuxBRtc28jKJ10ymxGM99SbB4U79knyLdY7m0H5W3iRduxl93FHOU4GvWNBzzz0CxXmuskg+31zSaRpLrSMFiAPAFtlYwSqfyJfcAQpqLRVt3v4KG8ec+Di6ixx9DfmLoZ+jV1ZrUwHMlrfJyMYZRZWSRTt/zbLVa3sGvavqgnf45tVHjQv4L78ufbVUckNWRTMrlv+KbScKGUsn6d7WLSn5Arxi6Z7K5W3Hvzs67QA+terFJfuglGPqG1Oodh+FGaCdxNqwE2wHLV24nJIVzQk5AyNzSdwPD8D7oGv8CrQrtcU+R/qpoOA5HdSmnIIei21np7Re+/wTyiF1TiNzyCugaTG9B7L3YTAWbPvIaf0Q/ggtFdlhS+ckBYsb4TaQzeTIhsFI+AFsAXeCyiQL4WYYCKorW9l2MmOgQCRR3+eDAsFiyCeHUzAOZH9bGsn8C/4DspmuL1Fb2rVuoAyi674JH8I80K78e7AtqA9GakhMAM1F1ZXMgt9DCGuB7GuL1sc0ULlEfdT11a7tlE056oKiPp0cU0M2vhc0x7Sh0/zdC7YEW44lcx88YyuttNuPdSn7JRg7qFxrVHNJ61zlCiC2vEXmCPjMVlrp9UhfBvbYm2LZ6hF4G2SrDWE3MGNFMiv9+fd3sAd8ndV8+89vSO4M23+ryr5RGE/+F2Dc8XDSp4N9z5ozZ8JHsMKEkq6gqOXsV3d5Itig24CgX2M3vrr7ebAg3Zj78Lzg6csVKhBV8/lFr1RdUJ+qyfay0zxjfHsnW5Pc6NtsNiVHu8jSaQDvgAst3WDSo+FmSxeX/G+UmzgFTeTPgCuhwSnTrmIf0CQZ6JS1JKvFa/r8unWiFrwcjiZy3E5lJvrz4c8gR2DkORLVcJJR5I5aZFoIzY6+LVk5iOvgClDAMPIqiSlQD26wl1PXOWbxkCxJ5CCqnJq/JX+qo5MDVgCTs9eceRmMaH6ck8to4Wtx285DNj0mV96SQ9KprABxG9wCGkMTMEgukwdIbQQKbC/ALLDnmMbwYLgaFEiMrE7icNDYS16Dn2ZTS78s4AaOv1N2Sq68rQfZSmurq9OQgsVBMMPRa91MguMtfXfSx8GzoLlfTDamgihV3qHinuD2xZwvW14CqxpF7qi5fBbI3vZ60vpSfZWdACaAkcwGdtn+ImUs+Yb0yfAw9LH0R5O+H54ArUWN4SCw5XYyCqxZsS9mdCUd9TmHVtjA6vpgyx6rB8NyX93lb0gVPd/U6JHqEukrtj35XYbE6Is20LEqaGLajuNz8nfHdFELcr6ll+3HghZiPpETGRdTeDm6S8Fe0KaadHfBZKNoxXEe52gyHQp20DBNafJPNxnrqB3RD+AGsCe5qXIvCbfPCj7ugjf1W3N8j5P2hRNBaVe0a78RGp2C4eQLjYVTfVlWTsuVma7CymvxPgafWjo7WUfG3umpTHMl7joqK1UeouIP4Th4BhZCnLyA8kegAPMWuOMlu2l8/wSuKOC4fVedpQt8+dr2mlm+pOW57ThlS+c0rTU5VM1VVxagOANecgr2Ib+moytXdjUaOg9kozhR/0fFFKifWutx60nrVBvL68AVBY5VXCV5ja+CrC0an0nQA34CWj+2aD4rQGntZEUTsk2iD8/11LB23Sp8/jEo4ncWUYbPQ/I9OUhfk0hFA2rqo35VXUP9qK8TfPidz0aDKdjdKfwb+TmOTtk3QAvWlh3J5JtIqicnPEAJS2aTvtjK50u2JQ4/T6NyDoXaiHPKD3POLMgnCqpfOYVyiK1x2E4zy7IPklIAKyRyJq7j7IXO3aEXasOUfUDCtZMW2aHQVmdvrtGWowLVRDgA4oJ9a9tWIMo4J2sTEBckXPs4pxXMlnLuTrTgBqJH0T1boOX5lF3rlHcnv7WjK1e2hoZ+DPfD9jGNKlinHL38xR8cnZvVGCgQfOIUKFCNdHQmqzafMJnccTOO8isTwO6HgoV0H8IysSssU7Y0oWCg0eX3FmGP+sHR7CXzMzMXfxk2RM2ElKUbEAUHpXtV12V6JuukD815Lb1eB6qviaDFYqSZRKGd/k2U7wZmV6bJfijIUcfJFijd4K6Jp51GJUX3oetqUuaTL2MK3MXrVlmMYpGj1HXce3SqtCirvhcT2a/JqSSHZ8bFKSqYfZxS7cxHWLUGkr4Zjgc9Zd0DM2FlyC1cdHwrL1zHeT1BtlEQNPaRM1GgXQKqY0TjX86xNO0WOsqHaZ248m8U3cD02S1X/hXQfLTvYXPyt0Ix0c79T6D27WvIFcpeg0GOWw7ZXhdrkFf7ChS6vpE4J387hVozxWQ2FRQIDnIqbkte/sIVbZpOBgXXvlbhMVbaJNWH20zGHMsSOExj+uxDAYHXVmGfVF00Y8m8zNzGhRg1CvnwO+pTXRfVhVWJpQFD9u3Uoh3EXmBPmjfJTy1wV/+gbAYMt+rsSnoAfGLpTHKQSVjHF610pZL2PeW7RqGgUuicSg98qX0vVz8+52ZPATloOVNbtiIjToX/BTmMadCeov61VOTc9gfNzY2hD9gBwdiuFFtzapuk2DXklIc6V1D/DoE9IN/5qqM1bN8X2ZI/F9Rm4Y86oYAkKdPmchIokBhZncTpMA4aoTv0A1u0vuQvShU9nbiBY60CJyuwXgCXQT4bfUDZr2GFtV7WwMEFsk8eCiA9q2rDTVODgjkNX2XmNi0M+Cu8Cf7qVaITv5bS7dmyEZltbAVpDf6doAkTJ5qsrnMZhu6HcKtzgiZ0V0en7LwYnVe1zAIaB1Eu+SsNydFqEcrRuiLHq92cnNl9cDa8C+0hrmMsdk05nwtBzi2f5HM0+eq3RV9snOTD9FRki/q3jq1oQVpPKXHi9qMUu+rJ7A7QmtW466nNiObLRaAvSfQABTFb5pOZayuKpOXkXcl3L6belSR2h1FGYR2bSJ8GsyzdsmTZA4dpWR+eM3rh4Jr6JBaPGjJNvJr6TsnB3I1rPwWO3Vpxl4dxzm1gm0iTvz0XaCu67U+xLPAkaW0AjoCjYRi44yfHIcesVwjHw0PQkWRPOvMnsB2c+qdXGw1K5ETzVHO/O5TiQHOnVeSgvqywI27Dldw13Yamlp36KKnnYYdlmqWf6+lp1P52nVW8wqtUuywurSDlijv/3HIFrHzBZQplCnqxUgkjLbtQdkT17asoU+wGlp3TSRKr0M/RZeyreaUx3WpTE2GRlTdJDbaXjmkB7SwvgetBTlivMneE3mCLdvM3gMrlUDqCaNeuVxd20NCu93fwGHwMctBayzquBX8GrYVKSjHfoXXyJeipzkgjiatBr5OKnW/O0VFvCmbbCivdknas07JJuUIFCDtwqMC8vlJg1g7fFo2HPRZ2WVx6QIyy2Ocj+pxDvidONkG5JTwXV1jRwBF3we+IbhT3saZzL9qRacKWIrK7PSn0SkpPMHbgUDsf6R9H9CpEC9ZLx7XAF3Tt5hxDOR4CPwfbyfYnfzHoKcV1GqjaXbbniutZV9VcPgl0H3EiJyunXWmR0y0kst0cGGZVqiItR32TpWtrslg/irUfN8YKwBIFaM0ZzRUjNSS01mcZRZHjyJjy92J0RqVXVL8wmZijAvHloA3y1275yn7MdPvTGfKy2ViwbfcV+QNhZ1BQKYTqHABuUNBA2o6FbPY/YGQml/KSvSHf42W2gv+nQ1lgJr05F/R0Mdvp2ebktasrJpprctSVlI2cxl8nf5+js7PqU1ucacpurEA6LFCmomZ42qmjc/aFYuc6pxXMtrWtDWJa/zinkx1fiCn/SYwuTjUQpTYgrkx3Fbm8Xqlr02JvXmXHT3Ll5rA1iV+ZjH20nZ+t9+n8FliXoh84xf+P/IOgwX++CKqjd9tPgS1DyCjg2KJ29frDluFkjrcVedJuwMlTzavbyQLPcp3fO9fSrnKIo9O4uTt5vbbo4dQrd7beafBz8gsdnZ1V30UpEjcX3U1SKe3kqzOVAndHvyu6cr5OznftUvTqh/tKSGP8onWyvmDhym4odnGVMXm9cjKvvUzxZyRcH2PKziAhP2bL42T2gU9tJemTYAdHt9yu2S3z+XgLHILajtRaFLfGVy2ovYVSd8c2Dp29E5tD/i5w5WwU/+UqrfyOpPUE46V9LKAnwPVLuNQaTh05D9c5L0bnvhpYHZ12f5WUuA2KrhsnutcroVdcYYxuATp3rutJa1BMXVflnueWKz8FnlHCEgW1P4Ke9ApJNYXbwI1QKNC4/dAOvZgMocJ/g9a6+5ZAwU5PdUamkdCm0pbuZK4Fd0Np6tSROBdOMArreB3pT6y8SSoYHWcyuaPemJwOz8FEsO9VG4pLYbmNi+2kKPNSxAJ9KN/DqfMmeU2ClsqznKCJY0d+OYcN4UUwcjEJTehhRsFRk1AT/Uegnco7oLFcGzQxFDTciYpqpUtbH/fLdQPqRzn78mPa+w1oHjwG2unNAgWGJKwHR8JYsEUL9iVbQfoLmAkjLL3GdhIoqPwjp1ebM+DzXL6th+edBhQ0/gByfLNA9loNtHE6AvpDqTKLip+Bfc4a5K+BU2EOdIW1QM6zCYyUMk4NVJbD2xJqzYkctQufDI/kkK2/BI3JAFD9nWFbUADRuRo/jZsrbj/0mlFr09bL4Wqs5Cf6ggKsbObKEhQXwCKrQHNBTwL3g2xhZAiJe+FueBhmg/q5CRwA24Erus8rQP2xpT+Zy0BB1ZZLyOgcyZ9gb5BdjGxG4mQ4yyh0k15Kt4B2Jus41R8iP8/RlZKdTyVNhHWtyt1Ja9BetHQfkD4F7gR7wJU+KEcjR03gKujI4k7kjtzXUvumcTgKtDPbI4ccmZzCN6AALuLG5q/oZ4ItzWT+BtoA2LImmQfgk5yyH8efwx9z+bYetNt8AeQQjexC4nl4H+QrBkIdtFTe5YRnQXPblr3IjIJPoWeuYCuOb+fSLTnI4Z8LCiC2M1dA0HWEAlIaJLofYcu+ZNYH40TtMjf9fRSipaLxPQfUX1ceR3E+XOgUyC8cCQrYuodCa10B6ARwNxRJdLqu2+cp6C4HI4tJjIctQNc1ojYVgJ+WIqF/vJRsgXFOTTmI2xxdS7J/pvJC54Sx5M0iMkX3kxgHnxmFc9TiiHNMHzr1fHapBRTAyhXERtKWnJ0tCia9YLXcMW5s/kWZFnKc3IRySkyBFv+gHGrzUJCuHKIgdxrotZItChQjYBjYQUP206ZJ5xWTDBXkEOfGVFSbQ0H2EmPAlpaM08WceCK4r/pMe7JZbY6UUVpHBZX1rXy5kzNo8Ei4qEDDv6HsVFgUU0cBI99aV/U3QfabpowjCtoKPLZ8SeZkcK+lIH+lXZF0D7gU6qX3gUNWKE3Wodoop+rfyb/u6FqSlfN4xjlBi2hPR6fsnbAbaFdidk0kY+ULtBNge/gnGIkbb01G17GV4ozi2orTmWvrqGu5C9bNm3ql9CnueqX0Xddw28/XD9W1xW1fi3USfGZXKpDW0+FtsB/MzlNPm4lDQGNdSLamcDOrQlvsoWaeAF33PWUKyLuUHQUHgj2/4mxomlG9g2CWUeQ5qk17p+vaW6dpHsWJ1sVV8EO4FVyHiCpWtMu+F3YFnedK3Lx168Tl1R/14Wk4EXaAW6CQaH4oAO4LcuAKusVkCRXU7i7waEzlIeguA3fOa96+CHGisuecgq3IT4BEoYF2zvk/n9WilPHNQMp2D0ETtEWu4WRNsI9BC3Im6JVBnCjQ7A47gybWCOgPXUCT/0OYBrfD2yD5GegcXSNukryP/mzQLlm7O93XG7k0h7zyJCUTQO1KtLimZlP5/5lPkRaFdpa6lmz6Gbi71nfQnQHqiyQJ/86mlv/nP2TPslSqp0VaTLSYz4fuoH6o7+qbFq0tGg+7ffX3dbsC6Y/gNLgctHB3hLWgH3SFZlAgUD2dew9MB123kMyhcG84BvYBjfUqoD7oSVd9073KfkZeJWH3t4q8xqkl8gCVn4exsD0MBt2HbKN7eAw0vzRfJRfCU6D7mQ2uDVEtEwXCUfBzUNvDoB4ksv9r8BdIg5G7SLwFsqNEY6x8IVH/D4NLQWOyKeg+ukEdqC3NOdlYa+pB0LXt65JdJnpSOBNk+1JEjvwrkL1eBo2Rxqwl8iiVp8GusAcMB80prXX5ID1VqX2t6ftzx3xzqg/lt0ATSDTfdf/XKpNH1P7xoDlobK/71311DQ9+a3KUbjTtoSqz6E+P8PeqgsYoTW/V3zJLIgy6Jqrm9l2l5xqTVxsj59nZxBgl36AXup9aCntCNWjBzoPKDSaNeynJAjXU0rjoqEUuR6Kxac0Yc1q2HTk+talgoHn+McghVVp6cQHNM82rL0D3Uw7RvQwEBSXjkN4nvQgqIXK4QmOiACEbLoDOIvZa1zySnTSnVoqkgkzm6TCZGBnyJwgzTSawrJS+tPii9DsIq/h7vM3hS+sOXqVpcotb6BAntNaZqPNySJ90iLvwnbAtoN3lp7aijWm1924b22jt6V+29sQi582nXLSXKFB0xo2lsU+HWuuJuoXzd0lGiWMTYWJWsgvBODQbYNPfDniki4naqiBMJr9IZRKnJzKZAyeEO3WuqNcBzeq75C3gLeAtUIoFlkWJw2bcuVYUVZ2ZzmQOCcIolWksjx8u96uqMKX/4kcYJBKJvyQb0xOnbn683md68RbwFvAW8BZoJwssCxzmeoe8MXm/KBGeHSbDDdMNTUGUadsrzbIFDgWLGl7lZzIzk5lo4sB3et86ecyYQh/EmVvyR28BbwFvAW+BMlpghcChtse9dveAdDI8PQr5zjGfPSuAtFbKETjCqpQ+WE8nwvDOVJQ55x8bHzejtf3x53kLeAt4C3gLtM0CsYHDNHnQ63eNSqVS52YS0dZ6dRWlW/700abAoacMfZaRCd5INKcnDtykz52TwzH5vjJnuu2P3gLeAt4C3gIVtEDBwKHrHvPu3T0WNUY/C5KJX/LZQt/mBt4OteB7QK0NHIkavnUYBUvCKPP7VDpxydTNjtXXD714C3gLeAt4C6xkCxQNHKZ/h799z5bN6cz5UTIxKkqng0xzaRv/FgcOvhacqE7xWUb0YiqdPGfapkfpxzlevAW8BbwFvAU6iAX0w5uS5MbhBzwXNC7ZJxFlfhWGiY9TFfjqrp4yEonw60QmOL+2ORjtg0ZJQ+MreQt4C3gLtKsFSn7isHt1xFv3btgUZM7JRGl+jh4W/OFgKU8c/B4j0Nds+T3GtDCTPOPpTY+eal/Pp70FvAW8BbwFOo4FSn7isLt8w9r7/afLgiEHhpnEYfzFj3f19KHfVrRYOCVRWx3wq/VPk5nMKd0SdaN90GixFf0J3gLeAt4C7WqBVnj75ft35Ov/u0ZjkD4rE0aHEQBS7t+9yvfEoScM/UqdwHNfGKbOfmbDo/QH2rx4C3gLeAt4C3RwC7Q5cJj70w8H+VNl5/Ltq3UVPMxXd1cIHNkf8ukrttHsZDq4JPX1x9dO2WlCeX6mbjrjj94C3gLeAt4CFbNA2QKHenjIf27pF9TWnUbyqCiMuuuHg3bgSFQTMIKwkT9NeEfQvOT8ZzY7cWX94baKGdQ37C3gLeAt8F23QFkDhzHWIW/cvUOQDM/jVdR2zTx9vL9kftBczYff/G36VEP066mbHvMAZS34NYhp2R+9BbwFvAW8BVa2BSoSOHRTJ8y4rf7rdM2JzWFw0gcNX3VpbGq+qapLeP7UdfwP+Vb2oPvrewt4C3gLdGgLjH31tpGjX7pl1w7dSd85bwFvAW8Bb4GSLfD/AbkkGge70+tgAAAAAElFTkSuQmCC';
+
 
 /* Geen voorbeeld-/demodata: dit bestand wordt publiek gehost (GitHub Pages), dus er staan bewust geen
    klant- of boekhoudernamen in de broncode — ook geen fictieve. Voeg klanten/boekhouders toe via de
@@ -335,6 +342,45 @@ function logActiviteit(actie){
     if(ACTIVITEITENLOG.length > 500) ACTIVITEITENLOG.length = 500;
   }catch(e){ console.error('Wegschrijven activiteitenlog mislukt:', e); }
 }
+/* ============================= AKKOORDVERKLARING AANGIFTE IB (documenten & automatiseringen) =============================
+   Persoonsgegevens die nodig zijn om de akkoordverklaring aangifte inkomstenbelasting automatisch in
+   te vullen: adres, en per persoon (1 of 2, bij een fiscaal partner) aanhef/voorletters/achternaam/
+   fiscaalnummer. Deze horen bij de klant zelf (net als KvK/contactpersoon) en worden dus, net als de
+   rest van RAW_KLANTEN, gewoon meegesynchroniseerd. Wat er per verzending verandert (het boekjaar, of
+   het urencriterium van toepassing is) staat er ook bij — de gebruiker werkt dat elk jaar bij via het
+   bewerkpaneel, en met "1 druk op de knop" wordt daarna steeds de meest actuele stand + de datum van
+   vandaag gebruikt om de PDF te genereren en te versturen. */
+function defaultPersoonIb(aanhef){
+  return { aanhef: aanhef||'Dhr', voorletters:'', achternaam:'', fiscaalnummer:'' };
+}
+function defaultIbData(){
+  return {
+    boekjaar: '',
+    straat:'', postcode:'', plaats:'',
+    persoon1: defaultPersoonIb('Dhr'),
+    tweePersonen: false,
+    persoon2: defaultPersoonIb('Mw'),
+    urencriteriumVanToepassing: false,
+    urencriteriumPersoon: '1',
+    urencriteriumVoldaan: true
+  };
+}
+/* Vult ontbrekende velden defensief aan (i.p.v. te crashen) — nodig omdat deze data ook via een oude
+   sync-import, een handmatige aanpassing, of een toekomstige gedeeltelijke migratie beschadigd/
+   onvolledig kan binnenkomen. */
+function normaliseerIbData(ib){
+  if(!ib || typeof ib !== 'object') ib = {};
+  const defaults = defaultIbData();
+  Object.keys(defaults).forEach(key=>{
+    if(ib[key]===undefined || ib[key]===null) ib[key] = defaults[key];
+  });
+  ['persoon1','persoon2'].forEach(p=>{
+    const std = defaultPersoonIb(p==='persoon1'?'Dhr':'Mw');
+    if(!ib[p] || typeof ib[p] !== 'object') ib[p] = std;
+    else Object.keys(std).forEach(k2=>{ if(ib[p][k2]===undefined || ib[p][k2]===null) ib[p][k2] = std[k2]; });
+  });
+  return ib;
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -346,6 +392,7 @@ function addKlant(data){
     staatOpHold: !!data.staatOpHold,
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
+    ib: defaultIbData(),
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
       VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
@@ -357,7 +404,7 @@ function addKlant(data){
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'',
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[],
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
@@ -673,7 +720,10 @@ let SYNC = {
 };
 let msalInstance = null;
 let msalInitPromise = null;
-const GRAPH_SCOPES = ['Sites.ReadWrite.All'];
+/* 'Mail.Send' is nodig voor het automatisch versturen van documenten (bijv. de akkoordverklaring
+   aangifte IB) rechtstreeks vanuit het ingelogde Microsoft-account via Graph — dit vraagt bij de
+   eerstvolgende keer inloggen (of opnieuw inloggen) om een extra toestemming van de gebruiker. */
+const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
@@ -791,8 +841,32 @@ async function graphFetch(url, opts={}, allowInteractive){
     headers: Object.assign({ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, opts.headers||{})
   }));
   if(!res.ok){ const text = await res.text().catch(()=>''); throw new Error('Graph-fout '+res.status+': '+text.slice(0,200)); }
-  if(res.status === 204) return null;
+  // 204 (bijv. PATCH) en 202 (bijv. /me/sendMail — "Accepted", zonder body) geven allebei geen
+  // JSON-body terug; res.json() zou daar in beide gevallen op stuklopen.
+  if(res.status === 204 || res.status === 202) return null;
   return res.json();
+}
+/* Verstuurt een e-mail namens de ingelogde gebruiker via Microsoft Graph (POST /me/sendMail), met
+   'saveToSentItems' aan zodat hij ook in de Verzonden Items van de afzender terechtkomt. Gebruikt
+   dezelfde login/token-flow (en dus dezelfde 'Mail.Send'-scope) als de SharePoint-sync hierboven.
+   allowInteractive=true, want dit wordt altijd rechtstreeks door een klik van de gebruiker aangeroepen
+   (nooit door de automatische achtergrond-sync) — een interactieve Microsoft-popup mag dus wél. */
+async function sendGraphMail(to, subject, bodyHtml, attachments){
+  const payload = {
+    message: {
+      subject,
+      body: { contentType:'HTML', content: bodyHtml },
+      toRecipients: [{ emailAddress: { address: to } }],
+      attachments: (attachments||[]).map(a=>({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: a.name,
+        contentType: a.contentType,
+        contentBytes: a.base64
+      }))
+    },
+    saveToSentItems: true
+  };
+  await graphFetch('https://graph.microsoft.com/v1.0/me/sendMail', { method:'POST', body: JSON.stringify(payload) }, true);
 }
 async function resolveSiteAndList(allowInteractive){
   if(SYNC.siteId && SYNC.listId) return;
@@ -1420,6 +1494,7 @@ function migrateData(){
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.opHoldReden===undefined) k.opHoldReden='';
+      k.ib = normaliseerIbData(k.ib);
       ['OB','VPB','LH','JR'].forEach(t=>{
         // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
         // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
@@ -1464,10 +1539,11 @@ function migrateData(){
         if(f.dagen2===undefined) f.dagen2 = 14;
         if(!Array.isArray(f.log)) f.log = [];
         if(f.notities===undefined) f.notities = '';
+        if(!Array.isArray(f.akkoordLog)) f.akkoordLog = [];
       } else {
         // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
         // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
-        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'' };
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[] };
       }
     }catch(e){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
@@ -3041,6 +3117,161 @@ function reminderMessage(klant, ronde){
   return {subject:`${woord} — aanlevering stukken ${klant.naam}`, body};
 }
 
+/* ============================= DOCUMENT: AKKOORDVERKLARING AANGIFTE IB =============================
+   Eerste van (naar verwachting) meerdere geautomatiseerde klant-documenten — zie de "Documenten"-sectie
+   op de klantkaart. Genereert een PDF die de opmaak van het originele Word-sjabloon nabootst, met de
+   klantgegevens en de datum van vandaag automatisch ingevuld, en verstuurt die met één klik als
+   e-mailbijlage via het gekoppelde Microsoft-account (Graph sendMail). */
+function ibAanhefLabel(a){ return a==='Mw' ? 'Mw.' : 'Dhr.'; }
+function ibPersoonWeergave(p){
+  return `${ibAanhefLabel(p.aanhef)} ${(p.voorletters||'').trim()} ${(p.achternaam||'').trim()}`.replace(/\s+/g,' ').trim();
+}
+function akkoordverklaringValidatie(klant){
+  const ib = klant.ib;
+  if(!ib) return 'Geen IB-gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const ontbreekt = [];
+  if(!ib.boekjaar) ontbreekt.push('boekjaar');
+  if(!ib.straat) ontbreekt.push('straat + huisnummer');
+  if(!ib.postcode) ontbreekt.push('postcode');
+  if(!ib.plaats) ontbreekt.push('plaats');
+  if(!ib.persoon1.voorletters || !ib.persoon1.achternaam) ontbreekt.push('naam persoon 1');
+  if(!ib.persoon1.fiscaalnummer) ontbreekt.push('fiscaalnummer persoon 1');
+  if(ib.tweePersonen){
+    if(!ib.persoon2.voorletters || !ib.persoon2.achternaam) ontbreekt.push('naam persoon 2');
+    if(!ib.persoon2.fiscaalnummer) ontbreekt.push('fiscaalnummer persoon 2');
+  }
+  if(!klant.email) ontbreekt.push('e-mailadres van de klant');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document verstuurt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+function akkoordverklaringHTML(klant){
+  const ib = klant.ib;
+  const meerdere = !!ib.tweePersonen;
+  const persoon1Weergave = ibPersoonWeergave(ib.persoon1);
+  const persoon2Weergave = meerdere ? ibPersoonWeergave(ib.persoon2) : '';
+  const ondergetekendenNamen = meerdere ? `${persoon1Weergave}, &amp; ${persoon2Weergave}` : persoon1Weergave;
+  const fiscaalRegel = meerdere ? `${ib.persoon1.fiscaalnummer} &amp; ${ib.persoon2.fiscaalnummer}` : ib.persoon1.fiscaalnummer;
+  const gr = meerdere
+    ? {naamZin:'De ondergetekenden', hebben:'Hebben', ondergetekendeCap:'Ondergetekenden', gaan:'gaan', verklarenWw:'verklaren'}
+    : {naamZin:'De ondergetekende', hebben:'Heeft', ondergetekendeCap:'Ondergetekende', gaan:'gaat', verklarenWw:'verklaart'};
+  const urenPersoon = ib.urencriteriumPersoon==='2' ? ib.persoon2 : ib.persoon1;
+  const urenWeergave = ibPersoonWeergave(urenPersoon);
+  const vandaag = fmtDatumLang(new Date());
+  const jaar = ib.boekjaar || String(new Date().getFullYear()-1);
+  const stip = (n)=> '.'.repeat(n);
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.55; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:26px;">
+      <div style="font-size:9.5pt; line-height:1.55;">
+        <div style="font-weight:700;">AdministratieBox B.V.</div>
+        <div>Demmersweg 42</div>
+        <div>7556 BN Hengelo</div>
+        <div>085-1093400</div>
+        <div>www.administratiebox.nl</div>
+        <div>info@administratiebox.nl</div>
+        <div>Bankrekening: NL70RABO0191895253</div>
+        <div>BTW nr.: NL854261096B01</div>
+        <div>KvK nr.: 61226734</div>
+      </div>
+      <img src="${AB_LOGO_B64}" style="height:34px; margin-top:2px;">
+    </div>
+
+    <div style="font-weight:700; text-decoration:underline; font-size:11.5pt; margin-bottom:16px;">AKKOORDVERKLARING AANGIFTEN INKOMSTENBELASTING</div>
+
+    <div style="margin-bottom:4px;"><b>Betreft:</b> Akkoordverklaring aangifte inkomstenbelasting.</div>
+    <div style="margin-bottom:4px;"><b>Terzake van:</b> Aangifte inkomstenbelasting over boekjaar ${jaar}.</div>
+    <div style="margin-bottom:16px;"><b>Opgemaakt d.d.</b> ${vandaag}</div>
+
+    <div style="margin-bottom:16px;"><b>Fiscaalnummer:</b> ${fiscaalRegel}</div>
+
+    <p style="margin:0 0 12px;">${gr.naamZin}, ${ondergetekendenNamen}, wonende te ${ib.plaats}; ${ib.straat}, ${ib.postcode}.</p>
+
+    <p style="margin:0 0 12px;">${gr.hebben} kennis genomen van de inhoud van de opgestelde aangiften Inkomstenbelasting en vastgesteld dat deze inhoud in overeenstemming is met de gegevens die, zonder voorbehoud, aan AdministratieBox B.V. zijn aangeleverd.</p>
+
+    <p style="margin:0 0 12px;">${gr.ondergetekendeCap} ${gr.gaan} akkoord met de weergave en met de daarmee overeenstemmende aangiften en geven toestemming aan AdministratieBox B.V. om de gemaakte aangiftebestanden digitaal naar de belastingdienst te versturen.</p>
+
+    <p style="margin:0 0 12px;">${gr.ondergetekendeCap} ${gr.verklarenWw} dat in een periode van drie maanden, waarin de peildatum 1 januari ${jaar} is gelegen, geen bezittingen zijn verkocht en vervolgens (gedeeltelijk) weer zijn aangekocht. (Peildatumarbitrage regeling box 3 van de wet op de inkomstenbelasting).</p>
+
+    ${ib.urencriteriumVanToepassing ? `<p style="margin:0 0 12px; font-weight:700; font-style:italic;">Ondergetekende ${urenWeergave} verklaart dat er voor jaar ${jaar} ${ib.urencriteriumVoldaan?'WEL':'NIET'} is voldaan aan het urencriterium van 1.225 uur, zodat de zelfstandigenaftrek ${ib.urencriteriumVoldaan?'wel':'niet'} kan worden toegepast.</p>` : ''}
+
+    <div style="margin-top:36px;">${ib.plaats}, ${stip(55)}(datum)</div>
+    <div style="margin-top:30px; display:flex; gap:70px;">
+      <div>${stip(34)}</div>
+      <div>${stip(34)}</div>
+    </div>
+    <div style="font-size:9pt; color:#555; margin-top:2px;">(Handtekeningen)</div>
+    <div style="margin-top:22px; display:flex; gap:70px; font-size:10pt;">
+      <div>(${persoon1Weergave})</div>
+      ${meerdere ? `<div>(${persoon2Weergave})</div>` : ''}
+    </div>
+  </div>`;
+}
+function akkoordMailBodyHTML(klant){
+  const naam = (klant.contact || klant.naam || '').trim();
+  const boekhouderNaam = (bh(klant.bh)||{naam:'AdministratieBox'}).naam;
+  return `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Beste ${naam || klant.naam},</p>
+    <p>Bijgaand ontvangt u de akkoordverklaring voor de aangifte inkomstenbelasting over boekjaar ${klant.ib.boekjaar}. Wilt u deze controleren, ondertekenen en aan ons retourneren?</p>
+    <p>Met vriendelijke groet,<br>${boekhouderNaam}<br>AdministratieBox</p>
+  </div>`;
+}
+function akkoordverklaringBestandsnaam(klant){
+  return `Akkoordverklaring IB ${klant.ib.boekjaar||''} - ${klant.naam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.98}, html2canvas:{scale:2, useCORS:true}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'} };
+/* Rendert de akkoordverklaring in een onzichtbaar (buiten beeld geplaatst, niet display:none — html2canvas
+   kan geen niet-gelayoute elementen fotograferen) tijdelijk element, zodat html2pdf.js er een PDF van kan
+   maken zonder dat de gebruiker iets op het scherm ziet flitsen. De aanroeper is verantwoordelijk voor het
+   opruimen van het teruggegeven element ná gebruik. */
+function maakVerborgenAkkoordElement(klant){
+  const el = document.createElement('div');
+  el.style.position = 'fixed'; el.style.left = '-99999px'; el.style.top = '0'; el.style.zIndex = '-1';
+  el.innerHTML = akkoordverklaringHTML(klant);
+  document.body.appendChild(el);
+  return el;
+}
+async function genereerAkkoordverklaringPdfBase64(klant){
+  if(typeof html2pdf === 'undefined') throw new Error('PDF-bibliotheek kon niet worden geladen (geen internetverbinding?).');
+  const el = maakVerborgenAkkoordElement(klant);
+  try{
+    const opt = Object.assign({filename: akkoordverklaringBestandsnaam(klant)}, AKKOORD_PDF_OPTS);
+    const dataUri = await html2pdf().set(opt).from(el.firstElementChild).outputPdf('datauristring');
+    return dataUri.slice(dataUri.indexOf(',')+1);
+  } finally {
+    document.body.removeChild(el);
+  }
+}
+function downloadAkkoordverklaringPdf(klant){
+  if(typeof html2pdf === 'undefined'){ toast('PDF-bibliotheek kon niet worden geladen (geen internetverbinding?).'); return; }
+  const el = maakVerborgenAkkoordElement(klant);
+  const opt = Object.assign({filename: akkoordverklaringBestandsnaam(klant)}, AKKOORD_PDF_OPTS);
+  html2pdf().set(opt).from(el.firstElementChild).save().finally(()=>{ document.body.removeChild(el); });
+}
+/* "Documenten"-sectie op de klantkaart: het eerste van (naar verwachting) meerdere geautomatiseerde
+   document-versturingen op deze plek, naast de bestaande "Automatische herinneringen". Bewust als eigen
+   functie i.p.v. inline in panelHTML() opgezet, zodat een volgend document-type hier straks gewoon een
+   extra kaartje kan worden zonder panelHTML() zelf te hoeven aanpassen. */
+function documentenSectieHTML(klant){
+  const log = (STORE[klant.id].akkoordLog || []);
+  const ib = klant.ib || defaultIbData();
+  return `<div class="panel-section">
+    <h4>Documenten</h4>
+    <div class="inner">
+      <div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px;">
+        <div style="font-weight:700; font-size:12.5px;">Akkoordverklaring aangifte IB${ib.boekjaar ? ' — boekjaar '+ib.boekjaar : ''}</div>
+        <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">Wordt automatisch ingevuld met de IB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn sm" data-akk-preview>⬇ Voorbeeld downloaden</button>
+          <button class="btn sm primary" data-akk-send>✉ Versturen</button>
+        </div>
+      </div>
+      <div class="rem-log" style="margin-top:10px;">
+        <b style="font-size:12px;">Verzendgeschiedenis</b>
+        ${log.length ? log.slice().reverse().map(l=>`<div class="rem-log-item">📨 Akkoordverklaring IB ${l.boekjaar} verstuurd naar ${l.naar} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
+      </div>
+    </div>
+  </div>`;
+}
 function panelHTML(klant){
   const f = STORE[klant.id];
   const open = f.items.filter(i=>!i.done).length;
@@ -3185,6 +3416,8 @@ function panelHTML(klant){
       </div>
     </div>
 
+    ${documentenSectieHTML(klant)}
+
     <div class="panel-section">
       <h4>Notities</h4>
       <div class="inner">
@@ -3207,6 +3440,59 @@ const VORM_OPTIES = ['BV','Eenmanszaak','V.O.F.'];
 function vormSelectHTML(id, current){
   const opts = VORM_OPTIES.includes(current) ? VORM_OPTIES : [...VORM_OPTIES, current].filter(Boolean);
   return `<select id="${id}" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${opts.map(v=>`<option value="${v}" ${v===current?'selected':''}>${v}</option>`).join('')}</select>`;
+}
+function persoonIbFormHTML(persoon, suffix){
+  return `
+    <div class="field-row"><label>Aanhef</label>
+      <select id="editIbAanhef${suffix}" style="width:90px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Dhr" ${persoon.aanhef==='Dhr'?'selected':''}>Dhr.</option>
+        <option value="Mw" ${persoon.aanhef==='Mw'?'selected':''}>Mw.</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Voorletters</label><input type="text" id="editIbVoorletters${suffix}" value="${(persoon.voorletters||'').replace(/"/g,'&quot;')}" placeholder="bijv. J.P."></div>
+    <div class="field-row"><label>Achternaam</label><input type="text" id="editIbAchternaam${suffix}" value="${(persoon.achternaam||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field-row"><label>Fiscaalnummer</label><input type="text" id="editIbFiscaal${suffix}" value="${(persoon.fiscaalnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. 1234.56.789"></div>`;
+}
+/* Los formulier-fragment (i.p.v. rechtstreeks in editKlantFormHTML) zodat het straks makkelijk
+   hergebruikt kan worden zodra er meer geautomatiseerde documenten bijkomen die dezelfde
+   persoons-/adresgegevens nodig hebben. */
+function ibFormSectionHTML(ib){
+  return `<div class="panel-section"><h4>IB-akkoordverklaring</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het automatisch invullen en versturen van de akkoordverklaring aangifte inkomstenbelasting (zie "Documenten" op de klantkaart). Datum van verzending wordt altijd automatisch ingevuld.</div>
+    <div class="field-row"><label>Boekjaar</label><input type="text" id="editIbBoekjaar" value="${(ib.boekjaar||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2025" style="max-width:110px;"></div>
+    <div class="field-row"><label>Straat + huisnummer</label><input type="text" id="editIbStraat" value="${(ib.straat||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field-row"><label>Postcode</label><input type="text" id="editIbPostcode" value="${(ib.postcode||'').replace(/"/g,'&quot;')}" style="max-width:120px;"></div>
+    <div class="field-row"><label>Plaats</label><input type="text" id="editIbPlaats" value="${(ib.plaats||'').replace(/"/g,'&quot;')}"></div>
+
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Persoon 1</div>
+    ${persoonIbFormHTML(ib.persoon1, '1')}
+
+    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; margin-top:12px;">
+      <input type="checkbox" id="editIbTweePersonen" ${ib.tweePersonen?'checked':''}> Tweede persoon (fiscaal partner) toevoegen
+    </label>
+    <div id="editIbPersoon2Wrap" style="${ib.tweePersonen?'':'display:none;'} margin-top:8px;">
+      <div style="font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Persoon 2</div>
+      ${persoonIbFormHTML(ib.persoon2, '2')}
+    </div>
+
+    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; margin-top:14px;">
+      <input type="checkbox" id="editIbUrenVanToepassing" ${ib.urencriteriumVanToepassing?'checked':''}> Urencriterium-verklaring (zelfstandigenaftrek) opnemen
+    </label>
+    <div id="editIbUrenWrap" style="${ib.urencriteriumVanToepassing?'':'display:none;'} margin-top:8px;">
+      <div class="field-row"><label>Verklaring voor</label>
+        <select id="editIbUrenPersoon" style="width:150px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="1" ${ib.urencriteriumPersoon==='1'?'selected':''}>Persoon 1</option>
+          <option value="2" ${ib.urencriteriumPersoon==='2'?'selected':''}>Persoon 2</option>
+        </select>
+      </div>
+      <div class="field-row"><label>Urencriterium (1.225 uur)</label>
+        <select id="editIbUrenVoldaan" style="width:150px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="ja" ${ib.urencriteriumVoldaan?'selected':''}>Wel voldaan</option>
+          <option value="nee" ${!ib.urencriteriumVoldaan?'selected':''}>Niet voldaan</option>
+        </select>
+      </div>
+    </div>
+  </div></div>`;
 }
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
@@ -3249,6 +3535,7 @@ function editKlantFormHTML(klant){
       </div>
       <div style="font-size:11.5px; color:var(--muted);">Leeg laten = niet van toepassing. Formaat: DD-MM-JJJJ.</div>
     </div></div>
+    ${ibFormSectionHTML(klant.ib)}
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
       <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
@@ -3481,6 +3768,16 @@ function attachEditKlantHandlers(klant){
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   const cancelBtn = document.querySelector('[data-cancel-edit-klant]');
   if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ STATE.editKlant=null; openPanel(klant.id); });
+  const ibTweePersonen = document.getElementById('editIbTweePersonen');
+  if(ibTweePersonen) ibTweePersonen.addEventListener('change', e=>{
+    const wrap = document.getElementById('editIbPersoon2Wrap');
+    if(wrap) wrap.style.display = e.target.checked ? '' : 'none';
+  });
+  const ibUren = document.getElementById('editIbUrenVanToepassing');
+  if(ibUren) ibUren.addEventListener('change', e=>{
+    const wrap = document.getElementById('editIbUrenWrap');
+    if(wrap) wrap.style.display = e.target.checked ? '' : 'none';
+  });
   const saveBtn = document.querySelector('[data-save-edit-klant]');
   if(saveBtn) saveBtn.addEventListener('click', ()=>{
     const naam = document.getElementById('editKlantNaam').value.trim();
@@ -3508,6 +3805,29 @@ function attachEditKlantHandlers(klant){
         f.dl[type] = { na:true };
       }
     });
+
+    if(!klant.ib) klant.ib = defaultIbData();
+    const ib = klant.ib;
+    ib.boekjaar = document.getElementById('editIbBoekjaar').value.trim();
+    ib.straat = document.getElementById('editIbStraat').value.trim();
+    ib.postcode = document.getElementById('editIbPostcode').value.trim();
+    ib.plaats = document.getElementById('editIbPlaats').value.trim();
+    ib.persoon1 = {
+      aanhef: document.getElementById('editIbAanhef1').value,
+      voorletters: document.getElementById('editIbVoorletters1').value.trim(),
+      achternaam: document.getElementById('editIbAchternaam1').value.trim(),
+      fiscaalnummer: document.getElementById('editIbFiscaal1').value.trim(),
+    };
+    ib.tweePersonen = document.getElementById('editIbTweePersonen').checked;
+    ib.persoon2 = {
+      aanhef: document.getElementById('editIbAanhef2').value,
+      voorletters: document.getElementById('editIbVoorletters2').value.trim(),
+      achternaam: document.getElementById('editIbAchternaam2').value.trim(),
+      fiscaalnummer: document.getElementById('editIbFiscaal2').value.trim(),
+    };
+    ib.urencriteriumVanToepassing = document.getElementById('editIbUrenVanToepassing').checked;
+    ib.urencriteriumPersoon = document.getElementById('editIbUrenPersoon').value;
+    ib.urencriteriumVoldaan = document.getElementById('editIbUrenVoldaan').value === 'ja';
 
     persistMeta(); persist();
     toast('Klantgegevens bijgewerkt.');
@@ -4405,7 +4725,7 @@ function handleKlantenCSVUpload(e){
         if(tel) bestaand.tel = tel;
         if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -4414,15 +4734,17 @@ function handleKlantenCSVUpload(e){
         const klant = {
           id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
           doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', extId,
+          ib: defaultIbData(),
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
 
     logActiviteit(`Klantenimport uit "${file.name}": ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt${report.overgeslagen?`, ${report.overgeslagen} overgeslagen`:''}`);
+    migrateData();
     persistMeta(); persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
 
@@ -4643,6 +4965,39 @@ function attachPanelHandlers(klant){
     persist(); toast(`${ronde}e herinnering klaargezet voor ${klant.naam}.`); refreshPanel(klant);
   }));
 
+  const akkPreviewBtn = document.querySelector('[data-akk-preview]');
+  if(akkPreviewBtn) akkPreviewBtn.addEventListener('click', ()=>{
+    const fout = akkoordverklaringValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadAkkoordverklaringPdf(klant);
+  });
+  const akkSendBtn = document.querySelector('[data-akk-send]');
+  if(akkSendBtn) akkSendBtn.addEventListener('click', async ()=>{
+    const fout = akkoordverklaringValidatie(klant);
+    if(fout){ toast(fout); return; }
+    if(!confirm(`Akkoordverklaring IB ${klant.ib.boekjaar} versturen naar ${klant.email}?`)) return;
+    const origLabel = akkSendBtn.textContent;
+    akkSendBtn.disabled = true; akkSendBtn.textContent = 'Bezig met versturen…';
+    try{
+      const pdfBase64 = await genereerAkkoordverklaringPdfBase64(klant);
+      await sendGraphMail(
+        klant.email,
+        `Akkoordverklaring aangifte inkomstenbelasting ${klant.ib.boekjaar}`,
+        akkoordMailBodyHTML(klant),
+        [{ name: akkoordverklaringBestandsnaam(klant), contentType:'application/pdf', base64: pdfBase64 }]
+      );
+      STORE[klant.id].akkoordLog = STORE[klant.id].akkoordLog || [];
+      STORE[klant.id].akkoordLog.push({ ts:new Date().toISOString().slice(0,10), boekjaar: klant.ib.boekjaar, naar: klant.email });
+      logActiviteit(`Akkoordverklaring IB ${klant.ib.boekjaar} verstuurd naar "${klant.naam}"`);
+      persist(); persistMeta();
+      toast(`Akkoordverklaring verstuurd naar ${klant.email}.`);
+      refreshPanel(klant);
+    }catch(e){
+      toast('Versturen mislukt: ' + (e.message || e));
+      akkSendBtn.disabled = false; akkSendBtn.textContent = origLabel;
+    }
+  });
+
   const saveNot = document.querySelector('[data-save-notities]');
   if(saveNot) saveNot.addEventListener('click', ()=>{
     STORE[klant.id].notities = document.getElementById('notitiesInput').value; persist(); toast('Notitie opgeslagen.');
@@ -4718,5 +5073,6 @@ window.addEventListener('beforeunload', ()=>{
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 </body>
 </html>
