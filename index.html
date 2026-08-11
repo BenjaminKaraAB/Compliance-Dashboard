@@ -43,11 +43,14 @@
   .nav-item{
     display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px;
     color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer; border:none; background:none; text-align:left; width:100%;
+    transition: background .12s ease, color .12s ease;
   }
-  .nav-item svg{flex:0 0 17px; width:17px; height:17px; opacity:.7;}
+  .nav-item svg{flex:0 0 17px; width:17px; height:17px; opacity:.7; transition:opacity .12s ease;}
   .nav-item:hover{background:#f4f6f9; color:var(--text);}
+  .nav-item:hover svg{opacity:.95;}
   .nav-item.active{background:var(--primary-bg); color:var(--primary-dark); font-weight:600;}
   .nav-item.active svg{opacity:1; color:var(--primary-dark);}
+  .nav-item:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
   .nav-foot{padding:14px 20px 18px; border-top:1px solid var(--border); font-size:11.5px; color:var(--muted);}
   .nav-foot b{color:var(--text);}
 
@@ -117,8 +120,11 @@
     border:1px solid var(--border); background:#fff; color:var(--text); cursor:pointer;
   }
   .btn:hover{background:var(--bg);}
-  .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
-  .btn.primary:hover{background:var(--primary-dark);}
+  .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff; box-shadow:0 1px 2px rgba(34,197,138,.25);}
+  .btn.primary:hover{background:var(--primary-dark); border-color:var(--primary-dark); box-shadow:0 2px 6px rgba(34,197,138,.35);}
+  .btn{transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .05s ease;}
+  .btn:active{transform:translateY(1px);}
+  .btn:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
   .btn.ghost{border-color:transparent; background:transparent;}
   .btn.ghost:hover{background:var(--bg);}
   .btn.sm{padding:6px 10px; font-size:11.5px;}
@@ -238,6 +244,9 @@ const AB_LOGO_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAY4AAAA9CAYAA
 /* Geen voorbeeld-/demodata: dit bestand wordt publiek gehost (GitHub Pages), dus er staan bewust geen
    klant- of boekhoudernamen in de broncode — ook geen fictieve. Voeg klanten/boekhouders toe via de
    knoppen in het dashboard, of koppel de Microsoft-sync (zie Instellingen) om echte data op te halen. */
+// bh(id) → boekhouder-object; cache-Map (O(1)-lookup ipv O(N) find). Gedeclareerd bovenaan
+// zodat de invalidatie-aanroep vanuit loadMeta() (heel vroeg in het script) niet in de TDZ zit.
+var _bhIndex = null;
 let BOEKHOUDERS = [];
 let TEAMS = [];
 /* Rechten (wie is beheerder, wie mag Loonheffingen bewerken) horen bij de GEDEELDE data — niet bij de
@@ -343,7 +352,7 @@ function loadMeta(){
     const raw = localStorage.getItem(META_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
-      if(parsed.boekhouders && parsed.boekhouders.length) BOEKHOUDERS = parsed.boekhouders;
+      if(parsed.boekhouders && parsed.boekhouders.length){ BOEKHOUDERS = parsed.boekhouders; invalidateBhIndex(); }
       if(parsed.klanten && parsed.klanten.length) RAW_KLANTEN = parsed.klanten;
       if(parsed.teams && parsed.teams.length) TEAMS = parsed.teams;
       if(parsed.rechten) RECHTEN = Object.assign({}, RECHTEN, parsed.rechten);
@@ -588,7 +597,7 @@ function volgendeAutoKleur(){ return BH_KLEUREN_CYCLUS[BOEKHOUDERS.length % BH_K
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
   const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur: data.kleur || volgendeAutoKleur()};
-  BOEKHOUDERS.push(b);
+  BOEKHOUDERS.push(b); invalidateBhIndex();
   logActiviteit(`Boekhouder toegevoegd: "${b.naam}"`);
   persistMeta();
   return b;
@@ -613,7 +622,7 @@ function deleteBoekhouder(id){
   if(RAW_KLANTEN.some(k=>k.bh===id)) return 'heeft-klanten';
   const idx = BOEKHOUDERS.findIndex(b=>b.id===id);
   if(idx===-1) return false;
-  BOEKHOUDERS.splice(idx,1);
+  BOEKHOUDERS.splice(idx,1); invalidateBhIndex();
   persistMeta();
   return true;
 }
@@ -992,20 +1001,26 @@ async function getGraphToken(allowInteractive){
   if(!app) throw new Error('Geen App ID geconfigureerd');
   const accounts = app.getAllAccounts();
   if(!accounts.length) throw new Error('Niet ingelogd — klik eerst op "Inloggen met Microsoft".');
+  // MSAL kan in edge-cases (third-party cookies uit, verlopen refresh-token, verwijderd account
+  // in Azure AD) een resultaat teruggeven waarin accessToken leeg is. Als we dat blind aan Graph
+  // sturen, krijg je 400 "InvalidAuthenticationToken: Access token is empty." Vandaar de expliciete
+  // check + doorgaan naar de interactieve popup als dat mag.
+  const hasToken = (r)=> r && typeof r.accessToken === 'string' && r.accessToken.length > 0;
   try{
     const res = await app.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: accounts[0] });
-    return res.accessToken;
+    if(hasToken(res)) return res.accessToken;
+    // Silent lukte "technisch" maar leverde niks bruikbaars — behandel als interactieve-heraanvraag.
+    if(!allowInteractive) throw new Error('Access token leeg — opnieuw inloggen vereist.');
   }catch(e){
-    // Automatische achtergrond-sync (bij het laden van de pagina en elke 45s) mag NOOIT ongevraagd
-    // een Microsoft-inlog-pop-up openen: browsers blokkeren pop-ups die niet direct uit een klik van
-    // de gebruiker voortkomen, dus die poging mislukt toch alleen maar stilletjes — en gaf hier
-    // bovendien de verwarrende "Sync mislukt"-status na elke verversing. Alleen een expliciete,
-    // door de gebruiker aangeklikte actie (de "Sync nu"-knop, of opnieuw inloggen) mag interactief
-    // een pop-up openen.
+    // Automatische achtergrond-sync mag NOOIT ongevraagd een Microsoft-inlog-pop-up openen:
+    // browsers blokkeren pop-ups die niet uit een klik van de gebruiker voortkomen, dus die
+    // poging mislukt toch alleen maar stilletjes — en gaf hier bovendien de verwarrende
+    // "Sync mislukt"-status na elke verversing.
     if(!allowInteractive) throw e;
-    const res = await app.acquireTokenPopup({ scopes: GRAPH_SCOPES });
-    return res.accessToken;
   }
+  const res = await app.acquireTokenPopup({ scopes: GRAPH_SCOPES });
+  if(!hasToken(res)) throw new Error('Microsoft-inlog gaf geen bruikbaar access token terug.');
+  return res.accessToken;
 }
 async function graphFetch(url, opts={}, allowInteractive){
   const token = await getGraphToken(allowInteractive);
@@ -1098,7 +1113,7 @@ async function fetchRemoteAndMerge(showFeedback){
       let json = rawData;
       if(typeof json === 'string'){ try{ json = JSON.parse(json); }catch(e){ json = null; } }
       if(json && json.klanten){
-        BOEKHOUDERS = json.boekhouders && json.boekhouders.length ? json.boekhouders : BOEKHOUDERS;
+        BOEKHOUDERS = json.boekhouders && json.boekhouders.length ? json.boekhouders : BOEKHOUDERS; invalidateBhIndex();
         RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
         TEAMS = json.teams && json.teams.length ? json.teams : TEAMS;
         STORE = json.store || STORE;
@@ -1292,7 +1307,15 @@ function heeftUrgenteHerinneringNodig(klant){
   if((f.dl.overige||[]).some(o=>dringend(o))) return true;
   return false;
 }
-function bh(id){ return BOEKHOUDERS.find(b=>b.id===id); }
+function _rebuildBhIndex(){ _bhIndex = new Map(); BOEKHOUDERS.forEach(b=>_bhIndex.set(b.id, b)); }
+function invalidateBhIndex(){ _bhIndex = null; }
+function bh(id){
+  // Map-lookup is O(1) i.p.v. de oude O(N) find. Bij duizenden tabelrijen × meerdere renders
+  // per interactie scheelt dat merkbaar op de Klanten-, Loonheffingen- en Overzicht-pagina.
+  // De cache wordt geïnvalideerd zodra BOEKHOUDERS wijzigt (toevoegen/verwijderen/bewerken/sync).
+  if(!_bhIndex) _rebuildBhIndex();
+  return _bhIndex.get(id);
+}
 function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
 function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
@@ -3935,9 +3958,8 @@ function managementovereenkomstDgaValidatie(klant){
   return null;
 }
 function managementovereenkomstDgaHTML(klant){
-  console.log('[MO DGA HTML] rendering, klant:', klant && klant.id);
   const mo = klant.managementovereenkomstDga;
-  if(!mo){ console.error('[MO DGA HTML] klant.managementovereenkomstDga is undefined'); throw new Error('managementovereenkomstDga is niet aanwezig op klant'); }
+  if(!mo) throw new Error('managementovereenkomstDga is niet aanwezig op klant');
   const holding = RAW_KLANTEN.find(k=>k.id===mo.holdingKlantId) || {naam:'(Holding niet gekoppeld)', vpb:{plaats:'...'}};
   const holdingPlaats = (holding.vpb && holding.vpb.plaats) || '...';
   const klantPlaats = (klant.vpb && klant.vpb.plaats) || '...';
@@ -6166,14 +6188,11 @@ function attachPanelHandlers(klant){
 
   const moDgaPreviewBtn = document.querySelector('[data-mo-dga-preview]');
   if(moDgaPreviewBtn) moDgaPreviewBtn.addEventListener('click', ()=>{
-    console.log('[MO DGA preview] geklikt, klant:', klant && klant.id, klant && klant.naam);
     try{
       const fout = managementovereenkomstDgaValidatie(klant);
-      console.log('[MO DGA preview] validatie:', fout || 'OK');
       if(fout){ toast(fout); return; }
       downloadManagementovereenkomstDgaPdf(klant);
     }catch(e){
-      console.error('[MO DGA preview] uitzondering:', e);
       toast('Fout bij starten van preview: ' + (e && e.message ? e.message : e));
     }
   });
@@ -6285,10 +6304,11 @@ try{ render(); }catch(e){
     + '<p>Technische foutmelding: ' + (e && e.message ? e.message : e) + '</p>'
     + '<p>Probeer de pagina te verversen. Blijft dit gebeuren, stuur deze foutmelding door.</p></div>';
 }
-try{ if(SYNC.enabled) fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
+if(SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
 setInterval(()=>{
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
-    try{ fetchRemoteAndMerge(false); }catch(e){ console.error('Sync mislukt:', e); }
+    try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }
+    catch(e){ console.error('Sync mislukt:', e); }
   }
 }, 45000);
 
