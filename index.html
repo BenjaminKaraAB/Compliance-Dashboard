@@ -1152,6 +1152,37 @@ async function resolveSiteAndList(allowInteractive){
   SYNC.listId = listsRes.value[0].id;
   persistSync();
 }
+/* ============================= SYNC-COMPRESSIE =============================
+   SharePoint's "Multiple lines of text"-kolom heeft een limiet (~63 KB standaard, tot ~256 KB met
+   "Unlimited length" aangevinkt). Bij grote datasets (veel klanten, logs, KPI-historie) knalt de
+   ongecomprimeerde JSON daar snel overheen — 2 à 3 MB is niet uitzonderlijk.
+   Oplossing: gzip de JSON vóór verzending (typisch 5-10× kleiner) en base64-encodeer het resultaat
+   zodat het als tekst in het SharePoint-veld past. Bij het lezen detecteren we automatisch aan de
+   prefix ("GZIP:") of de content gecomprimeerd is; anders parsen we als plain JSON — zo blijft de
+   sync backward-compatible met bestaande SharePoint-data die nog niet gecomprimeerd is. */
+const GZIP_PREFIX = 'GZIP:';
+async function gzipEncodeTekst(str){
+  if(typeof CompressionStream === 'undefined') return null; // oudere browsers → val terug op plain
+  const stream = new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = await new Response(stream).arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  // Chunked toString voor grote arrays; anders overschrijden we de call-stack met apply().
+  for(let i=0; i<bytes.length; i+=8192){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i+8192));
+  }
+  return GZIP_PREFIX + btoa(bin);
+}
+async function gzipDecodeTekst(str){
+  if(typeof DecompressionStream === 'undefined') throw new Error('DecompressionStream niet ondersteund in deze browser.');
+  const b64 = str.slice(GZIP_PREFIX.length);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0; i<bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).text();
+}
+
 let pushTimer = null;
 function pushRemoteDebounced(){
   if(!SYNC.enabled || !SYNC.account) return;
@@ -1167,14 +1198,18 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL });
+    // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
+    // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
+    let dataStr = await gzipEncodeTekst(rawJson);
+    if(!dataStr) dataStr = rawJson;
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, !!allowInteractive);
     SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
     SYNC.pendingLocalChanges = false; // succesvol gepusht → niets meer pending
-    // Onthoud direct de string die we net hebben verzonden zodat een fetch die exact deze data
-    // terugkrijgt niet nutteloos opnieuw parse+migrate+render triggert.
+    // Onthoud direct de string die we net hebben verzonden (gecomprimeerd of niet) zodat een fetch
+    // die exact deze data terugkrijgt niet nutteloos opnieuw parse+migrate+render triggert.
     try{ laatstVerwerkteSyncData = dataStr; }catch(_e){}
     updateSyncIndicator();
     persistSync();
@@ -1219,7 +1254,10 @@ async function fetchRemoteAndMerge(showFeedback){
   try{
     await resolveSiteAndList(showFeedback);
     const itemRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1?expand=fields`, {}, showFeedback);
-    const rawData = itemRes && itemRes.fields ? itemRes.fields.Data : null;
+    let rawData = itemRes && itemRes.fields ? itemRes.fields.Data : null;
+    // Backward-compat: detecteer of de content gecomprimeerd is en decomprimeer indien nodig.
+    // De cache-vergelijking (laatstVerwerkteSyncData) blijft op de RUWE (gecomprimeerde) string
+    // zodat we ook bij ongewijzigde SharePoint-content geen decompress-werk hoeven doen.
     if(typeof rawData === 'string' && rawData === laatstVerwerkteSyncData){
       // Ongewijzigd t.o.v. de vorige keer: alleen de sync-status bijwerken, verder niets doen.
       SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1227,7 +1265,12 @@ async function fetchRemoteAndMerge(showFeedback){
       if(showFeedback) toast('Gesynchroniseerd met gedeelde data (geen wijzigingen).');
     } else {
       let json = rawData;
-      if(typeof json === 'string'){ try{ json = JSON.parse(json); }catch(e){ json = null; } }
+      if(typeof json === 'string'){
+        try{
+          if(json.indexOf(GZIP_PREFIX) === 0) json = await gzipDecodeTekst(json);
+          json = JSON.parse(json);
+        }catch(e){ json = null; }
+      }
       if(json && json.klanten){
         BOEKHOUDERS = json.boekhouders && json.boekhouders.length ? json.boekhouders : BOEKHOUDERS; invalidateBhIndex();
         RAW_KLANTEN = json.klanten && json.klanten.length ? json.klanten : RAW_KLANTEN;
@@ -1930,6 +1973,7 @@ function completeLhPeriode(klant, door){
     else { entry.status = 'ingediend'; }
   }
   f.lh.log.push(logEntry);
+  if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
   f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
   persist();
 }
@@ -5410,6 +5454,7 @@ function attachHandlers(){
     f.lh.taken[idx].door = checked ? door : null;
     f.lh.taken[idx].ts = checked ? new Date().toISOString() : null;
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:f.lh.taken[idx].naam, actie: checked?'afgevinkt':'uitgevinkt', door});
+  if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
     logActiviteit(`Loonheffingen: "${f.lh.taken[idx].naam}" ${checked?'afgevinkt':'uitgevinkt'} bij "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -5428,6 +5473,7 @@ function attachHandlers(){
     const door = huidigeGebruiker();
     t.aantekeningen.push({id:'n'+Date.now()+Math.floor(Math.random()*1000), tekst, door, ts:new Date().toISOString()});
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-toegevoegd', door});
+  if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
     logActiviteit(`Loonheffingen: aantekening toegevoegd bij "${t.naam}" voor "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -5455,6 +5501,7 @@ function attachHandlers(){
     if(note){
       note.tekst = tekst; note.door = huidigeGebruiker(); note.ts = new Date().toISOString();
       f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-bewerkt', door:huidigeGebruiker()});
+  if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
       const klantVoorLog = RAW_KLANTEN.find(k=>k.id===klantId);
       logActiviteit(`Loonheffingen: aantekening bewerkt bij "${t.naam}" voor "${klantVoorLog?klantVoorLog.naam:klantId}"`);
     }
@@ -5472,6 +5519,7 @@ function attachHandlers(){
     const t = f.lh.taken[idx];
     t.aantekeningen = (t.aantekeningen||[]).filter(n=>n.id!==noteId);
     f.lh.log.push({id:'log'+Date.now()+Math.floor(Math.random()*1000), ts:new Date().toISOString(), taak:t.naam, actie:'aantekening-verwijderd', door:huidigeGebruiker()});
+  if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
     const klantVoorLog = RAW_KLANTEN.find(k=>k.id===klantId);
     logActiviteit(`Loonheffingen: aantekening verwijderd bij "${t.naam}" voor "${klantVoorLog?klantVoorLog.naam:klantId}"`);
     if(STATE.lhEditNote===key) STATE.lhEditNote = null;
@@ -6361,6 +6409,7 @@ function attachPanelHandlers(klant){
     }
     if(!kanalen.length){ toast('Selecteer eerst een kanaal (e-mail of WhatsApp).'); return; }
     STORE[klant.id].log.push({ts:new Date().toISOString().slice(0,10), ronde, kanaal:kanalen.join(' + ')});
+    if(STORE[klant.id].log.length > 200) STORE[klant.id].log = STORE[klant.id].log.slice(-200);
     persist(); toast(`${ronde}e herinnering klaargezet voor ${klant.naam}.`); refreshPanel(klant);
   }));
 
