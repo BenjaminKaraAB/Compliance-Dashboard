@@ -31,25 +31,25 @@
 
   /* SIDEBAR */
   .sidebar{
-    width:250px; flex:0 0 250px; background:linear-gradient(180deg,var(--navy),var(--navy2) 60%, var(--navy3));
-    color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
+    width:250px; flex:0 0 250px; background:#ffffff; border-right:1px solid var(--border);
+    color:var(--text); display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
   }
-  .brand{padding:20px 18px 16px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; gap:8px;}
+  .brand{padding:20px 18px 16px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px;}
   .brand-row{display:flex; align-items:center; gap:10px;}
   .brand-logo{width:34px; height:34px; flex:0 0 34px;}
-  .brand-name{font-size:16px; font-weight:800; letter-spacing:.2px; color:#fff;}
-  .brand-sub{font-size:10.5px; color:#93a0c4; letter-spacing:.6px; text-transform:uppercase; font-weight:600;}
+  .brand-name{font-size:16px; font-weight:800; letter-spacing:.2px; color:var(--text);}
+  .brand-sub{font-size:10.5px; color:var(--muted); letter-spacing:.6px; text-transform:uppercase; font-weight:600;}
   .nav{flex:1; padding:14px 12px; display:flex; flex-direction:column; gap:2px;}
   .nav-item{
     display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px;
-    color:#c4cde6; font-size:13.5px; font-weight:500; cursor:pointer; border:none; background:none; text-align:left; width:100%;
+    color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer; border:none; background:none; text-align:left; width:100%;
   }
-  .nav-item svg{flex:0 0 17px; width:17px; height:17px; opacity:.85;}
-  .nav-item:hover{background:rgba(255,255,255,.06); color:#fff;}
-  .nav-item.active{background:var(--primary); color:#fff;}
-  .nav-item.active svg{opacity:1;}
-  .nav-foot{padding:14px 20px 18px; border-top:1px solid rgba(255,255,255,.08); font-size:11.5px; color:#7c88ab;}
-  .nav-foot b{color:#c4cde6;}
+  .nav-item svg{flex:0 0 17px; width:17px; height:17px; opacity:.7;}
+  .nav-item:hover{background:#f4f6f9; color:var(--text);}
+  .nav-item.active{background:var(--primary-bg); color:var(--primary-dark); font-weight:600;}
+  .nav-item.active svg{opacity:1; color:var(--primary-dark);}
+  .nav-foot{padding:14px 20px 18px; border-top:1px solid var(--border); font-size:11.5px; color:var(--muted);}
+  .nav-foot b{color:var(--text);}
 
   /* MAIN */
   .main{flex:1; min-width:0; display:flex; flex-direction:column;}
