@@ -1674,22 +1674,119 @@ function klantWebsiteHost(klant){
     return raw.toLowerCase();
   }catch(e){ return ''; }
 }
+
+/* ============================= LOGO-CACHE =============================
+   Waarom een cache? Zonder cache haalt de browser bij ELKE render (elke klik/refresh) opnieuw het
+   favicon-plaatje op via Google. Twee problemen: (1) ad-blockers blokkeren vaak
+   google.com/s2/favicons als tracking en tonen dan telkens initialen; (2) Google's service is niet
+   100% betrouwbaar bij herhaalde requests. Fix: zodra een logo één keer succesvol geladen is,
+   converteren we het via een canvas naar een data-URL en bewaren die in localStorage. Bij volgende
+   renders wordt de img direct met die data-URL geladen — zonder network, zonder ad-blocker in de
+   weg, en de logo's blijven na refresh gewoon staan.
+   Providers-cascade: als het eerste endpoint mislukt proberen we DuckDuckGo als backup; pas als
+   ALLE providers falen wordt de host gemarkeerd als 'FAIL' (met een timestamp zodat we het later
+   nog eens kunnen proberen — bijv. 24u later — als de site alsnog een favicon publiceert). */
+const LOGO_CACHE_KEY = 'compliance_dashboard_logo_cache_v1';
+const LOGO_FAIL_RETRY_MS = 24 * 60 * 60 * 1000; // 24 uur
+let LOGO_CACHE = (function loadLogoCache(){
+  try{ return JSON.parse(localStorage.getItem(LOGO_CACHE_KEY) || '{}') || {}; }catch(e){ return {}; }
+})();
+let _logoCachePersistTimer = null;
+function persistLogoCache(){
+  clearTimeout(_logoCachePersistTimer);
+  _logoCachePersistTimer = setTimeout(()=>{
+    try{ localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(LOGO_CACHE)); }catch(e){}
+  }, 500);
+}
+function logoProvidersVoor(host){
+  return [
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
+    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
+  ];
+}
+/* Zet een geladen img om naar een data-URL zodat we hem lokaal kunnen bewaren. Vereist dat de img
+   met crossorigin="anonymous" geladen is EN dat de server CORS-headers stuurt — bij Google's favicon-
+   service is dat het geval. Als canvas.toDataURL() een SecurityError gooit (tainted canvas) vallen
+   we terug op de URL zelf cachen; dat helpt niet tegen ad-blockers maar wel tegen de gewone flikkering. */
+function _imgNaarDataUrl(img){
+  try{
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || 32; c.height = img.naturalHeight || 32;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return c.toDataURL('image/png');
+  }catch(e){ return null; }
+}
 function klantAvatarHTML(klant){
   const b = bh(klant.bh);
   const kleur = (b && b.kleur) ? b.kleur : '#94a0bb';
   const initialen = initialenVoor(klant.naam);
   const host = klantWebsiteHost(klant);
+  const initialenEsc = String(initialen).replace(/[<>&"']/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+
   if(host){
-    // Google's favicon-service is gratis, CORS-vrij en werkt voor >99% van de sites.
-    // Bij een 404/laadfout valt de avatar terug op de gekleurde initialen-cirkel (via onerror).
-    // De initialen en boekhouderkleur zitten in data-attributen zodat we geen HTML-escape-lek riskeren
-    // (klantnaam kan aanhalingstekens bevatten).
-    const url = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-    const initialenEsc = String(initialen).replace(/[<>&"']/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
-    return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}" data-initials="${initialenEsc}" data-kleur="${kleur}"><img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="const p=this.parentNode; p.classList.remove('klant-avatar-logo'); p.style.background=p.dataset.kleur; p.style.color='#fff'; p.style.border='none'; p.textContent=p.dataset.initials;"></div>`;
+    const cached = LOGO_CACHE[host];
+    // Cache-hit: bekend logo → laadt lokaal, geen network, geen ad-blocker in de weg.
+    if(cached && cached.data && typeof cached.data === 'string' && cached.data.indexOf('data:')===0){
+      return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}"><img src="${cached.data}" alt=""></div>`;
+    }
+    // Cache-hit: bekend om te falen (en nog binnen retry-venster) → skip img volledig,
+    // geen flikkering, meteen initialen. Na LOGO_FAIL_RETRY_MS proberen we opnieuw.
+    if(cached && cached.fail && (Date.now() - cached.fail) < LOGO_FAIL_RETRY_MS){
+      return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'} (geen logo beschikbaar voor ${host})">${initialenEsc}</div>`;
+    }
+    // Nog niet in cache (of retry-venster verstreken): probeer live te laden. Bij succes
+    // → converteer naar data-URL en cache. Bij fout → probeer volgende provider; bij totale
+    // mislukking → cache als 'FAIL' zodat volgende render meteen initialen toont.
+    const providers = logoProvidersVoor(host).map(u=>JSON.stringify(u)).join(',');
+    return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}" data-host="${host}" data-initials="${initialenEsc}" data-kleur="${kleur}"><img crossorigin="anonymous" referrerpolicy="no-referrer" loading="lazy" data-providers='[${providers}]' data-provider-idx="0" src="${logoProvidersVoor(host)[0]}" alt="" onload="window.__onLogoLoad&&window.__onLogoLoad(this)" onerror="window.__onLogoError&&window.__onLogoError(this)"></div>`;
   }
-  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialen}</div>`;
+  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialenEsc}</div>`;
 }
+
+/* Wereldwijde onload/onerror handlers — één keer geregistreerd op window i.p.v. per img inline
+   omdat inline handlers strenge quote-escaping vergen die snel breekt bij data-URLs met slashes en
+   plussen. window.__onLogoLoad/Error zijn expliciet globaal zodat ze uit de inline attributen
+   aanroepbaar zijn zonder CSP-problemen. */
+window.__onLogoLoad = function(img){
+  const host = img.parentNode && img.parentNode.dataset && img.parentNode.dataset.host;
+  if(!host) return;
+  // Sommige favicon-services geven een 200 OK terug met een 1x1 placeholder als er GEEN favicon
+  // gevonden is. Zo'n "leeg" logo willen we niet cachen — behandel het als een fout en probeer de
+  // volgende provider (of val terug op initialen).
+  if(!img.naturalWidth || img.naturalWidth < 8){
+    return window.__onLogoError(img);
+  }
+  const dataUrl = _imgNaarDataUrl(img);
+  if(dataUrl){
+    LOGO_CACHE[host] = { data: dataUrl, ts: Date.now() };
+    persistLogoCache();
+  }
+};
+window.__onLogoError = function(img){
+  const p = img.parentNode; if(!p) return;
+  const host = p.dataset && p.dataset.host;
+  let providers = [];
+  try{ providers = JSON.parse(p.querySelector('img').dataset.providers || '[]'); }catch(e){}
+  let idx = parseInt(img.dataset.providerIdx || '0', 10);
+  idx++;
+  if(providers[idx]){
+    // Probeer volgende provider (bijv. DuckDuckGo na Google-fout)
+    img.dataset.providerIdx = String(idx);
+    img.src = providers[idx];
+    return;
+  }
+  // Alle providers geprobeerd, allemaal mislukt → cache 'FAIL' met timestamp en toon initialen.
+  if(host){
+    LOGO_CACHE[host] = { fail: Date.now() };
+    persistLogoCache();
+  }
+  p.classList.remove('klant-avatar-logo');
+  p.style.background = p.dataset.kleur || '#94a0bb';
+  p.style.color = '#fff';
+  p.style.border = 'none';
+  p.textContent = p.dataset.initials || '?';
+};
 function sidebarFootHTML(){
   const naam = SYNC.account ? (SYNC.account.name || 'Benjamin') : 'Benjamin';
   const mail = huidigeGebruikerEmail();
