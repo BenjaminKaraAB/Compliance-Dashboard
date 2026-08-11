@@ -932,7 +932,8 @@ function persist(){
 const SYNC_KEY = 'compliance_dashboard_sync_v1';
 let SYNC = {
   clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
-  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null
+  enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null,
+  pendingLocalChanges:false
 };
 let msalInstance = null;
 let msalInitPromise = null;
@@ -1105,22 +1106,37 @@ async function resolveSiteAndList(allowInteractive){
 let pushTimer = null;
 function pushRemoteDebounced(){
   if(!SYNC.enabled || !SYNC.account) return;
+  // Markeer meteen dat er lokale wijzigingen zijn die nog niet gepusht zijn. Cruciaal want zonder
+  // dit vlagje kon een periodieke fetchRemoteAndMerge (elke 45s) tussentijds de zojuist gemaakte
+  // wijziging overschrijven met de OUDE remote versie — precies het bug-scenario met de klant-
+  // website die na een refresh verdwenen leek.
+  SYNC.pendingLocalChanges = true;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushRemote, 900);
 }
-async function pushRemote(){
-  if(!SYNC.enabled || !SYNC.account) return;
+async function pushRemote(allowInteractive){
+  if(!SYNC.enabled || !SYNC.account) return false;
   try{
-    await resolveSiteAndList(false);
+    await resolveSiteAndList(!!allowInteractive);
     const dataStr = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL });
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
-    }, false);
+    }, !!allowInteractive);
     SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
+    SYNC.pendingLocalChanges = false; // succesvol gepusht → niets meer pending
+    // Onthoud direct de string die we net hebben verzonden zodat een fetch die exact deze data
+    // terugkrijgt niet nutteloos opnieuw parse+migrate+render triggert.
+    try{ laatstVerwerkteSyncData = dataStr; }catch(_e){}
+    updateSyncIndicator();
+    persistSync();
+    return true;
   }catch(e){
     SYNC.lastError = e.message || 'Onbekende fout';
+    // Pending blijft true — bij de volgende gelegenheid proberen we opnieuw.
+    updateSyncIndicator();
+    persistSync();
+    return false;
   }
-  persistSync();
 }
 // Voorkomt dat een volgende periodieke sync-poging start terwijl een vorige (bijv. door een trage
 // verbinding of een inmiddels groot databestand) nog bezig is — anders kunnen twee cycli van
@@ -1135,6 +1151,22 @@ async function fetchRemoteAndMerge(showFeedback){
   if(!SYNC.enabled || !SYNC.account) return;
   if(syncInFlight) return;
   syncInFlight = true;
+  // Als er lokale wijzigingen open staan die nog niet succesvol naar SharePoint zijn geschreven,
+  // moeten we die EERST pushen — anders overschrijft de fetch straks de lokale versie met de
+  // oudere remote versie. Als push mislukt → we ZIEN AF van de fetch, zodat het lokale werk
+  // in ieder geval nog in localStorage staat en bij een volgende gelegenheid opnieuw geprobeerd
+  // kan worden. Dit was de bug bij het toevoegen van klant.website: push faalde stiletjes en
+  // een paar seconden later kwam de periodieke fetch die het weer weghaalde.
+  if(SYNC.pendingLocalChanges){
+    // Als er nog een debounce loopt, forceer 'em nu meteen door de timer te wissen.
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+    const gelukt = await pushRemote(!!showFeedback);
+    if(!gelukt){
+      syncInFlight = false;
+      if(showFeedback) toast('Lokale wijzigingen konden niet naar SharePoint worden gestuurd — fetch is overgeslagen om je werk niet te verliezen. Fout: ' + (SYNC.lastError||'onbekend'));
+      return;
+    }
+  }
   try{
     await resolveSiteAndList(showFeedback);
     const itemRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1?expand=fields`, {}, showFeedback);
@@ -5572,8 +5604,15 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
 
-  document.querySelectorAll('[data-sync-now]').forEach(el=>bindOnce(el, 'click', ()=>{
+  document.querySelectorAll('[data-sync-now]').forEach(el=>bindOnce(el, 'click', async ()=>{
     if(!SYNC.enabled || !SYNC.account){ toast('Stel eerst de Microsoft-koppeling in bij Instellingen en log in.'); return; }
+    // Wanneer de gebruiker expliciet op "Nu synchroniseren" klikt geldt: eerst ongesynct lokaal werk
+    // pushen, dan pas fetchen — zodat een handmatige refresh nooit een pending wijziging weggooit.
+    if(SYNC.pendingLocalChanges){
+      if(pushTimer){ clearTimeout(pushTimer); pushTimer = null; }
+      const gelukt = await pushRemote(true);
+      if(!gelukt){ toast('Lokale wijzigingen konden niet worden gestuurd: ' + (SYNC.lastError||'onbekend')); return; }
+    }
     fetchRemoteAndMerge(true);
   }));
   const saveSyncBtn = document.querySelector('[data-save-sync]');
