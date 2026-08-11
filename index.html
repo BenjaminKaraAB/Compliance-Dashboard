@@ -993,12 +993,27 @@ function getMsalInstance(){
       },
       cache:{ cacheLocation:'localStorage' }
     });
-    msalInitPromise = msalInstance.initialize().then(()=>msalInstance).catch(e=>{
-      msalInitPromise = null;
-      SYNC.lastError = e.message || 'Initialiseren van Microsoft-login mislukt';
-      persistSync();
-      return null;
-    });
+    msalInitPromise = msalInstance.initialize()
+      .then(()=> {
+        // handleRedirectPromise bestaat niet in alle MSAL-versies; defensief oproepen.
+        if(typeof msalInstance.handleRedirectPromise === 'function'){
+          return msalInstance.handleRedirectPromise().catch(()=>null);
+        }
+        return null;
+      })
+      .then(()=> {
+        // Sommige eerdere afgebroken interacties laten een 'interaction.status'-vlag in localStorage
+        // staan die MSAL later fout interpreteert als "er loopt nog een popup"; die ruimen we hier
+        // opdat de eerstvolgende loginPopup() weer normaal opengaat.
+        try{ localStorage.removeItem('msal.interaction.status'); }catch(_e){}
+        return msalInstance;
+      })
+      .catch(e=>{
+        msalInitPromise = null;
+        SYNC.lastError = e.message || 'Initialiseren van Microsoft-login mislukt';
+        persistSync();
+        return null;
+      });
   }catch(e){
     msalInstance = null; msalInitPromise = null;
     SYNC.lastError = 'Microsoft-login kon niet worden opgezet: ' + (e.message || e);
@@ -1007,9 +1022,15 @@ function getMsalInstance(){
   }
   return msalInitPromise;
 }
+let _signInBezig = false;
 async function signIn(){
+  // Voorkomt dubbelklikken: als er al een popup open staat, negeer verdere klikken tot die klaar is.
+  // Dat is óók een oorzaak van "Interaction is currently in progress" — MSAL tolereert geen
+  // parallelle loginPopup()-aanroepen.
+  if(_signInBezig){ toast('Er staat al een Microsoft-inlogvenster open. Rond die eerst af.'); return false; }
   const app = await getMsalInstance();
   if(!app){ toast('Vul eerst een geldig App ID in.'); return false; }
+  _signInBezig = true;
   try{
     const res = await app.loginPopup({ scopes: GRAPH_SCOPES });
     SYNC.account = { username: res.account.username, name: res.account.name };
@@ -1018,10 +1039,23 @@ async function signIn(){
     toast('Ingelogd als ' + res.account.username);
     return true;
   }catch(e){
-    SYNC.lastError = e.errorMessage || e.message || 'Inloggen mislukt';
+    const msg = e.errorMessage || e.message || 'Inloggen mislukt';
+    // Specifieke fout waarbij MSAL denkt dat er nog een interactie loopt: ruim de state op zodat
+    // een tweede klik direct wél lukt (i.p.v. dat de gebruiker de pagina moet verversen).
+    if(/interaction[_ ]is[_ ]currently[_ ]in[_ ]progress|interaction[_ ]in[_ ]progress/i.test(msg)){
+      try{ localStorage.removeItem('msal.interaction.status'); }catch(_e){}
+      Object.keys(localStorage).forEach(k=>{ if(/^msal\..*interaction/i.test(k)){ try{localStorage.removeItem(k);}catch(_e){} } });
+      SYNC.lastError = null;
+      persistSync();
+      toast('Vorige inlogpoging bleef hangen — opgeruimd. Klik nu nogmaals op "Inloggen".');
+      return false;
+    }
+    SYNC.lastError = msg;
     persistSync();
     toast('Inloggen mislukt: ' + SYNC.lastError);
     return false;
+  } finally {
+    _signInBezig = false;
   }
 }
 function signOutOfMsal(){
@@ -1063,7 +1097,22 @@ async function graphFetch(url, opts={}, allowInteractive){
   const res = await fetch(url, Object.assign({}, opts, {
     headers: Object.assign({ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, opts.headers||{})
   }));
-  if(!res.ok){ const text = await res.text().catch(()=>''); throw new Error('Graph-fout '+res.status+': '+text.slice(0,200)); }
+  if(!res.ok){
+    const text = await res.text().catch(()=>'');
+    // Diagnose-hulp voor de meest voorkomende oorzaken van een 400 op een PATCH naar het item:
+    // (a) payload > SharePoint kolom-limiet (standaard 63999 tekens voor "Multiple lines of text");
+    // (b) item 1 bestaat niet meer (bijv. handmatig verwijderd of een nieuwe lijst zonder de dummy-rij).
+    let extra = '';
+    if(res.status === 400 && opts && opts.method === 'PATCH'){
+      const bodyLen = (opts.body||'').length;
+      if(bodyLen > 60000){
+        extra = ' — TIP: de datahoeveelheid (' + Math.round(bodyLen/1024) + ' kB) is groter dan het standaard SharePoint-kolomlimiet (~63 kB). Zet in SharePoint bij de "Data"-kolom de instelling "Aantal regels voor bewerking" hoger of gebruik het "Unlimited length"-vinkje bij "Multiple lines of text".';
+      } else if(/itemNotFound|does not exist|not found/i.test(text)){
+        extra = ' — TIP: item 1 bestaat niet meer in de SharePoint-lijst. Voeg een nieuw item (mag leeg zijn) toe met Id 1.';
+      }
+    }
+    throw new Error('Graph-fout '+res.status+': '+text.slice(0,250)+extra);
+  }
   // 204 (bijv. PATCH) en 202 (bijv. /me/sendMail — "Accepted", zonder body) geven allebei geen
   // JSON-body terug; res.json() zou daar in beide gevallen op stuklopen.
   if(res.status === 204 || res.status === 202) return null;
@@ -5636,8 +5685,15 @@ function attachHandlers(){
   });
   const signInBtn = document.querySelector('[data-sign-in]');
   if(signInBtn) signInBtn.addEventListener('click', async ()=>{
-    const ok = await signIn();
-    if(ok){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); fetchRemoteAndMerge(true); }
+    if(signInBtn.disabled) return;
+    const origLabel = signInBtn.textContent;
+    signInBtn.disabled = true; signInBtn.textContent = 'Bezig met inloggen…';
+    try{
+      const ok = await signIn();
+      if(ok){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); fetchRemoteAndMerge(true); }
+    } finally {
+      signInBtn.disabled = false; signInBtn.textContent = origLabel;
+    }
   });
   const signOutBtn = document.querySelector('[data-sign-out]');
   if(signOutBtn) signOutBtn.addEventListener('click', ()=>{
