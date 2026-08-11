@@ -297,6 +297,36 @@ let BIJTELLING_TABEL = [
   {jaar:2025, laag:0.17, cap:30000, algemeen:0.22},
   {jaar:2026, laag:0.18, cap:30000, algemeen:0.22},
 ];
+/* Adressen van de Belastingdienst-kantoren, gebruikt voor de kantoor-keuze bij het verzoek "Fiscale
+   eenheid omzetbelasting subnummers verstrekken" (zie "E-mails" op de klantkaart). Dit is een BRIEF aan
+   de Belastingdienst, dus hier gaat het om het POSTADRES (Postbus) van het kantoor — niet het bezoek-
+   adres. Bron: publiek beschikbare adressenlijst (belastingtips.nl, laatst bijgewerkt 07-06-2021) — de
+   Belastingdienst zelf publiceert geen vaste lijst meer (alleen een postcode-opzoektool per gemeente),
+   dus controleer bij twijfel het adres op de brief die je eventueel al van de Belastingdienst hebt. */
+const BELASTINGKANTOREN = [
+  {id:'almelo', naam:'Almelo', postbus:'5105', postcode:'7600 GL', plaats:'Almelo'},
+  {id:'almere', naam:'Almere', postbus:'1111', postcode:'1300 BC', plaats:'Almere'},
+  {id:'amsterdam', naam:'Amsterdam', postbus:'58944', postcode:'1040 EE', plaats:'Amsterdam'},
+  {id:'arnhem', naam:'Arnhem', postbus:'9001', postcode:'6800 DB', plaats:'Arnhem'},
+  {id:'breda', naam:'Breda', postbus:'90121', postcode:'4800 RA', plaats:'Breda'},
+  {id:'denhaag', naam:"'s-Gravenhage", postbus:'30206', postcode:'2500 GE', plaats:"'s-Gravenhage"},
+  {id:'doetinchem', naam:'Doetinchem', postbus:'10014', postcode:'8000 GA', plaats:'Zwolle'},
+  {id:'eindhoven', naam:'Eindhoven', postbus:'90056', postcode:'5600 PJ', plaats:'Eindhoven'},
+  {id:'emmen', naam:'Emmen', postbus:'418', postcode:'9700 AK', plaats:'Groningen'},
+  {id:'enschede', naam:'Enschede', postbus:'5100', postcode:'7500 GC', plaats:'Enschede'},
+  {id:'groningen', naam:'Groningen', postbus:'418', postcode:'9700 AK', plaats:'Groningen'},
+  {id:'heerlen', naam:'Heerlen', postbus:'4486', postcode:'6401 CZ', plaats:'Heerlen'},
+  {id:'hoofddorp', naam:'Hoofddorp', postbus:'58944', postcode:'1040 EE', plaats:'Amsterdam'},
+  {id:'hoorn', naam:'Hoorn', postbus:'58944', postcode:'1040 EE', plaats:'Amsterdam'},
+  {id:'leeuwarden', naam:'Leeuwarden', postbus:'418', postcode:'9700 AK', plaats:'Groningen'},
+  {id:'maastricht', naam:'Maastricht', postbus:'4486', postcode:'6401 CZ', plaats:'Heerlen'},
+  {id:'middelburg', naam:'Middelburg', postbus:'90121', postcode:'4800 RA', plaats:'Breda'},
+  {id:'rotterdam', naam:'Rotterdam', postbus:'30206', postcode:'2500 GE', plaats:"'s-Gravenhage"},
+  {id:'utrecht', naam:'Utrecht', postbus:'18500', postcode:'3501 CM', plaats:'Utrecht'},
+  {id:'venlo', naam:'Venlo', postbus:'4486', postcode:'6401 CZ', plaats:'Heerlen'},
+  {id:'zwolle', naam:'Zwolle', postbus:'10014', postcode:'8000 GA', plaats:'Zwolle'},
+];
+function belastingkantoor(id){ return BELASTINGKANTOREN.find(k=>k.id===id); }
 
 function d(offsetDays){ const dt=new Date(TODAY); dt.setDate(dt.getDate()+offsetDays); return dt.toISOString().slice(0,10); }
 function DL(datum, status=null){ return {datum, status}; }
@@ -414,6 +444,30 @@ function normaliseerVpbData(vpb){
   else Object.keys(std).forEach(k=>{ if(vpb.vertegenwoordiger[k]===undefined || vpb.vertegenwoordiger[k]===null) vpb.vertegenwoordiger[k] = std[k]; });
   return vpb;
 }
+/* Zelfde soort velden als bij de IB/VPB-akkoordverklaringen hierboven, maar dan voor het verzoek
+   "Fiscale eenheid omzetbelasting subnummers verstrekken" aan de Belastingdienst. Dit document gaat niet
+   naar de klant maar naar de Belastingdienst zelf, per post met een natte handtekening — er zit dus
+   (in tegenstelling tot de IB/VPB-documenten) geen automatisch-versturen-per-e-mail aan vast, alleen
+   downloaden (zie "E-mails" op de klantkaart). dochterKlantId verwijst naar een ANDERE klant in dit
+   dashboard: de 100%-deelneming waarmee deze klant een fiscale eenheid OB aanvraagt. */
+function defaultFiscaleEenheid(){
+  return {
+    dochterKlantId: '',
+    moederOmzetbelastingnummer: '',
+    dochterOmzetbelastingnummer: '',
+    kantoorId: '',
+    contactpersoon: '',
+    contactpersoonFunctie: '',
+  };
+}
+function normaliseerFiscaleEenheid(fe){
+  if(!fe || typeof fe !== 'object') fe = {};
+  const defaults = defaultFiscaleEenheid();
+  Object.keys(defaults).forEach(key=>{
+    if(fe[key]===undefined || fe[key]===null) fe[key] = defaults[key];
+  });
+  return fe;
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -427,6 +481,7 @@ function addKlant(data){
     extId: data.extId || '',
     ib: defaultIbData(),
     vpb: defaultVpbData(),
+    fiscaleEenheid: defaultFiscaleEenheid(),
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
       VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
@@ -438,7 +493,7 @@ function addKlant(data){
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[],
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[],
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
@@ -1530,6 +1585,7 @@ function migrateData(){
       if(k.opHoldReden===undefined) k.opHoldReden='';
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
+      k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
       ['OB','VPB','LH','JR'].forEach(t=>{
         // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
         // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
@@ -1576,10 +1632,11 @@ function migrateData(){
         if(f.notities===undefined) f.notities = '';
         if(!Array.isArray(f.akkoordLog)) f.akkoordLog = [];
         if(!Array.isArray(f.vpbAkkoordLog)) f.vpbAkkoordLog = [];
+        if(!Array.isArray(f.fiscaleEenheidLog)) f.fiscaleEenheidLog = [];
       } else {
         // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
         // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
-        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[] };
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[] };
       }
     }catch(e){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
@@ -3423,6 +3480,100 @@ function genereerAkkoordverklaringPdfBase64(klant){
 function downloadAkkoordverklaringPdf(klant){
   downloadDocumentPdf(akkoordverklaringHTML, klant, akkoordverklaringBestandsnaam(klant));
 }
+/* ============================= DOCUMENT: VERZOEK FISCALE EENHEID OMZETBELASTING (SUBNUMMERS) =============================
+   Derde documenttype, maar architectonisch anders dan de IB/VPB-akkoordverklaringen hierboven: dit is
+   een BRIEF AAN DE BELASTINGDIENST (niet aan de klant) waarin we namens twee klanten — de moeder- en de
+   100%-dochtermaatschappij — een fiscale eenheid omzetbelasting met subnummers aanvragen. Zo'n brief
+   moet met een natte handtekening de deur uit (per post), dus er zit — in tegenstelling tot de IB/VPB-
+   documenten — geen "Versturen per e-mail"-knop aan vast: alleen "PDF downloaden", die je zelf print,
+   ondertekent en post naar het gekozen belastingkantoor. Staat daarom in een eigen sectie "E-mails" op
+   de klantkaart, los van "Documenten" (zie emailsSectieHTML() verderop). */
+function fiscaleEenheidValidatie(klant){
+  const fe = klant.fiscaleEenheid;
+  if(!fe) return 'Geen gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const ontbreekt = [];
+  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
+  if(!dochter) ontbreekt.push('dochteronderneming (koppel een bestaande klant)');
+  if(!fe.moederOmzetbelastingnummer) ontbreekt.push('eigen omzetbelastingnummer');
+  if(!fe.dochterOmzetbelastingnummer) ontbreekt.push('omzetbelastingnummer dochteronderneming');
+  if(!fe.kantoorId || !belastingkantoor(fe.kantoorId)) ontbreekt.push('belastingkantoor');
+  if(!fe.contactpersoon) ontbreekt.push('contactpersoon');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document downloadt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+const FISCALE_EENHEID_BECONNUMMER = '669301';
+/* Opmaak is, net als bij de IB/VPB-documenten, gebouwd aan de hand van het originele Word-sjabloon:
+   logo linksboven, briefgegevens rechtsboven, en daaronder het adres van het gekozen belastingkantoor
+   (dat normaal met de hand werd ingevuld — hier automatisch uit BELASTINGKANTOREN). "Hengelo" als
+   vestigingsplaats bij de datum staat vast (dat is de plaats van AdministratieBox zelf), net als in het
+   origineel. */
+function fiscaleEenheidVerzoekHTML(klant){
+  const fe = klant.fiscaleEenheid;
+  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
+  const dochterNaam = dochter ? dochter.naam : '(dochteronderneming niet gekoppeld)';
+  const kantoor = belastingkantoor(fe.kantoorId);
+  const vandaag = fmtDatumLang(new Date());
+  const labelKolom = '150px';
+  const labelRij = (label, waarde)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${waarde}</div></div>`;
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px;">
+      <img src="${AB_LOGO_B64}" style="height:30px; margin-top:4px;">
+      <div style="font-size:9.5pt; line-height:1.5; text-align:right;">
+        <div style="font-weight:700;">AdministratieBox B.V.</div>
+        <div>Demmersweg 42</div>
+        <div>7556 BN&nbsp;&nbsp;Hengelo</div>
+        <div>085-1093400</div>
+        <div>&nbsp;</div>
+        <div>www.administratiebox.nl</div>
+        <div>info@administratiebox.nl</div>
+        <div>&nbsp;</div>
+        <div>Bankrekening: NL70RABO0191895253</div>
+        <div>BTW nr.: NL854261096B01</div>
+        <div>KvK nr.: 61226734</div>
+      </div>
+    </div>
+
+    <div style="font-weight:700; margin-bottom:2px;">Belastingdienst / Kantoor ${kantoor ? kantoor.naam : '...'}</div>
+    <div style="font-weight:700; margin-bottom:2px;">Postbus ${kantoor ? kantoor.postbus : '....'}</div>
+    <div style="font-weight:700; margin-bottom:24px;">${kantoor ? `${kantoor.postcode} ${kantoor.plaats}` : '.... .. ........'}</div>
+
+    <div style="margin-bottom:18px;">Hengelo, ${vandaag}.</div>
+
+    ${labelRij('Betreft:', `Aanvraag subnummers verstrekken voor fiscale eenheid omzetbelasting ${klant.naam} en ${dochterNaam}.`)}
+    <div style="margin-bottom:12px;"></div>
+
+    <div style="margin-bottom:6px;">Beconnummer: ${FISCALE_EENHEID_BECONNUMMER}</div>
+    <div style="margin-bottom:18px;">Contactpersoon: ${fe.contactpersoon}</div>
+
+    <p style="margin:0 0 12px;">Geachte heer, mevrouw,</p>
+
+    <p style="margin:0 0 12px;">Wij verzoeken namens onze cliënt voor beide bovengenoemde B.V&rsquo;s een fiscale eenheid voor de omzetbelasting aan te vragen wegens economische verbondenheid. (Managementdiensten)</p>
+
+    <p style="margin:0 0 12px;">Tevens verzoeken wij u <b>subnummers te verstrekken</b> zodanig dat beide B.V&rsquo;s afzonderlijk hun eigen aangiften kunnen verrichten (i.v.m. administratieve automatisering).</p>
+
+    <ul style="margin:0 0 12px; padding-left:20px;">
+      <li>${klant.naam} Omzetbelastingnummer ${fe.moederOmzetbelastingnummer} en haar 100% deelneming:</li>
+      <li>${dochterNaam} Omzetbelastingnummer ${fe.dochterOmzetbelastingnummer}</li>
+    </ul>
+
+    <p style="margin:0 0 24px;">Ik zie uw antwoord graag tegemoet.</p>
+
+    <div>Met vriendelijke groet,</div>
+    <div>AdministratieBox B.V.</div>
+    <div style="margin-top:24px;">${fe.contactpersoon}</div>
+    <div>${fe.contactpersoonFunctie || ''}</div>
+  </div>`;
+}
+function fiscaleEenheidVerzoekBestandsnaam(klant){
+  const fe = klant.fiscaleEenheid;
+  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
+  const dochterNaam = dochter ? dochter.naam : 'dochter';
+  return `Verzoek fiscale eenheid BTW - ${klant.naam} en ${dochterNaam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+function downloadFiscaleEenheidVerzoekPdf(klant){
+  downloadDocumentPdf(fiscaleEenheidVerzoekHTML, klant, fiscaleEenheidVerzoekBestandsnaam(klant));
+}
 /* "Documenten"-sectie op de klantkaart: het eerste van (naar verwachting) meerdere geautomatiseerde
    document-versturingen op deze plek, naast de bestaande "Automatische herinneringen". Bewust als eigen
    functie i.p.v. inline in panelHTML() opgezet, zodat een volgend document-type hier straks gewoon een
@@ -3466,6 +3617,39 @@ function documentenSectieHTML(klant){
         uitleg: `Wordt automatisch ingevuld met de VPB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
         previewAttr: 'data-akk-vpb-preview', sendAttr: 'data-akk-vpb-send',
         log: vpbLog, logLabel: 'Akkoordverklaring VPB', actief,
+      })}
+    </div>
+  </div>`;
+}
+/* Eigen kaartje binnen "E-mails" voor een documenttype dat NIET automatisch per e-mail wordt verstuurd
+   (zie fiscaleEenheidVerzoekHTML hierboven) — alleen een downloadknop + downloadgeschiedenis, geen
+   verstuur-knop en geen kill-switch (die geldt alleen voor het automatisch VERSTUREN van documenten). */
+function emailKaartHTML(opts){
+  return `<div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+    <div style="font-weight:700; font-size:12.5px;">${opts.titel}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">${opts.uitleg}</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn sm primary" ${opts.downloadAttr}>⬇ PDF downloaden</button>
+    </div>
+    <div class="rem-log" style="margin-top:10px;">
+      <b style="font-size:12px;">Downloadgeschiedenis</b>
+      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📄 ${opts.logLabel} gedownload — ${l.omschrijving} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog niet gedownload.</div>'}
+    </div>
+  </div>`;
+}
+/* Eigen sectie "E-mails" onder "Documenten" op de klantkaart, voor het verzoek fiscale eenheid
+   BTW-subnummers aan de Belastingdienst. */
+function emailsSectieHTML(klant){
+  const fe = klant.fiscaleEenheid || defaultFiscaleEenheid();
+  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
+  const log = STORE[klant.id].fiscaleEenheidLog || [];
+  return `<div class="panel-section">
+    <h4>E-mails</h4>
+    <div class="inner">
+      ${emailKaartHTML({
+        titel: `Verzoek fiscale eenheid BTW-subnummers${dochter ? ' — ' + klant.naam + ' & ' + dochter.naam : ''}`,
+        uitleg: `Brief aan de Belastingdienst om een fiscale eenheid omzetbelasting met subnummers aan te vragen voor ${klant.naam} en de gekoppelde dochteronderneming (zie "Bewerken"). Wordt niet automatisch verstuurd — download, print, onderteken en verstuur zelf per post naar het gekozen belastingkantoor.`,
+        downloadAttr: 'data-fe-download', log, logLabel: 'Verzoek fiscale eenheid BTW',
       })}
     </div>
   </div>`;
@@ -3615,6 +3799,7 @@ function panelHTML(klant){
     </div>
 
     ${documentenSectieHTML(klant)}
+    ${emailsSectieHTML(klant)}
 
     <div class="panel-section">
       <h4>Notities</h4>
@@ -3715,6 +3900,28 @@ function vpbFormSectionHTML(vpb){
     <div class="field-row"><label>Functie</label><input type="text" id="editVpbFunctie" value="${(vt.functie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Directeur"></div>
   </div></div>`;
 }
+/* Gegevens voor het verzoek fiscale eenheid BTW-subnummers (zie "E-mails" op de klantkaart). Anders dan
+   bij de IB/VPB-secties hierboven gaat het hier niet om de klant zelf t.o.v. de Belastingdienst, maar om
+   de RELATIE tussen deze klant (de moeder) en een ANDERE, al bestaande klant in dit dashboard (de
+   100%-dochteronderneming) — vandaar de select met de overige klanten i.p.v. losse tekstvelden. */
+function fiscaleEenheidFormSectionHTML(fe, klant){
+  const dochterOpties = RAW_KLANTEN.filter(k=>k.id!==klant.id).slice().sort((a,b)=>a.naam.localeCompare(b.naam))
+    .map(k=>`<option value="${k.id}" ${k.id===fe.dochterKlantId?'selected':''}>${k.naam}</option>`).join('');
+  const kantoorOpties = BELASTINGKANTOREN.map(k=>`<option value="${k.id}" ${k.id===fe.kantoorId?'selected':''}>${k.naam}</option>`).join('');
+  return `<div class="panel-section"><h4>Fiscale eenheid BTW-subnummers</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het verzoek aan de Belastingdienst om een fiscale eenheid omzetbelasting met subnummers (zie "E-mails" op de klantkaart). Dit document wordt alleen gedownload, niet automatisch verstuurd — de datum wordt wel altijd automatisch ingevuld.</div>
+    <div class="field-row"><label>Dochteronderneming</label><select id="editFeDochter" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+      <option value="">— kies een klant —</option>${dochterOpties}
+    </select></div>
+    <div class="field-row"><label>Eigen omzetbelastingnr.</label><input type="text" id="editFeMoederOb" value="${(fe.moederOmzetbelastingnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. NL123456789B01"></div>
+    <div class="field-row"><label>Omzetbelastingnr. dochter</label><input type="text" id="editFeDochterOb" value="${(fe.dochterOmzetbelastingnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. NL987654321B01"></div>
+    <div class="field-row"><label>Belastingkantoor</label><select id="editFeKantoor" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+      <option value="">— kies een kantoor —</option>${kantoorOpties}
+    </select></div>
+    <div class="field-row"><label>Contactpersoon</label><input type="text" id="editFeContact" value="${(fe.contactpersoon||'').replace(/"/g,'&quot;')}" placeholder="bijv. eigen naam"></div>
+    <div class="field-row"><label>Functie contactpersoon</label><input type="text" id="editFeFunctie" value="${(fe.contactpersoonFunctie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Boekhouder"></div>
+  </div></div>`;
+}
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
   const f = STORE[klant.id];
@@ -3758,6 +3965,7 @@ function editKlantFormHTML(klant){
     </div></div>
     ${ibFormSectionHTML(klant.ib)}
     ${vpbFormSectionHTML(klant.vpb)}
+    ${fiscaleEenheidFormSectionHTML(klant.fiscaleEenheid, klant)}
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
       <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
@@ -4063,6 +4271,15 @@ function attachEditKlantHandlers(klant){
       naam: document.getElementById('editVpbNaam').value.trim(),
       functie: document.getElementById('editVpbFunctie').value.trim(),
     };
+
+    if(!klant.fiscaleEenheid) klant.fiscaleEenheid = defaultFiscaleEenheid();
+    const fe = klant.fiscaleEenheid;
+    fe.dochterKlantId = document.getElementById('editFeDochter').value;
+    fe.moederOmzetbelastingnummer = document.getElementById('editFeMoederOb').value.trim();
+    fe.dochterOmzetbelastingnummer = document.getElementById('editFeDochterOb').value.trim();
+    fe.kantoorId = document.getElementById('editFeKantoor').value;
+    fe.contactpersoon = document.getElementById('editFeContact').value.trim();
+    fe.contactpersoonFunctie = document.getElementById('editFeFunctie').value.trim();
 
     persistMeta(); persist();
     toast('Klantgegevens bijgewerkt.');
@@ -4974,7 +5191,7 @@ function handleKlantenCSVUpload(e){
         if(tel) bestaand.tel = tel;
         if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -4985,10 +5202,11 @@ function handleKlantenCSVUpload(e){
           doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', extId,
           ib: defaultIbData(),
           vpb: defaultVpbData(),
+          fiscaleEenheid: defaultFiscaleEenheid(),
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
@@ -5283,6 +5501,19 @@ function attachPanelHandlers(klant){
       toast('Versturen mislukt: ' + (e.message || e));
       akkVpbSendBtn.disabled = false; akkVpbSendBtn.textContent = origLabel;
     }
+  });
+
+  const feDownloadBtn = document.querySelector('[data-fe-download]');
+  if(feDownloadBtn) feDownloadBtn.addEventListener('click', ()=>{
+    const fout = fiscaleEenheidValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadFiscaleEenheidVerzoekPdf(klant);
+    const dochter = RAW_KLANTEN.find(k=>k.id===klant.fiscaleEenheid.dochterKlantId);
+    STORE[klant.id].fiscaleEenheidLog = STORE[klant.id].fiscaleEenheidLog || [];
+    STORE[klant.id].fiscaleEenheidLog.push({ ts:new Date().toISOString().slice(0,10), omschrijving: `${klant.naam} & ${dochter?dochter.naam:'?'}` });
+    logActiviteit(`Verzoek fiscale eenheid BTW-subnummers gedownload voor "${klant.naam}"${dochter?` & "${dochter.naam}"`:''}`);
+    persist();
+    refreshPanel(klant);
   });
 
   const saveNot = document.querySelector('[data-save-notities]');
