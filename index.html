@@ -2751,7 +2751,11 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
 }
 function loonheffingOpHoldHTML(){
   const bewerkbaar = magLhBewerken();
-  const list = RAW_KLANTEN.filter(k=>k.staatOpHold).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  let list = RAW_KLANTEN.filter(k=>k.staatOpHold).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
+  }
   if(!list.length) return '';
   const rijen = list.map(k=>{
     const editKey = `ophold|${k.id}`;
@@ -2787,7 +2791,11 @@ function loonheffingOpHoldHTML(){
   </div>`;
 }
 function loonheffingHTML(){
-  const list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+  let list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
+  }
   const bewerkbaar = magLhBewerken();
   const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id);
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
@@ -3917,7 +3925,9 @@ function managementovereenkomstDgaValidatie(klant){
   return null;
 }
 function managementovereenkomstDgaHTML(klant){
+  console.log('[MO DGA HTML] rendering, klant:', klant && klant.id);
   const mo = klant.managementovereenkomstDga;
+  if(!mo){ console.error('[MO DGA HTML] klant.managementovereenkomstDga is undefined'); throw new Error('managementovereenkomstDga is niet aanwezig op klant'); }
   const holding = RAW_KLANTEN.find(k=>k.id===mo.holdingKlantId) || {naam:'(Holding niet gekoppeld)', vpb:{plaats:'...'}};
   const holdingPlaats = (holding.vpb && holding.vpb.plaats) || '...';
   const klantPlaats = (klant.vpb && klant.vpb.plaats) || '...';
@@ -3988,14 +3998,14 @@ function managementovereenkomstDgaHTML(klant){
 
     <p style="margin:0 0 30px;">Aldus overeengekomen en in tweevoud opgemaakt en ondertekend te ${mo.ondertekeningsplaats} op ${vandaag}.</p>
 
-    <div style="display:flex; gap:70px; margin-bottom:8px;">
-      <div>${stip(34)}</div>
-      <div>${stip(34)}</div>
-    </div>
-    <div style="display:flex; gap:70px; font-size:10pt;">
-      <div><b>1. ${holding.naam}</b>,<br>namens deze: ${mo.bestuurderNaam}</div>
-      <div><b>2. ${klant.naam}</b>,<br>namens deze: ${holding.naam}, namens deze: ${mo.bestuurderNaam}</div>
-    </div>
+    <table style="width:100%; border-collapse:collapse; margin-bottom:8px;"><tr>
+      <td style="width:50%; vertical-align:top; padding-right:35px;">${stip(34)}</td>
+      <td style="width:50%; vertical-align:top; padding-left:35px;">${stip(34)}</td>
+    </tr></table>
+    <table style="width:100%; border-collapse:collapse; font-size:10pt;"><tr>
+      <td style="width:50%; vertical-align:top; padding-right:35px;"><b>1. ${holding.naam}</b>,<br>namens deze: ${mo.bestuurderNaam}</td>
+      <td style="width:50%; vertical-align:top; padding-left:35px;"><b>2. ${klant.naam}</b>,<br>namens deze: ${holding.naam}, namens deze: ${mo.bestuurderNaam}</td>
+    </tr></table>
   </div>`;
 }
 function managementovereenkomstDgaMailBodyHTML(klant){
@@ -6146,9 +6156,16 @@ function attachPanelHandlers(klant){
 
   const moDgaPreviewBtn = document.querySelector('[data-mo-dga-preview]');
   if(moDgaPreviewBtn) moDgaPreviewBtn.addEventListener('click', ()=>{
-    const fout = managementovereenkomstDgaValidatie(klant);
-    if(fout){ toast(fout); return; }
-    downloadManagementovereenkomstDgaPdf(klant);
+    console.log('[MO DGA preview] geklikt, klant:', klant && klant.id, klant && klant.naam);
+    try{
+      const fout = managementovereenkomstDgaValidatie(klant);
+      console.log('[MO DGA preview] validatie:', fout || 'OK');
+      if(fout){ toast(fout); return; }
+      downloadManagementovereenkomstDgaPdf(klant);
+    }catch(e){
+      console.error('[MO DGA preview] uitzondering:', e);
+      toast('Fout bij starten van preview: ' + (e && e.message ? e.message : e));
+    }
   });
   const moDgaSendBtn = document.querySelector('[data-mo-dga-send]');
   if(moDgaSendBtn) moDgaSendBtn.addEventListener('click', async ()=>{
