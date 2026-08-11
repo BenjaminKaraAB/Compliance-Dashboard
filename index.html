@@ -468,6 +468,35 @@ function normaliseerFiscaleEenheid(fe){
   });
   return fe;
 }
+/* Zelfde soort velden als bij fiscaleEenheid hierboven, maar dan voor een verzoek om betalingsuitstel
+   aan de Belastingdienst (bijv. na een suppletieaangifte die een eerdere aangifte corrigeert). Ook dit
+   is een brief AAN DE BELASTINGDIENST — geen automatisch e-mailen, alleen downloaden (zie "E-mails" op
+   de klantkaart). ondertekenaarNaam/-Functie zijn losse velden i.p.v. een vaste constante, omdat deze
+   brieven door verschillende medewerkers ondertekend kunnen worden. */
+function defaultBetalingsuitstel(){
+  return {
+    soortAangifte: '',
+    periode: '',
+    omzetbelastingnummer: '',
+    datumOorspronkelijkeAangifte: '',
+    datumSuppletieaangifte: '',
+    origineelBedrag: 0,
+    suppletieBedrag: 0,
+    restantBedrag: 0,
+    omschrijvingBijlagen: '',
+    kantoorId: '',
+    ondertekenaarNaam: '',
+    ondertekenaarFunctie: '',
+  };
+}
+function normaliseerBetalingsuitstel(bu){
+  if(!bu || typeof bu !== 'object') bu = {};
+  const defaults = defaultBetalingsuitstel();
+  Object.keys(defaults).forEach(key=>{
+    if(bu[key]===undefined || bu[key]===null) bu[key] = defaults[key];
+  });
+  return bu;
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -482,6 +511,7 @@ function addKlant(data){
     ib: defaultIbData(),
     vpb: defaultVpbData(),
     fiscaleEenheid: defaultFiscaleEenheid(),
+    betalingsuitstel: defaultBetalingsuitstel(),
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
       VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
@@ -493,7 +523,7 @@ function addKlant(data){
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[],
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[],
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
@@ -1586,6 +1616,7 @@ function migrateData(){
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
+      k.betalingsuitstel = normaliseerBetalingsuitstel(k.betalingsuitstel);
       ['OB','VPB','LH','JR'].forEach(t=>{
         // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
         // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
@@ -1633,10 +1664,11 @@ function migrateData(){
         if(!Array.isArray(f.akkoordLog)) f.akkoordLog = [];
         if(!Array.isArray(f.vpbAkkoordLog)) f.vpbAkkoordLog = [];
         if(!Array.isArray(f.fiscaleEenheidLog)) f.fiscaleEenheidLog = [];
+        if(!Array.isArray(f.betalingsuitstelLog)) f.betalingsuitstelLog = [];
       } else {
         // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
         // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
-        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[] };
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[] };
       }
     }catch(e){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
@@ -3501,7 +3533,7 @@ function fiscaleEenheidValidatie(klant){
   if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document downloadt: ${ontbreekt.join(', ')}.`;
   return null;
 }
-const FISCALE_EENHEID_BECONNUMMER = '669301';
+const ADMINISTRATIEBOX_BECONNUMMER = '669301';
 /* Opmaak is, net als bij de IB/VPB-documenten, gebouwd aan de hand van het originele Word-sjabloon:
    logo linksboven, briefgegevens rechtsboven, en daaronder het adres van het gekozen belastingkantoor
    (dat normaal met de hand werd ingevuld — hier automatisch uit BELASTINGKANTOREN). "Hengelo" als
@@ -3543,7 +3575,7 @@ function fiscaleEenheidVerzoekHTML(klant){
     ${labelRij('Betreft:', `Aanvraag subnummers verstrekken voor fiscale eenheid omzetbelasting ${klant.naam} en ${dochterNaam}.`)}
     <div style="margin-bottom:12px;"></div>
 
-    <div style="margin-bottom:6px;">Beconnummer: ${FISCALE_EENHEID_BECONNUMMER}</div>
+    <div style="margin-bottom:6px;">Beconnummer: ${ADMINISTRATIEBOX_BECONNUMMER}</div>
     <div style="margin-bottom:18px;">Contactpersoon: ${fe.contactpersoon}</div>
 
     <p style="margin:0 0 12px;">Geachte heer, mevrouw,</p>
@@ -3573,6 +3605,96 @@ function fiscaleEenheidVerzoekBestandsnaam(klant){
 }
 function downloadFiscaleEenheidVerzoekPdf(klant){
   downloadDocumentPdf(fiscaleEenheidVerzoekHTML, klant, fiscaleEenheidVerzoekBestandsnaam(klant));
+}
+/* ============================= DOCUMENT: VERZOEK BETALINGSUITSTEL =============================
+   Vierde documenttype, zelfde soort brief-aan-de-Belastingdienst als het fiscale-eenheid-verzoek
+   hierboven (alleen downloaden, geen automatisch e-mailen) — gebaseerd op het geuploade voorbeeld
+   "Bezwaarschrift Berton" (de bestandsnaam noemt "Bezwaarschrift", maar de daadwerkelijke inhoud van
+   dat document is een verzoek om betalingsuitstel na een suppletieaangifte; de template hieronder volgt
+   die daadwerkelijke inhoud). Het origineel bevatte ook een ingescande handtekening-afbeelding — die
+   nemen we bewust NIET over in de automatisch gegenereerde versie (net zoals bij de andere documenten
+   in dit dashboard blijft een echte handtekening altijd iets dat de ondertekenaar zelf met de hand zet);
+   in plaats daarvan tonen we alleen naam + functie als bijschrift. */
+function betalingsuitstelValidatie(klant){
+  const bu = klant.betalingsuitstel;
+  if(!bu) return 'Geen gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const ontbreekt = [];
+  if(!bu.soortAangifte) ontbreekt.push('soort aangifte');
+  if(!bu.periode) ontbreekt.push('periode');
+  if(!bu.omzetbelastingnummer) ontbreekt.push('omzetbelastingnummer');
+  if(!bu.datumOorspronkelijkeAangifte) ontbreekt.push('datum oorspronkelijke aangifte');
+  if(!bu.datumSuppletieaangifte) ontbreekt.push('datum suppletieaangifte');
+  if(!bu.origineelBedrag) ontbreekt.push('oorspronkelijk bedrag');
+  if(!bu.suppletieBedrag) ontbreekt.push('bedrag suppletieaangifte');
+  if(!bu.kantoorId || !belastingkantoor(bu.kantoorId)) ontbreekt.push('belastingkantoor');
+  if(!bu.ondertekenaarNaam) ontbreekt.push('naam ondertekenaar');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document downloadt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+function betalingsuitstelHTML(klant){
+  const bu = klant.betalingsuitstel;
+  const kantoor = belastingkantoor(bu.kantoorId);
+  const vandaag = fmtDatumLang(new Date());
+  const labelKolom = '150px';
+  const labelRij = (label, waarde)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${waarde}</div></div>`;
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px;">
+      <img src="${AB_LOGO_B64}" style="height:30px; margin-top:4px;">
+      <div style="font-size:9.5pt; line-height:1.5; text-align:right;">
+        <div style="font-weight:700;">AdministratieBox B.V.</div>
+        <div>Demmersweg 42</div>
+        <div>7556 BN&nbsp;&nbsp;Hengelo</div>
+        <div>085-1093400</div>
+        <div>&nbsp;</div>
+        <div>www.administratiebox.nl</div>
+        <div>info@administratiebox.nl</div>
+        <div>&nbsp;</div>
+        <div>Bankrekening: NL70RABO0191895253</div>
+        <div>BTW nr.: NL854261096B01</div>
+        <div>KvK nr.: 61226734</div>
+      </div>
+    </div>
+
+    <div style="font-weight:700; margin-bottom:2px;">Belastingdienst / Kantoor ${kantoor ? kantoor.naam : '...'}</div>
+    <div style="font-weight:700; margin-bottom:2px;">Postbus ${kantoor ? kantoor.postbus : '....'}</div>
+    <div style="font-weight:700; margin-bottom:24px;">${kantoor ? `${kantoor.postcode} ${kantoor.plaats}` : '.... .. ........'}</div>
+
+    <div style="margin-bottom:18px;">Hengelo, ${vandaag}</div>
+
+    ${labelRij('Betreft:', `Verzoek om betalingsuitstel aangifte ${bu.soortAangifte} ${bu.periode}`)}
+    <div style="margin-bottom:12px;"></div>
+    ${labelRij('Belastingplichtige:', klant.naam)}
+    ${labelRij('Omzetbelastingnummer:', bu.omzetbelastingnummer)}
+    <div style="margin-bottom:12px;"></div>
+
+    <p style="margin:0 0 12px;">Geachte heer / mevrouw,</p>
+
+    <p style="margin:0 0 12px;">Wij hebben voor bovengenoemde klant d.d. ${bu.datumOorspronkelijkeAangifte} de aangifte ${bu.soortAangifte} ${bu.periode} verricht. Daarna is geconstateerd dat bij de omzet meerdere posten dubbel waren meegenomen.</p>
+
+    <p style="margin:0 0 12px;">We hebben derhalve een suppletieaangifte ${bu.soortAangifte} ${bu.periode} d.d. ${bu.datumSuppletieaangifte} ingediend.</p>
+
+    <p style="margin:0 0 12px;">Aangezien de klant aangaf het volledige bedrag van de in 1<sup>e</sup> instantie ingediende aangifte (${fmtEUR(bu.origineelBedrag)}) niet te kunnen betalen, heb ik aangegeven het bedrag van de suppletieaangifte (${fmtEUR(bu.suppletieBedrag)}) in mindering te brengen en het restant van ${fmtEUR(bu.restantBedrag)} met betalingskenmerk van de aangifte over het ${bu.periode} te voldoen.</p>
+
+    <p style="margin:0 0 12px;">Ik verzoek u dan ook betalingsuitstel voor het bedrag van ${fmtEUR(bu.restantBedrag)} te verstrekken, totdat op de ingediende suppletieaangifte is beslist en deze vervolgens verrekend kan worden.</p>
+
+    <p style="margin:0 0 24px;">Bijgaand vindt u kopieën van ${bu.omschrijvingBijlagen}.</p>
+
+    <div>Met vriendelijke groet,</div>
+    <div>AdministratieBox B.V.</div>
+    <div style="margin-top:34px;">${bu.ondertekenaarNaam}</div>
+    <div>${bu.ondertekenaarFunctie || ''}</div>
+
+    <div style="margin-top:24px;">Beconnummer: ${ADMINISTRATIEBOX_BECONNUMMER}</div>
+    <div style="margin-top:10px;">Bijlagen: ${bu.omschrijvingBijlagen}</div>
+  </div>`;
+}
+function betalingsuitstelBestandsnaam(klant){
+  const bu = klant.betalingsuitstel;
+  return `Verzoek betalingsuitstel ${bu.soortAangifte||''} ${bu.periode||''} - ${klant.naam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+function downloadBetalingsuitstelPdf(klant){
+  downloadDocumentPdf(betalingsuitstelHTML, klant, betalingsuitstelBestandsnaam(klant));
 }
 /* "Documenten"-sectie op de klantkaart: het eerste van (naar verwachting) meerdere geautomatiseerde
    document-versturingen op deze plek, naast de bestaande "Automatische herinneringen". Bewust als eigen
@@ -3637,19 +3759,26 @@ function emailKaartHTML(opts){
     </div>
   </div>`;
 }
-/* Eigen sectie "E-mails" onder "Documenten" op de klantkaart, voor het verzoek fiscale eenheid
-   BTW-subnummers aan de Belastingdienst. */
+/* Eigen sectie "E-mails" onder "Documenten" op de klantkaart, voor brieven aan de Belastingdienst die
+   niet automatisch verstuurd worden (alleen downloaden) — zie emailKaartHTML() hierboven. */
 function emailsSectieHTML(klant){
   const fe = klant.fiscaleEenheid || defaultFiscaleEenheid();
   const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
-  const log = STORE[klant.id].fiscaleEenheidLog || [];
+  const feLog = STORE[klant.id].fiscaleEenheidLog || [];
+  const bu = klant.betalingsuitstel || defaultBetalingsuitstel();
+  const buLog = STORE[klant.id].betalingsuitstelLog || [];
   return `<div class="panel-section">
     <h4>E-mails</h4>
     <div class="inner">
       ${emailKaartHTML({
         titel: `Verzoek fiscale eenheid BTW-subnummers${dochter ? ' — ' + klant.naam + ' & ' + dochter.naam : ''}`,
         uitleg: `Brief aan de Belastingdienst om een fiscale eenheid omzetbelasting met subnummers aan te vragen voor ${klant.naam} en de gekoppelde dochteronderneming (zie "Bewerken"). Wordt niet automatisch verstuurd — download, print, onderteken en verstuur zelf per post naar het gekozen belastingkantoor.`,
-        downloadAttr: 'data-fe-download', log, logLabel: 'Verzoek fiscale eenheid BTW',
+        downloadAttr: 'data-fe-download', log: feLog, logLabel: 'Verzoek fiscale eenheid BTW',
+      })}
+      ${emailKaartHTML({
+        titel: `Verzoek betalingsuitstel${bu.periode ? ' — ' + bu.soortAangifte + ' ' + bu.periode : ''}`,
+        uitleg: `Brief aan de Belastingdienst om betalingsuitstel te vragen na een suppletieaangifte (zie "Bewerken"). Wordt niet automatisch verstuurd — download, print, onderteken en verstuur zelf per post naar het gekozen belastingkantoor.`,
+        downloadAttr: 'data-bu-download', log: buLog, logLabel: 'Verzoek betalingsuitstel',
       })}
     </div>
   </div>`;
@@ -3922,6 +4051,28 @@ function fiscaleEenheidFormSectionHTML(fe, klant){
     <div class="field-row"><label>Functie contactpersoon</label><input type="text" id="editFeFunctie" value="${(fe.contactpersoonFunctie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Boekhouder"></div>
   </div></div>`;
 }
+/* Gegevens voor het verzoek om betalingsuitstel (zie "E-mails" op de klantkaart) — bijv. na een
+   suppletieaangifte die een eerdere aangifte corrigeert. */
+function betalingsuitstelFormSectionHTML(bu){
+  const kantoorOpties = BELASTINGKANTOREN.map(k=>`<option value="${k.id}" ${k.id===bu.kantoorId?'selected':''}>${k.naam}</option>`).join('');
+  return `<div class="panel-section"><h4>Verzoek betalingsuitstel</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor een verzoek om betalingsuitstel aan de Belastingdienst, bijv. na een suppletieaangifte (zie "E-mails" op de klantkaart). Dit document wordt alleen gedownload, niet automatisch verstuurd — de brief-datum wordt wel altijd automatisch ingevuld.</div>
+    <div class="field-row"><label>Soort aangifte</label><input type="text" id="editBuSoort" value="${(bu.soortAangifte||'').replace(/"/g,'&quot;')}" placeholder="bijv. omzetbelasting"></div>
+    <div class="field-row"><label>Periode</label><input type="text" id="editBuPeriode" value="${(bu.periode||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2e kwartaal 2025"></div>
+    <div class="field-row"><label>Omzetbelastingnr.</label><input type="text" id="editBuOb" value="${(bu.omzetbelastingnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. NL123456789B01"></div>
+    <div class="field-row"><label>Datum oorspr. aangifte</label><input type="text" id="editBuDatumOrig" value="${(bu.datumOorspronkelijkeAangifte||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Datum suppletieaangifte</label><input type="text" id="editBuDatumSuppletie" value="${(bu.datumSuppletieaangifte||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Bedrag oorspr. aangifte</label><input type="number" step="0.01" id="editBuBedragOrig" value="${bu.origineelBedrag||0}" style="max-width:130px;"></div>
+    <div class="field-row"><label>Bedrag suppletie</label><input type="number" step="0.01" id="editBuBedragSuppletie" value="${bu.suppletieBedrag||0}" style="max-width:130px;"></div>
+    <div class="field-row"><label>Restant te voldoen</label><input type="number" step="0.01" id="editBuBedragRestant" value="${bu.restantBedrag||0}" style="max-width:130px;"></div>
+    <div class="field-row"><label>Bijlagen (omschrijving)</label><input type="text" id="editBuBijlagen" value="${(bu.omschrijvingBijlagen||'').replace(/"/g,'&quot;')}" placeholder="bijv. de suppletieaangifte en de oorspronkelijke aangifte"></div>
+    <div class="field-row"><label>Belastingkantoor</label><select id="editBuKantoor" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+      <option value="">— kies een kantoor —</option>${kantoorOpties}
+    </select></div>
+    <div class="field-row"><label>Ondertekenaar</label><input type="text" id="editBuOndertekenaar" value="${(bu.ondertekenaarNaam||'').replace(/"/g,'&quot;')}" placeholder="bijv. eigen naam"></div>
+    <div class="field-row"><label>Functie ondertekenaar</label><input type="text" id="editBuOndertekenaarFunctie" value="${(bu.ondertekenaarFunctie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Manager Administratiekantoor"></div>
+  </div></div>`;
+}
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
   const f = STORE[klant.id];
@@ -3966,6 +4117,7 @@ function editKlantFormHTML(klant){
     ${ibFormSectionHTML(klant.ib)}
     ${vpbFormSectionHTML(klant.vpb)}
     ${fiscaleEenheidFormSectionHTML(klant.fiscaleEenheid, klant)}
+    ${betalingsuitstelFormSectionHTML(klant.betalingsuitstel)}
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
       <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
@@ -4280,6 +4432,21 @@ function attachEditKlantHandlers(klant){
     fe.kantoorId = document.getElementById('editFeKantoor').value;
     fe.contactpersoon = document.getElementById('editFeContact').value.trim();
     fe.contactpersoonFunctie = document.getElementById('editFeFunctie').value.trim();
+
+    if(!klant.betalingsuitstel) klant.betalingsuitstel = defaultBetalingsuitstel();
+    const bu = klant.betalingsuitstel;
+    bu.soortAangifte = document.getElementById('editBuSoort').value.trim();
+    bu.periode = document.getElementById('editBuPeriode').value.trim();
+    bu.omzetbelastingnummer = document.getElementById('editBuOb').value.trim();
+    bu.datumOorspronkelijkeAangifte = document.getElementById('editBuDatumOrig').value.trim();
+    bu.datumSuppletieaangifte = document.getElementById('editBuDatumSuppletie').value.trim();
+    bu.origineelBedrag = parseFloat(document.getElementById('editBuBedragOrig').value)||0;
+    bu.suppletieBedrag = parseFloat(document.getElementById('editBuBedragSuppletie').value)||0;
+    bu.restantBedrag = parseFloat(document.getElementById('editBuBedragRestant').value)||0;
+    bu.omschrijvingBijlagen = document.getElementById('editBuBijlagen').value.trim();
+    bu.kantoorId = document.getElementById('editBuKantoor').value;
+    bu.ondertekenaarNaam = document.getElementById('editBuOndertekenaar').value.trim();
+    bu.ondertekenaarFunctie = document.getElementById('editBuOndertekenaarFunctie').value.trim();
 
     persistMeta(); persist();
     toast('Klantgegevens bijgewerkt.');
@@ -5191,7 +5358,7 @@ function handleKlantenCSVUpload(e){
         if(tel) bestaand.tel = tel;
         if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -5203,10 +5370,11 @@ function handleKlantenCSVUpload(e){
           ib: defaultIbData(),
           vpb: defaultVpbData(),
           fiscaleEenheid: defaultFiscaleEenheid(),
+          betalingsuitstel: defaultBetalingsuitstel(),
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
@@ -5512,6 +5680,18 @@ function attachPanelHandlers(klant){
     STORE[klant.id].fiscaleEenheidLog = STORE[klant.id].fiscaleEenheidLog || [];
     STORE[klant.id].fiscaleEenheidLog.push({ ts:new Date().toISOString().slice(0,10), omschrijving: `${klant.naam} & ${dochter?dochter.naam:'?'}` });
     logActiviteit(`Verzoek fiscale eenheid BTW-subnummers gedownload voor "${klant.naam}"${dochter?` & "${dochter.naam}"`:''}`);
+    persist();
+    refreshPanel(klant);
+  });
+  const buDownloadBtn = document.querySelector('[data-bu-download]');
+  if(buDownloadBtn) buDownloadBtn.addEventListener('click', ()=>{
+    const fout = betalingsuitstelValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadBetalingsuitstelPdf(klant);
+    const bu = klant.betalingsuitstel;
+    STORE[klant.id].betalingsuitstelLog = STORE[klant.id].betalingsuitstelLog || [];
+    STORE[klant.id].betalingsuitstelLog.push({ ts:new Date().toISOString().slice(0,10), omschrijving: `${bu.soortAangifte} ${bu.periode}` });
+    logActiviteit(`Verzoek betalingsuitstel (${bu.soortAangifte} ${bu.periode}) gedownload voor "${klant.naam}"`);
     persist();
     refreshPanel(klant);
   });
