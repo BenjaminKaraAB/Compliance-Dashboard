@@ -497,6 +497,55 @@ function normaliseerBetalingsuitstel(bu){
   });
   return bu;
 }
+/* Zesde/zevende documenttype: een arbeidsovereenkomst en een managementovereenkomst voor een DGA
+   (directeur-grootaandeelhouder), gebaseerd op de geuploade Word-sjablonen "Arbeidsovereenkomst DGA
+   concept" en "Managementovereenkomst-DGA concept". Anders dan de fiscale-eenheid-/betalingsuitstel-
+   brieven hierboven zijn dit geen brieven aan de Belastingdienst maar overeenkomsten TUSSEN de klant en
+   de DGA (resp. tussen twee gekoppelde klanten) — die horen dus, net als de IB/VPB-akkoordverklaringen,
+   onder "Documenten" met een echte verstuur-per-e-mail-knop (naar klant.email), gated door dezelfde
+   documentenVersturenActief-kill-switch. */
+function defaultArbeidsovereenkomstDga(){
+  return {
+    bestuurderNaam: '', bestuurderGeboortedatum: '',
+    dgaAanhef: 'Dhr', dgaNaam: '', dgaStraat: '', dgaPostcode: '', dgaPlaats: '', dgaGeboortedatum: '',
+    datumBesluitBestuurder: '', datumBesluitActiviteiten: '',
+    datumIndiensttreding: '',
+    salarisBedrag: 0, vakantietoeslagInclusief: true,
+    ondertekeningsplaats: '',
+  };
+}
+function normaliseerArbeidsovereenkomstDga(ao){
+  if(!ao || typeof ao !== 'object') ao = {};
+  const defaults = defaultArbeidsovereenkomstDga();
+  Object.keys(defaults).forEach(key=>{
+    if(ao[key]===undefined || ao[key]===null) ao[key] = defaults[key];
+  });
+  return ao;
+}
+/* holdingKlantId koppelt (net als fiscaleEenheid.dochterKlantId) aan een ANDERE, al bestaande klant in
+   dit dashboard: de Holding B.V. ("Management B.V." in de overeenkomst). Deze klant zelf wordt hierbij
+   verondersteld "de vennootschap" (de werkmaatschappij) te zijn — dat is bewust zo gekozen omdat
+   AdministratieBox meestal de boekhouding van de werkmaatschappij als hoofd-klantkaart voert. Adresgegevens
+   ("gevestigd te") van beide vennootschappen worden hergebruikt uit hun al ingevulde VPB-gegevens
+   (klant.vpb.plaats) i.p.v. nog een keer apart te worden ingevoerd. */
+function defaultManagementovereenkomstDga(){
+  return {
+    holdingKlantId: '',
+    bestuurderAanhef: 'Dhr', bestuurderNaam: '',
+    datumBenoemingBestuurder: '', ingangsdatum: '',
+    managementfeeBedrag: 0, managementfeeBedragInWoorden: '',
+    eersteJaarAanpassing: '',
+    ondertekeningsplaats: '',
+  };
+}
+function normaliseerManagementovereenkomstDga(mo){
+  if(!mo || typeof mo !== 'object') mo = {};
+  const defaults = defaultManagementovereenkomstDga();
+  Object.keys(defaults).forEach(key=>{
+    if(mo[key]===undefined || mo[key]===null) mo[key] = defaults[key];
+  });
+  return mo;
+}
 function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
@@ -512,6 +561,8 @@ function addKlant(data){
     vpb: defaultVpbData(),
     fiscaleEenheid: defaultFiscaleEenheid(),
     betalingsuitstel: defaultBetalingsuitstel(),
+    arbeidsovereenkomstDga: defaultArbeidsovereenkomstDga(),
+    managementovereenkomstDga: defaultManagementovereenkomstDga(),
     dl:{
       OB:dateOrNa(data.ob, data.obHerh),
       VPB:GEEN_VPB_VORMEN.includes(data.vorm) ? NA() : dateOrNa(data.vpb, data.vpbHerh),
@@ -523,7 +574,7 @@ function addKlant(data){
   RAW_KLANTEN.push(klant);
   STORE[id] = {
     dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10),
-    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[],
+    items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[],
     lh:{ taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'' }
   };
   logActiviteit(`Klant toegevoegd: "${klant.naam}"`);
@@ -1617,6 +1668,8 @@ function migrateData(){
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
       k.betalingsuitstel = normaliseerBetalingsuitstel(k.betalingsuitstel);
+      k.arbeidsovereenkomstDga = normaliseerArbeidsovereenkomstDga(k.arbeidsovereenkomstDga);
+      k.managementovereenkomstDga = normaliseerManagementovereenkomstDga(k.managementovereenkomstDga);
       ['OB','VPB','LH','JR'].forEach(t=>{
         // Een ontbrekende of onverwacht gevormde deadline-invoer (bijv. door een oude import) wordt
         // hersteld naar "niet van toepassing" i.p.v. de pagina te laten crashen zodra deze klant
@@ -1665,10 +1718,12 @@ function migrateData(){
         if(!Array.isArray(f.vpbAkkoordLog)) f.vpbAkkoordLog = [];
         if(!Array.isArray(f.fiscaleEenheidLog)) f.fiscaleEenheidLog = [];
         if(!Array.isArray(f.betalingsuitstelLog)) f.betalingsuitstelLog = [];
+        if(!Array.isArray(f.arbeidsovereenkomstDgaLog)) f.arbeidsovereenkomstDgaLog = [];
+        if(!Array.isArray(f.managementovereenkomstDgaLog)) f.managementovereenkomstDgaLog = [];
       } else {
         // Klant staat wel in RAW_KLANTEN maar heeft helemaal geen STORE-record (bijv. door een
         // onderbroken import) — zonder dit zou elke pagina die deze klant toont alsnog crashen.
-        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[] };
+        STORE[k.id] = { dl:JSON.parse(JSON.stringify(k.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[] };
       }
     }catch(e){
       console.error('Migratie van klant "'+(k && k.naam)+'" ('+(k && k.id)+') mislukt, klant wordt overgeslagen:', e);
@@ -3695,6 +3750,254 @@ function betalingsuitstelBestandsnaam(klant){
 function downloadBetalingsuitstelPdf(klant){
   downloadDocumentPdf(betalingsuitstelHTML, klant, betalingsuitstelBestandsnaam(klant));
 }
+/* ============================= DOCUMENT: ARBEIDSOVEREENKOMST DGA =============================
+   Overeenkomst tussen de klant (werkgever) en de DGA zelf (werknemer) — hoort onder "Documenten" met
+   een echte verstuur-knop, net als de IB/VPB-akkoordverklaringen. Tekst is 1-op-1 overgenomen uit het
+   geuploade sjabloon "Arbeidsovereenkomst DGA concept.docx"; alleen de expliciete invulplekken (namen,
+   adres, geboortedata, datums, salaris) zijn vervangen door de klantgegevens. De ondertekendatum wordt,
+   net als bij de andere documenten, altijd automatisch ingevuld met vandaag. */
+function aanhefLangDga(a){ return a==='Mw' ? 'mevrouw' : 'de heer'; }
+function arbeidsovereenkomstDgaValidatie(klant){
+  const ao = klant.arbeidsovereenkomstDga;
+  if(!ao) return 'Geen gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const ontbreekt = [];
+  if(!ao.bestuurderNaam) ontbreekt.push('naam bestuurder');
+  if(!ao.bestuurderGeboortedatum) ontbreekt.push('geboortedatum bestuurder');
+  if(!ao.dgaNaam) ontbreekt.push('naam DGA');
+  if(!ao.dgaStraat) ontbreekt.push('straat + huisnummer DGA');
+  if(!ao.dgaPostcode) ontbreekt.push('postcode DGA');
+  if(!ao.dgaPlaats) ontbreekt.push('woonplaats DGA');
+  if(!ao.dgaGeboortedatum) ontbreekt.push('geboortedatum DGA');
+  if(!ao.datumBesluitBestuurder) ontbreekt.push('datum besluit bestuurderswijziging');
+  if(!ao.datumBesluitActiviteiten) ontbreekt.push('datum besluit activiteitenwijziging');
+  if(!ao.datumIndiensttreding) ontbreekt.push('datum indiensttreding');
+  if(!ao.salarisBedrag) ontbreekt.push('salaris');
+  if(!ao.ondertekeningsplaats) ontbreekt.push('ondertekeningsplaats');
+  if(!klant.email) ontbreekt.push('e-mailadres van de klant');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document verstuurt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+function arbeidsovereenkomstDgaHTML(klant){
+  const ao = klant.arbeidsovereenkomstDga;
+  const vandaag = fmtDatumLang(new Date());
+  const stip = (n)=> '.'.repeat(n);
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="text-align:center; font-weight:700; font-size:12.5pt; margin-bottom:22px;">ARBEIDSOVEREENKOMST BV DGA</div>
+
+    <p style="margin:0 0 12px;">De ondergetekenden:</p>
+
+    <p style="margin:0 0 10px;">1. ${klant.naam}, ten deze vertegenwoordigd door ${ao.bestuurderNaam} geboren op ${ao.bestuurderGeboortedatum}, hierna te noemen: <b>werkgever</b></p>
+
+    <p style="margin:0 0 10px;">en</p>
+
+    <p style="margin:0 0 14px;">2. ${aanhefLangDga(ao.dgaAanhef)} ${ao.dgaNaam}, wonende te ${ao.dgaPlaats}; ${ao.dgaStraat}; ${ao.dgaPostcode}, geboren op ${ao.dgaGeboortedatum}, hierna te noemen: <b>werknemer</b>,</p>
+
+    <p style="margin:0 0 10px;">in aanmerking nemende dat:</p>
+
+    <p style="margin:0 0 18px;">- in de algemene vergadering d.d. ${ao.datumBesluitBestuurder} is besloten tot vastlegging c.q. wijziging van bestuurder en d.d. ${ao.datumBesluitActiviteiten} wijzigingen van actieve activiteiten als bestuurder de arbeidsvoorwaarden van de directeur-grootaandeelhouder in onderstaande overeenkomst worden vastgelegd.</p>
+
+    <p style="margin:0 0 18px;">verklaren een arbeidsovereenkomst met elkaar te zijn aangegaan onder de volgende voorwaarden:</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 1</div>
+    <p style="margin:0 0 6px;">1. Werkgever neemt werknemer in dienst in de functie van <i>directeur</i>.</p>
+    <p style="margin:0 0 6px;">2. De taak van werknemer is het leiden van de onderneming van werkgever in de ruimste zin van het woord.</p>
+    <p style="margin:0 0 6px;">3. Werknemer heeft alle rechten, verplichtingen en bevoegdheden van een bestuurder in de zin van Boek 2 van het Burgerlijk Wetboek, indien en voor zover deze niet door de statuten van ${klant.naam}, zijn beperkt of uitgebreid.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 2</div>
+    <p style="margin:0 0 6px;">1. De dienstbetrekking vangt aan op ${ao.datumIndiensttreding} en is aangegaan voor <i>onbepaalde tijd</i>. Werknemer is aangesteld in een voltijdsdienstverband.</p>
+    <p style="margin:0 0 6px;">2. Hetgeen in de statuten van de bv is bepaald omtrent beëindiging van de dienstbetrekking geldt.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 3</div>
+    <p style="margin:0 0 6px;">1. Bij het aangaan van deze overeenkomst bedraagt het salaris ${fmtEUR(ao.salarisBedrag)} bruto per maand ${ao.vakantietoeslagInclusief ? 'inclusief' : 'exclusief'} vakantietoeslag.</p>
+    <p style="margin:0 0 6px;">2. Het salaris wordt uitbetaald op uiterlijk de laatste werkdag van de maand op een door werknemer aan werkgever op te geven bankrekeningnummer.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 4</div>
+    <p style="margin:0 0 6px;">1. Werknemer ontvangt van werkgever een vaste onkostenvergoeding van het maximum vastgestelde % in het kader van de werkkostenregeling per maand. Deze onkostenvergoeding is bedoeld ter dekking van kosten van geringe uitgaven (o.a. koffie en versnaperingen onderweg etc.) welke niet als gerichte vrijstellingen kunnen worden gedeclareerd of vanuit praktische overwegingen niet worden gedeclareerd t.b.v. de functie directeur.</p>
+    <p style="margin:0 0 6px;">2. Overige door werknemer gemaakte kosten ten behoeve van de dienstbetrekking worden op declaratiebasis vergoed.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 5</div>
+    <p style="margin:0 0 6px;">Werknemer heeft recht op 25 vakantiedagen per jaar bij een voltijdsdienstverband.</p>
+    <p style="margin:0 0 6px;">Het vakantiejaar loopt van 1 januari tot en met 31 december.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 6</div>
+    <p style="margin:0 0 6px;">1. Bij arbeidsongeschiktheid van werknemer zal werkgever gedurende de eerste 24 maanden 80% van het salaris doorbetalen.</p>
+    <p style="margin:0 0 6px;">2. Doorbetaling van het salaris tijdens arbeidsongeschiktheid zal niet plaatsvinden indien en voor zover werknemer een uitkering uit een arbeidsongeschiktheidsverzekering ontvangt.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 7</div>
+    <p style="margin:0 0 6px;">Werkgever zal aan werknemer geen pensioenrechten verlenen.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 8</div>
+    <p style="margin:0 0 6px;">Werknemer is zowel tijdens de duur als na het beëindigen van deze arbeidsovereenkomst gehouden tot strikte geheimhouding van alles wat hem omtrent de onderneming van werkgever als die van opdrachtgevers, relaties en/of cliënten op welke wijze dan ook bekend is geworden en waaromtrent hem geheimhouding is opgelegd of waarvan hij het vertrouwelijk karakter redelijkerwijs kan vermoeden.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 9</div>
+    <p style="margin:0 0 6px;">1. Op deze arbeidsovereenkomst is uitsluitend het Nederlandse recht van toepassing.</p>
+    <p style="margin:0 0 18px;">2. Alle geschillen, die naar aanleiding van deze overeenkomst tussen werkgever en werknemer mochten ontstaan, zullen worden beslist door de bevoegde rechter in het arrondissement waarin werkgever gevestigd is.</p>
+
+    <p style="margin:24px 0 30px;">Aldus overeengekomen en in tweevoud opgemaakt en ondertekend te ${ao.ondertekeningsplaats} op ${vandaag}.</p>
+
+    <div style="display:flex; gap:70px; font-weight:700; margin-bottom:34px;">
+      <div>Werkgever</div>
+      <div>Werknemer</div>
+    </div>
+    <div style="display:flex; gap:70px;">
+      <div>${stip(34)}</div>
+      <div>${stip(34)}</div>
+    </div>
+    <div style="display:flex; gap:70px; margin-top:6px; font-size:10pt;">
+      <div>${klant.naam}</div>
+      <div>${ao.dgaNaam}</div>
+    </div>
+    <div style="margin-top:14px;">Namens deze: ${ao.bestuurderNaam}</div>
+  </div>`;
+}
+function arbeidsovereenkomstDgaMailBodyHTML(klant){
+  const naam = (klant.contact || klant.naam || '').trim();
+  const boekhouderNaam = (bh(klant.bh)||{naam:'AdministratieBox'}).naam;
+  return `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Beste ${naam || klant.naam},</p>
+    <p>Bijgaand ontvangt u de arbeidsovereenkomst voor de DGA van ${klant.naam}. Wilt u deze controleren, ondertekenen en aan ons retourneren?</p>
+    <p>Met vriendelijke groet,<br>${boekhouderNaam}<br>AdministratieBox</p>
+  </div>`;
+}
+function arbeidsovereenkomstDgaBestandsnaam(klant){
+  return `Arbeidsovereenkomst DGA - ${klant.naam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+function genereerArbeidsovereenkomstDgaPdfBase64(klant){
+  return genereerDocumentPdfBase64(arbeidsovereenkomstDgaHTML, klant, arbeidsovereenkomstDgaBestandsnaam(klant));
+}
+function downloadArbeidsovereenkomstDgaPdf(klant){
+  downloadDocumentPdf(arbeidsovereenkomstDgaHTML, klant, arbeidsovereenkomstDgaBestandsnaam(klant));
+}
+/* ============================= DOCUMENT: MANAGEMENTOVEREENKOMST DGA =============================
+   Overeenkomst tussen twee gekoppelde klanten: deze klant ("de vennootschap"/werkmaatschappij) en een
+   gekoppelde Holding B.V. ("Management B.V.", klant.managementovereenkomstDga.holdingKlantId) — zelfde
+   koppel-patroon als het fiscale-eenheid-verzoek, maar dit document hoort wél onder "Documenten" met een
+   echte verstuur-knop (het is een overeenkomst tussen de partijen, geen brief aan de Belastingdienst).
+   "Gevestigd te" van beide vennootschappen wordt hergebruikt uit hun eigen VPB-vestigingsplaats
+   (klant.vpb.plaats) i.p.v. nog een keer apart ingevoerd te worden. */
+function managementovereenkomstDgaValidatie(klant){
+  const mo = klant.managementovereenkomstDga;
+  if(!mo) return 'Geen gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
+  const holding = RAW_KLANTEN.find(k=>k.id===mo.holdingKlantId);
+  const ontbreekt = [];
+  if(!holding) ontbreekt.push('gekoppelde Holding B.V. (koppel een bestaande klant)');
+  if(!mo.bestuurderNaam) ontbreekt.push('naam bestuurder/manager');
+  if(!mo.datumBenoemingBestuurder) ontbreekt.push('datum benoeming bestuurder');
+  if(!mo.ingangsdatum) ontbreekt.push('ingangsdatum');
+  if(!mo.managementfeeBedrag) ontbreekt.push('managementfee');
+  if(!mo.managementfeeBedragInWoorden) ontbreekt.push('managementfee in woorden');
+  if(!mo.eersteJaarAanpassing) ontbreekt.push('eerste jaar tariefaanpassing');
+  if(!mo.ondertekeningsplaats) ontbreekt.push('ondertekeningsplaats');
+  if(!klant.vpb || !klant.vpb.plaats) ontbreekt.push('vestigingsplaats van deze vennootschap (zie VPB-gegevens bij "Bewerken")');
+  if(holding && (!holding.vpb || !holding.vpb.plaats)) ontbreekt.push('vestigingsplaats van de Holding (zie VPB-gegevens van die klant)');
+  if(!klant.email) ontbreekt.push('e-mailadres van de klant');
+  if(ontbreekt.length) return `Vul eerst het volgende in bij "Bewerken" vóór je dit document verstuurt: ${ontbreekt.join(', ')}.`;
+  return null;
+}
+function managementovereenkomstDgaHTML(klant){
+  const mo = klant.managementovereenkomstDga;
+  const holding = RAW_KLANTEN.find(k=>k.id===mo.holdingKlantId) || {naam:'(Holding niet gekoppeld)', vpb:{plaats:'...'}};
+  const holdingPlaats = (holding.vpb && holding.vpb.plaats) || '...';
+  const klantPlaats = (klant.vpb && klant.vpb.plaats) || '...';
+  const aanhefLang = aanhefLangDga(mo.bestuurderAanhef);
+  const vandaag = fmtDatumLang(new Date());
+  const stip = (n)=> '.'.repeat(n);
+  return `
+  <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
+    <div style="text-align:center; font-weight:700; text-decoration:underline; font-size:12.5pt; margin-bottom:22px;">MANAGEMENTOVEREENKOMST</div>
+
+    <p style="margin:0 0 10px;"><b>De ondergetekenden</b>:</p>
+
+    <p style="margin:0 0 10px;">1. De besloten vennootschap met beperkte aansprakelijkheid <b>${holding.naam}</b>, gevestigd te ${holdingPlaats}, rechtsgeldig vertegenwoordigd door haar directeur ${aanhefLang} ${mo.bestuurderNaam}, hierna genoemd: "Management B.V."</p>
+
+    <p style="margin:0 0 10px;">en</p>
+
+    <p style="margin:0 0 16px;">2. De besloten vennootschap met beperkte aansprakelijkheid <b>${klant.naam}</b>, gevestigd te ${klantPlaats}, rechtsgeldig vertegenwoordigd door ${holding.naam}, de besloten vennootschap met beperkte aansprakelijkheid rechtsgeldig vertegenwoordigd door haar directeur ${aanhefLang} ${mo.bestuurderNaam}, hierna genoemd: "de vennootschap"</p>
+
+    <p style="margin:0 0 8px;"><b>In aanmerking nemende dat:</b></p>
+    <p style="margin:0 0 6px;">- ${aanhefLang} ${mo.bestuurderNaam}, voormeld (hierna tevens genoemd: "Manager"), enige aandeelhouder en tevens enige statutair directeur is van Management B.V.;</p>
+    <p style="margin:0 0 6px;">- Management B.V. d.d. ${mo.datumBenoemingBestuurder} is benoemd tot bestuurder van de vennootschap met de titel directeur;</p>
+    <p style="margin:0 0 6px;">- de vennootschap het management van haar onderneming (mede) aan Management B.V. wenst op te dragen, met ingang van ${mo.ingangsdatum};</p>
+    <p style="margin:0 0 6px;">- Management B.V. bereid is het gewenste management op zich te nemen per voormelde datum, één en ander onder de voorwaarden als hierna omschreven;</p>
+    <p style="margin:0 0 18px;">- dat partijen in deze overeenkomst de afspraken omtrent het management en de directievoering van de vennootschap nader wensen vast te leggen.</p>
+
+    <p style="margin:0 0 18px;"><b>Verklaren te zijn overeengekomen als volgt:</b></p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 1. Opdracht</div>
+    <p style="margin:0 0 6px;">1.1 Management B.V. is met ingang van ${mo.ingangsdatum} benoemd tot directeur van de vennootschap; als zodanig heeft zij alle rechten en verplichtingen, taken en bevoegdheden, die in de statuten van de vennootschap aan de directeur zijn toegekend, respectievelijk opgelegd.</p>
+    <p style="margin:0 0 6px;">1.2 Management B.V. zal met ingang van ${mo.ingangsdatum} en voor de duur van deze overeenkomst als bepaald in artikel 4, haar opdracht vervullen met inachtneming van de wettelijke voorschriften geldend voor het bestuur van vennootschappen, de statutaire bepalingen, besluiten en richtlijnen van de bevoegde organen van de vennootschap en voorts met inachtneming van de bepalingen van deze overeenkomst. Management B.V. is voorts verplicht alles te doen en na te laten wat een goed directeur behoort te doen en na te laten en zal zich naar beste vermogen inzetten om de belangen van de vennootschap -en de daaraan verbonden ondernemingen- zoveel mogelijk te bevorderen.</p>
+    <p style="margin:0 0 6px;">1.3 Voor de feitelijke uitvoering van voormelde opdracht wordt Manager door Management B.V. ingezet. Management B.V. is niet bevoegd naast of in plaats van Manager ook andere personen in te zetten voor de feitelijke uitvoering van de hiervoor vermelde opdracht, tenzij met voorafgaande schriftelijke toestemming door de vennootschap, aan welke toestemming door de vennootschap voorwaarden kunnen worden verboden.</p>
+    <p style="margin:0 0 6px;">1.4 Management B.V. staat ervoor in dat Manager en de andere door Management B.V. ingezette personen als omschreven in artikel 1.3 voor de uitvoering van de opdracht voldoende arbeid, vlijt en kennis ten dienste van de vennootschap zullen stellen en dat de hiervoor bedoelde personen de statuten, besluiten en richtlijnen van de bevoegde organen van de vennootschap zullen naleven.</p>
+    <p style="margin:0 0 6px;">1.5 Management B.V. verplicht zich tevens de vennootschappen waarin de vennootschap direct of indirect aandeelhouder zal zijn (hierna te noemen de "Groepsmaatschappijen") te zullen besturen.</p>
+    <p style="margin:0 0 18px;">1.6 Management B.V. en Manager (laatstgenoemde in zijn hoedanigheid van enig aandeelhouder en statutair bestuurder van Management B.V.) verplichten zich om al hun arbeidstijd en -kracht ter beschikking te stellen voor de uitoefening van de op elk van hen rustende taken en verantwoordelijkheden en zich te onthouden van directe of indirecte betrokkenheid bij nevenactiviteiten welke substantiële inspanningen vergen.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 2. Managementfee</div>
+    <p style="margin:0 0 6px;">2.1 Ter vergoeding van de door Management B.V. in het kader van deze overeenkomst te verrichten diensten is de vennootschap aan Management B.V. een managementfee verschuldigd ten belope van ${fmtEUR(mo.managementfeeBedrag)} (zegge ${mo.managementfeeBedragInWoorden}) exclusief btw per maand, welke maandelijks wordt voldaan. Daarnaast vergoedt de vennootschap aan Management B.V. in het belang van de uitvoering van deze overeenkomst gemaakte kosten. Deze kosten zullen door Management B.V. worden gemotiveerd en gespecificeerd. Over de vergoedingen zal btw worden berekend, tenzij dit als gevolg van het bestaan van een fiscale eenheid voor de omzetbelasting achterwege gelaten kan worden.</p>
+    <p style="margin:0 0 6px;">2.2 De volgende kosten zullen door Management B.V. zelf worden gedragen: eigen beheerskosten.</p>
+    <p style="margin:0 0 6px;">2.3 Met ingang van 1 januari van ieder jaar -voor het eerst in ${mo.eersteJaarAanpassing}- zal de managementfee in onderling overleg kunnen worden aangepast (o.a. in verband met prijscompensatie/inflatiecorrectie). Instemming van de vennootschap is vereist.</p>
+    <p style="margin:0 0 6px; font-style:italic;">2.4 De vennootschap zal aan Management B.V. een bedrijfswagen ter beschikking (doen) stellen, dan wel een nader overeen te komen vergoeding aan Management B.V. verstrekken ten behoeve van een auto voor Manager.</p>
+    <p style="margin:0 0 6px;">2.5 Indien Management B.V. door ziekte van Manager in enig kalenderjaar niet in staat is op alle overeengekomen werkdagen ten behoeve van de vennootschap werkzaam te zijn, wordt de managementfee na zes maanden aaneengesloten ziekte verminderd met 50% (vijftig procent), totdat Manager hersteld is dan wel deze overeenkomst beëindigd is. Onder aaneengesloten ziekte wordt mede verstaan dat Manager tussen twee of meer periodes van ziekte minder dan 2 weken achter elkaar hersteld is.</p>
+    <p style="margin:0 0 18px;">2.6 Partijen hebben zich ervan vergewist dat heffing van loonbelasting en werknemersverzekeringspremies ter zake van de uit te betalen managementvergoedingen sub 2 achterwege kan blijven.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 3. Externe werkzaamheden, geheimhouding, bescheiden</div>
+    <p style="margin:0 0 6px;">1. Management B.V. is verplicht, zowel gedurende de looptijd van deze overeenkomst als na beëindiging daarvan, strikte geheimhouding te betrachten omtrent alle aangelegenheden van de vennootschap en de daaraan verbonden ondernemingen, waarvan het vertrouwelijke karakter geacht kan worden haar bekend te zijn. Het voorgaande lijdt uitzondering voor zover nodig in het kader van de nominale uitvoering door Management B.V. van haar opdracht.</p>
+    <p style="margin:0 0 6px;">2. Alle correspondentie, documenten en andere zaken met inbegrip van kopieën ter zake van de vennootschap en de daaraan verbonden ondernemingen, welke Management B.V. onder zich heeft of krijgt, zijn en blijven eigendom van de vennootschap en zullen bij beëindiging van deze overeenkomst terstond aan de vennootschap ter beschikking worden gesteld.</p>
+    <p style="margin:0 0 18px;">3. Bij overtreding van artikel 3 lid 1 en lid 2 door Management B.V. en/of bij Management B.V. in dienst zijnde personeelsleden zal Management B.V. jegens de vennootschap een direct opeisbare en niet voor rechterlijke matiging vatbare boete verbeuren van € 5.000 voor iedere overtreding en € 500 voor iedere dag dat zodanige overtreding voortduurt, onverminderd het recht van de vennootschap volledige vergoeding van haar schade te vorderen, alsmede in rechte een verbod tot stopzetting daarvan te vorderen.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 4. Looptijd en beëindiging</div>
+    <p style="margin:0 0 6px;">4.1 Deze overeenkomst is aangegaan voor onbepaalde tijd en kan door ieder der partijen te allen tijde worden beëindigd door opzegging aan de wederpartij met inachtneming, van een opzegtermijn van drie maanden.</p>
+    <p style="margin:0 0 6px;">4.2 Indien een der partijen een of meer van haar uit deze overeenkomst voortvloeiende verplichtingen niet, niet tijdig of niet behoorlijk nakomt, en niet binnen dertig dagen nadat de andere partij haar schriftelijk in gebreke heeft gesteld, alsnog voor een juiste nakoming van deze overeenkomst zorgdraagt, zal de andere partij deze overeenkomst kunnen opzeggen zonder tot inachtneming van enige opzegtermijn gehouden te zijn.</p>
+    <p style="margin:0 0 6px;">4.3 Ieder der partijen is gerechtigd deze overeenkomst met onmiddellijke ingang zonder dat rechterlijke tussenkomst vereist is, te beëindigen indien de andere partij in staat van faillissement wordt verklaard dan wel een aanvraag daartoe is ingediend, indien aan haar surséance van betaling wordt verleend, een regeling met al haar crediteuren treft of wordt ontbonden of in liquidatie treedt;</p>
+    <p style="margin:0 0 6px;">4.4 De vennootschap is bovendien gerechtigd deze overeenkomst met onmiddellijke ingang, zonder dat rechterlijke tussenkomst vereist is, te beëindigen indien:</p>
+    <p style="margin:0 0 4px; padding-left:16px;">a) Management B.V. niet langer aandeelhoudster is van ten minste 25% van het geplaatste aandelenkapitaal van de vennootschap.</p>
+    <p style="margin:0 0 4px; padding-left:16px;">b) Management B.V. Manager als statutair bestuurder van Management B.V. ontslaat en/of indien aan het dienstverband van Manager met Management B.V. om welke reden dan ook een einde komt casu quo indien Manager om welke reden dan ook niet langer statutair directeur van Management B.V. is.</p>
+    <p style="margin:0 0 4px; padding-left:16px;">c) Manager is overleden of ten gevolge van langdurige arbeidsongeschiktheid niet meer in staat is zijn arbeidskracht ter beschikking van Management B.V. en/of de vennootschap te stellen. Als langdurige arbeidsongeschiktheid zal gelden een aaneengesloten periode van 12 maanden of langer, waarbij een tussentijdse hervatting, van de werkzaamheden gedurende twee weken of minder niet geacht wordt de aaneengesloten periode te doorbreken.</p>
+    <p style="margin:0 0 10px; padding-left:16px;">d) in strijd wordt gehandeld met een der bepalingen van artikel 3 van deze overeenkomst.</p>
+    <p style="margin:0 0 6px;">4.5 Iedere opzegging dient te geschieden bij een aan de wederpartij gericht aangetekend schrijven, dan wel deurwaardersexploot.</p>
+    <p style="margin:0 0 6px;">4.6 Management B.V. zal in geval van beëindiging van deze overeenkomst op eerste verzoek van de vennootschap alle functies neerleggen welke zij ter uitvoering van deze overeenkomst vervult bij de vennootschap of bij de met de vennootschap gelieerde ondernemingen. Management B.V. zal tevens volledige medewerking verlenen aan de overdracht van haar taken aan haar opvolger, en alle documentatie en informatie met betrekking tot de zaken van de vennootschap waarover zij beschikt aan de vennootschap ter beschikking stellen. Management B.V. zal bewerkstelligen dat Manager het in dit artikellid bepaalde eveneens zal doen. Management B.V. en/of Manager kunnen jegens de vennootschap geen aanspraak maken op enigerlei vergoeding voor de verplichtingen uit hoofde van dit artikellid.</p>
+    <p style="margin:0 0 18px;">4.7 Het bepaalde in dit artikel laat onverlet de mogelijkheid van ieder der partijen tot het instellen van andere rechtsmiddelen.</p>
+
+    <div style="font-weight:700; margin:16px 0 6px;">Artikel 5. Slotbepalingen</div>
+    <p style="margin:0 0 6px;">5.1 Partijen verklaren over en weer de verbintenissen uit deze overeenkomst bij deze te aanvaarden en alle medewerking te verlenen aan de uitvoering of toepassing van deze overeenkomst en alle handelingen te verrichten welke in de ruimste zin daarmede verband houden.</p>
+    <p style="margin:0 0 6px;">5.2 Partijen stellen vast dat buiten deze overeenkomst geen mondelinge overeenkomsten tussen hen tot stand gekomen zijn in strijd hiermee, in afwijking hiervan of in aanvulling hierop. Na de totstandkoming van deze overeenkomst zullen afwijkingen hiervan of aanvullingen hierop alleen in schriftelijke vorm overeengekomen worden en alleen in deze vorm bindend zijn.</p>
+    <p style="margin:0 0 6px;">5.3 Partijen zien af van het recht om jegens elkaar ontbinding van deze overeenkomst te vorderen op grond van het bepaalde in de artikelen 6:265 en 6:266 van het Burgerlijk Wetboek.</p>
+    <p style="margin:0 0 6px;">5.4 Op deze overeenkomst is uitsluitend het Nederlandse recht van toepassing.</p>
+    <p style="margin:0 0 26px;">5.5 Geschillen met betrekking tot deze overeenkomst zullen worden voorgelegd aan de bevoegde Nederlandse rechter.</p>
+
+    <p style="margin:0 0 30px;">Aldus overeengekomen en in tweevoud opgemaakt en ondertekend te ${mo.ondertekeningsplaats} op ${vandaag}.</p>
+
+    <div style="display:flex; gap:70px; margin-bottom:8px;">
+      <div>${stip(34)}</div>
+      <div>${stip(34)}</div>
+    </div>
+    <div style="display:flex; gap:70px; font-size:10pt;">
+      <div><b>1. ${holding.naam}</b>,<br>namens deze: ${mo.bestuurderNaam}</div>
+      <div><b>2. ${klant.naam}</b>,<br>namens deze: ${holding.naam}, namens deze: ${mo.bestuurderNaam}</div>
+    </div>
+  </div>`;
+}
+function managementovereenkomstDgaMailBodyHTML(klant){
+  const naam = (klant.contact || klant.naam || '').trim();
+  const boekhouderNaam = (bh(klant.bh)||{naam:'AdministratieBox'}).naam;
+  return `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Beste ${naam || klant.naam},</p>
+    <p>Bijgaand ontvangt u de managementovereenkomst tussen ${klant.naam} en de gekoppelde Holding B.V. Wilt u deze controleren, ondertekenen en aan ons retourneren?</p>
+    <p>Met vriendelijke groet,<br>${boekhouderNaam}<br>AdministratieBox</p>
+  </div>`;
+}
+function managementovereenkomstDgaBestandsnaam(klant){
+  const mo = klant.managementovereenkomstDga;
+  const holding = RAW_KLANTEN.find(k=>k.id===mo.holdingKlantId);
+  const holdingNaam = holding ? holding.naam : 'Holding';
+  return `Managementovereenkomst DGA - ${klant.naam} en ${holdingNaam}.pdf`.replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+}
+function genereerManagementovereenkomstDgaPdfBase64(klant){
+  return genereerDocumentPdfBase64(managementovereenkomstDgaHTML, klant, managementovereenkomstDgaBestandsnaam(klant));
+}
+function downloadManagementovereenkomstDgaPdf(klant){
+  downloadDocumentPdf(managementovereenkomstDgaHTML, klant, managementovereenkomstDgaBestandsnaam(klant));
+}
 /* "Documenten"-sectie op de klantkaart: het eerste van (naar verwachting) meerdere geautomatiseerde
    document-versturingen op deze plek, naast de bestaande "Automatische herinneringen". Bewust als eigen
    functie i.p.v. inline in panelHTML() opgezet, zodat een volgend document-type hier straks gewoon een
@@ -3702,6 +4005,10 @@ function downloadBetalingsuitstelPdf(klant){
 /* Eén herbruikbaar kaartje per documenttype binnen de "Documenten"-sectie — zo kan een volgend
    documenttype hier straks gewoon een extra aanroep van deze functie worden. */
 function documentKaartHTML(opts){
+  // logRegel: optionele render-functie per logregel (l)=>tekst — standaard (voor IB/VPB, die een
+  // boekjaar hebben) blijft ongewijzigd; nieuwere documenttypes zonder boekjaar (bijv. de DGA-
+  // overeenkomsten) geven hun eigen, simpelere logRegel mee.
+  const logRegel = opts.logRegel || (l=>`${opts.logLabel} ${l.boekjaar} verstuurd naar ${l.naar}`);
   return `<div style="border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
     <div style="font-weight:700; font-size:12.5px;">${opts.titel}</div>
     <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">${opts.uitleg}</div>
@@ -3711,7 +4018,7 @@ function documentKaartHTML(opts){
     </div>
     <div class="rem-log" style="margin-top:10px;">
       <b style="font-size:12px;">Verzendgeschiedenis</b>
-      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${opts.logLabel} ${l.boekjaar} verstuurd naar ${l.naar} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
+      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${logRegel(l)} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
     </div>
   </div>`;
 }
@@ -3721,6 +4028,10 @@ function documentenSectieHTML(klant){
   const actief = !!RECHTEN.documentenVersturenActief;
   const ibLog = STORE[klant.id].akkoordLog || [];
   const vpbLog = STORE[klant.id].vpbAkkoordLog || [];
+  const aoLog = STORE[klant.id].arbeidsovereenkomstDgaLog || [];
+  const moLog = STORE[klant.id].managementovereenkomstDgaLog || [];
+  const moHolding = RAW_KLANTEN.find(k=>k.id===(klant.managementovereenkomstDga||{}).holdingKlantId);
+  const zonderBoekjaarLogRegel = label => l=>`${label} verstuurd naar ${l.naar}`;
   return `<div class="panel-section">
     <h4>Documenten</h4>
     <div class="inner">
@@ -3738,6 +4049,20 @@ function documentenSectieHTML(klant){
         uitleg: `Wordt automatisch ingevuld met de VPB-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
         previewAttr: 'data-akk-vpb-preview', sendAttr: 'data-akk-vpb-send',
         log: vpbLog, logLabel: 'Akkoordverklaring VPB', actief,
+      })}
+      ${documentKaartHTML({
+        titel: `Arbeidsovereenkomst DGA`,
+        uitleg: `Wordt automatisch ingevuld met de DGA-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
+        previewAttr: 'data-ao-dga-preview', sendAttr: 'data-ao-dga-send',
+        log: aoLog, logLabel: 'Arbeidsovereenkomst DGA', actief,
+        logRegel: zonderBoekjaarLogRegel('Arbeidsovereenkomst DGA'),
+      })}
+      ${documentKaartHTML({
+        titel: `Managementovereenkomst DGA${moHolding ? ' — ' + klant.naam + ' & ' + moHolding.naam : ''}`,
+        uitleg: `Wordt automatisch ingevuld met de managementovereenkomst-gegevens (zie "Bewerken") en de datum van vandaag, en verstuurd als PDF-bijlage naar ${klant.email || '(geen e-mailadres ingevuld)'}.`,
+        previewAttr: 'data-mo-dga-preview', sendAttr: 'data-mo-dga-send',
+        log: moLog, logLabel: 'Managementovereenkomst DGA', actief,
+        logRegel: zonderBoekjaarLogRegel('Managementovereenkomst DGA'),
       })}
     </div>
   </div>`;
@@ -4072,6 +4397,67 @@ function betalingsuitstelFormSectionHTML(bu){
     <div class="field-row"><label>Functie ondertekenaar</label><input type="text" id="editBuOndertekenaarFunctie" value="${(bu.ondertekenaarFunctie||'').replace(/"/g,'&quot;')}" placeholder="bijv. Manager Administratiekantoor"></div>
   </div></div>`;
 }
+/* Gegevens voor de arbeidsovereenkomst DGA (zie "Documenten" op de klantkaart) — overeenkomst tussen
+   deze klant (werkgever) en de DGA zelf (werknemer). */
+function arbeidsovereenkomstDgaFormSectionHTML(ao){
+  return `<div class="panel-section"><h4>Arbeidsovereenkomst DGA</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor de arbeidsovereenkomst tussen deze klant (werkgever) en de DGA (werknemer). Datum van ondertekening wordt altijd automatisch ingevuld.</div>
+    <div style="margin-top:4px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Bestuurder (namens werkgever)</div>
+    <div class="field-row"><label>Naam bestuurder</label><input type="text" id="editAoBestuurderNaam" value="${(ao.bestuurderNaam||'').replace(/"/g,'&quot;')}" placeholder="Voorletters + achternaam"></div>
+    <div class="field-row"><label>Geboortedatum bestuurder</label><input type="text" id="editAoBestuurderGeboortedatum" value="${(ao.bestuurderGeboortedatum||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">DGA (werknemer)</div>
+    <div class="field-row"><label>Aanhef</label>
+      <select id="editAoDgaAanhef" style="width:90px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Dhr" ${ao.dgaAanhef==='Dhr'?'selected':''}>Dhr.</option>
+        <option value="Mw" ${ao.dgaAanhef==='Mw'?'selected':''}>Mw.</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Naam DGA</label><input type="text" id="editAoDgaNaam" value="${(ao.dgaNaam||'').replace(/"/g,'&quot;')}" placeholder="Voorletters + achternaam"></div>
+    <div class="field-row"><label>Straat + huisnummer</label><input type="text" id="editAoDgaStraat" value="${(ao.dgaStraat||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field-row"><label>Postcode</label><input type="text" id="editAoDgaPostcode" value="${(ao.dgaPostcode||'').replace(/"/g,'&quot;')}" style="max-width:120px;"></div>
+    <div class="field-row"><label>Woonplaats</label><input type="text" id="editAoDgaPlaats" value="${(ao.dgaPlaats||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field-row"><label>Geboortedatum DGA</label><input type="text" id="editAoDgaGeboortedatum" value="${(ao.dgaGeboortedatum||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Overige gegevens</div>
+    <div class="field-row"><label>Datum besluit bestuurder</label><input type="text" id="editAoDatumBesluitBestuurder" value="${(ao.datumBesluitBestuurder||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Datum besluit activiteiten</label><input type="text" id="editAoDatumBesluitActiviteiten" value="${(ao.datumBesluitActiviteiten||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Datum indiensttreding</label><input type="text" id="editAoDatumIndiensttreding" value="${(ao.datumIndiensttreding||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Salaris (bruto p/m)</label><input type="number" step="0.01" id="editAoSalaris" value="${ao.salarisBedrag||0}" style="max-width:130px;"></div>
+    <div class="field-row"><label>Vakantietoeslag</label>
+      <select id="editAoVakantietoeslag" style="width:150px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="ja" ${ao.vakantietoeslagInclusief?'selected':''}>Inclusief</option>
+        <option value="nee" ${!ao.vakantietoeslagInclusief?'selected':''}>Exclusief</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Ondertekeningsplaats</label><input type="text" id="editAoOndertekeningsplaats" value="${(ao.ondertekeningsplaats||'').replace(/"/g,'&quot;')}"></div>
+  </div></div>`;
+}
+/* Gegevens voor de managementovereenkomst DGA (zie "Documenten" op de klantkaart) — overeenkomst tussen
+   deze klant ("de vennootschap") en een gekoppelde Holding B.V. ("Management B.V."). */
+function managementovereenkomstDgaFormSectionHTML(mo, klant){
+  const holdingOpties = RAW_KLANTEN.filter(k=>k.id!==klant.id).slice().sort((a,b)=>a.naam.localeCompare(b.naam))
+    .map(k=>`<option value="${k.id}" ${k.id===mo.holdingKlantId?'selected':''}>${k.naam}</option>`).join('');
+  return `<div class="panel-section"><h4>Managementovereenkomst DGA</h4><div class="inner">
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor de managementovereenkomst tussen deze klant ("de vennootschap") en een gekoppelde Holding B.V. ("Management B.V."). "Gevestigd te" van beide vennootschappen wordt hergebruikt uit hun VPB-gegevens. Datum van ondertekening wordt altijd automatisch ingevuld.</div>
+    <div class="field-row"><label>Holding B.V.</label><select id="editMoHolding" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+      <option value="">— kies een klant —</option>${holdingOpties}
+    </select></div>
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Bestuurder / Manager</div>
+    <div class="field-row"><label>Aanhef</label>
+      <select id="editMoAanhef" style="width:90px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="Dhr" ${mo.bestuurderAanhef==='Dhr'?'selected':''}>Dhr.</option>
+        <option value="Mw" ${mo.bestuurderAanhef==='Mw'?'selected':''}>Mw.</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Naam bestuurder</label><input type="text" id="editMoBestuurderNaam" value="${(mo.bestuurderNaam||'').replace(/"/g,'&quot;')}" placeholder="Voorletters + achternaam"></div>
+    <div style="margin-top:12px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Overige gegevens</div>
+    <div class="field-row"><label>Datum benoeming bestuurder</label><input type="text" id="editMoDatumBenoeming" value="${(mo.datumBenoemingBestuurder||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Ingangsdatum</label><input type="text" id="editMoIngangsdatum" value="${(mo.ingangsdatum||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
+    <div class="field-row"><label>Managementfee p/m</label><input type="number" step="0.01" id="editMoFee" value="${mo.managementfeeBedrag||0}" style="max-width:130px;"></div>
+    <div class="field-row"><label>Managementfee in woorden</label><input type="text" id="editMoFeeWoorden" value="${(mo.managementfeeBedragInWoorden||'').replace(/"/g,'&quot;')}" placeholder="bijv. vijfduizend euro"></div>
+    <div class="field-row"><label>Eerste jaar aanpassing</label><input type="text" id="editMoEersteJaar" value="${(mo.eersteJaarAanpassing||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2027" style="max-width:110px;"></div>
+    <div class="field-row"><label>Ondertekeningsplaats</label><input type="text" id="editMoOndertekeningsplaats" value="${(mo.ondertekeningsplaats||'').replace(/"/g,'&quot;')}"></div>
+  </div></div>`;
+}
 function editKlantFormHTML(klant){
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${b.id===klant.bh?'selected':''}>${b.naam}</option>`).join('');
   const f = STORE[klant.id];
@@ -4117,6 +4503,8 @@ function editKlantFormHTML(klant){
     ${vpbFormSectionHTML(klant.vpb)}
     ${fiscaleEenheidFormSectionHTML(klant.fiscaleEenheid, klant)}
     ${betalingsuitstelFormSectionHTML(klant.betalingsuitstel)}
+    ${arbeidsovereenkomstDgaFormSectionHTML(klant.arbeidsovereenkomstDga)}
+    ${managementovereenkomstDgaFormSectionHTML(klant.managementovereenkomstDga, klant)}
     <div style="display:flex; gap:8px;">
       <button class="btn primary" data-save-edit-klant="${klant.id}" style="flex:1; justify-content:center; padding:11px;">Wijzigingen opslaan</button>
       <button class="btn ghost" data-cancel-edit-klant="${klant.id}" style="padding:11px 16px;">Annuleren</button>
@@ -4446,6 +4834,35 @@ function attachEditKlantHandlers(klant){
     bu.kantoorId = document.getElementById('editBuKantoor').value;
     bu.ondertekenaarNaam = document.getElementById('editBuOndertekenaar').value.trim();
     bu.ondertekenaarFunctie = document.getElementById('editBuOndertekenaarFunctie').value.trim();
+
+    if(!klant.arbeidsovereenkomstDga) klant.arbeidsovereenkomstDga = defaultArbeidsovereenkomstDga();
+    const ao = klant.arbeidsovereenkomstDga;
+    ao.bestuurderNaam = document.getElementById('editAoBestuurderNaam').value.trim();
+    ao.bestuurderGeboortedatum = document.getElementById('editAoBestuurderGeboortedatum').value.trim();
+    ao.dgaAanhef = document.getElementById('editAoDgaAanhef').value;
+    ao.dgaNaam = document.getElementById('editAoDgaNaam').value.trim();
+    ao.dgaStraat = document.getElementById('editAoDgaStraat').value.trim();
+    ao.dgaPostcode = document.getElementById('editAoDgaPostcode').value.trim();
+    ao.dgaPlaats = document.getElementById('editAoDgaPlaats').value.trim();
+    ao.dgaGeboortedatum = document.getElementById('editAoDgaGeboortedatum').value.trim();
+    ao.datumBesluitBestuurder = document.getElementById('editAoDatumBesluitBestuurder').value.trim();
+    ao.datumBesluitActiviteiten = document.getElementById('editAoDatumBesluitActiviteiten').value.trim();
+    ao.datumIndiensttreding = document.getElementById('editAoDatumIndiensttreding').value.trim();
+    ao.salarisBedrag = parseFloat(document.getElementById('editAoSalaris').value)||0;
+    ao.vakantietoeslagInclusief = document.getElementById('editAoVakantietoeslag').value === 'ja';
+    ao.ondertekeningsplaats = document.getElementById('editAoOndertekeningsplaats').value.trim();
+
+    if(!klant.managementovereenkomstDga) klant.managementovereenkomstDga = defaultManagementovereenkomstDga();
+    const mo = klant.managementovereenkomstDga;
+    mo.holdingKlantId = document.getElementById('editMoHolding').value;
+    mo.bestuurderAanhef = document.getElementById('editMoAanhef').value;
+    mo.bestuurderNaam = document.getElementById('editMoBestuurderNaam').value.trim();
+    mo.datumBenoemingBestuurder = document.getElementById('editMoDatumBenoeming').value.trim();
+    mo.ingangsdatum = document.getElementById('editMoIngangsdatum').value.trim();
+    mo.managementfeeBedrag = parseFloat(document.getElementById('editMoFee').value)||0;
+    mo.managementfeeBedragInWoorden = document.getElementById('editMoFeeWoorden').value.trim();
+    mo.eersteJaarAanpassing = document.getElementById('editMoEersteJaar').value.trim();
+    mo.ondertekeningsplaats = document.getElementById('editMoOndertekeningsplaats').value.trim();
 
     persistMeta(); persist();
     toast('Klantgegevens bijgewerkt.');
@@ -5357,7 +5774,7 @@ function handleKlantenCSVUpload(e){
         if(tel) bestaand.tel = tel;
         if(extId && !bestaand.extId) bestaand.extId = extId;
         bestaand.bh = bhId;
-        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
+        if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
         STORE[bestaand.id].sync = new Date().toISOString().slice(0,10);
         report.bijgewerkt++;
@@ -5370,10 +5787,12 @@ function handleKlantenCSVUpload(e){
           vpb: defaultVpbData(),
           fiscaleEenheid: defaultFiscaleEenheid(),
           betalingsuitstel: defaultBetalingsuitstel(),
+          arbeidsovereenkomstDga: defaultArbeidsovereenkomstDga(),
+          managementovereenkomstDga: defaultManagementovereenkomstDga(),
           dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] }
         };
         RAW_KLANTEN.push(klant);
-        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+        STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
         report.nieuw++;
       }
     });
@@ -5667,6 +6086,74 @@ function attachPanelHandlers(klant){
     }catch(e){
       toast('Versturen mislukt: ' + (e.message || e));
       akkVpbSendBtn.disabled = false; akkVpbSendBtn.textContent = origLabel;
+    }
+  });
+
+  const aoDgaPreviewBtn = document.querySelector('[data-ao-dga-preview]');
+  if(aoDgaPreviewBtn) aoDgaPreviewBtn.addEventListener('click', ()=>{
+    const fout = arbeidsovereenkomstDgaValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadArbeidsovereenkomstDgaPdf(klant);
+  });
+  const aoDgaSendBtn = document.querySelector('[data-ao-dga-send]');
+  if(aoDgaSendBtn) aoDgaSendBtn.addEventListener('click', async ()=>{
+    if(!RECHTEN.documentenVersturenActief){ toast('Automatisch versturen staat nog op hold — zet dit eerst aan bij Instellingen.'); return; }
+    const fout = arbeidsovereenkomstDgaValidatie(klant);
+    if(fout){ toast(fout); return; }
+    if(!confirm(`Arbeidsovereenkomst DGA versturen naar ${klant.email}?`)) return;
+    const origLabel = aoDgaSendBtn.textContent;
+    aoDgaSendBtn.disabled = true; aoDgaSendBtn.textContent = 'Bezig met versturen…';
+    try{
+      const pdfBase64 = await genereerArbeidsovereenkomstDgaPdfBase64(klant);
+      await sendGraphMail(
+        klant.email,
+        `Arbeidsovereenkomst DGA — ${klant.naam}`,
+        arbeidsovereenkomstDgaMailBodyHTML(klant),
+        [{ name: arbeidsovereenkomstDgaBestandsnaam(klant), contentType:'application/pdf', base64: pdfBase64 }]
+      );
+      STORE[klant.id].arbeidsovereenkomstDgaLog = STORE[klant.id].arbeidsovereenkomstDgaLog || [];
+      STORE[klant.id].arbeidsovereenkomstDgaLog.push({ ts:new Date().toISOString().slice(0,10), naar: klant.email });
+      logActiviteit(`Arbeidsovereenkomst DGA verstuurd naar "${klant.naam}"`);
+      persist(); persistMeta();
+      toast(`Arbeidsovereenkomst verstuurd naar ${klant.email}.`);
+      refreshPanel(klant);
+    }catch(e){
+      toast('Versturen mislukt: ' + (e.message || e));
+      aoDgaSendBtn.disabled = false; aoDgaSendBtn.textContent = origLabel;
+    }
+  });
+
+  const moDgaPreviewBtn = document.querySelector('[data-mo-dga-preview]');
+  if(moDgaPreviewBtn) moDgaPreviewBtn.addEventListener('click', ()=>{
+    const fout = managementovereenkomstDgaValidatie(klant);
+    if(fout){ toast(fout); return; }
+    downloadManagementovereenkomstDgaPdf(klant);
+  });
+  const moDgaSendBtn = document.querySelector('[data-mo-dga-send]');
+  if(moDgaSendBtn) moDgaSendBtn.addEventListener('click', async ()=>{
+    if(!RECHTEN.documentenVersturenActief){ toast('Automatisch versturen staat nog op hold — zet dit eerst aan bij Instellingen.'); return; }
+    const fout = managementovereenkomstDgaValidatie(klant);
+    if(fout){ toast(fout); return; }
+    if(!confirm(`Managementovereenkomst DGA versturen naar ${klant.email}?`)) return;
+    const origLabel = moDgaSendBtn.textContent;
+    moDgaSendBtn.disabled = true; moDgaSendBtn.textContent = 'Bezig met versturen…';
+    try{
+      const pdfBase64 = await genereerManagementovereenkomstDgaPdfBase64(klant);
+      await sendGraphMail(
+        klant.email,
+        `Managementovereenkomst DGA — ${klant.naam}`,
+        managementovereenkomstDgaMailBodyHTML(klant),
+        [{ name: managementovereenkomstDgaBestandsnaam(klant), contentType:'application/pdf', base64: pdfBase64 }]
+      );
+      STORE[klant.id].managementovereenkomstDgaLog = STORE[klant.id].managementovereenkomstDgaLog || [];
+      STORE[klant.id].managementovereenkomstDgaLog.push({ ts:new Date().toISOString().slice(0,10), naar: klant.email });
+      logActiviteit(`Managementovereenkomst DGA verstuurd naar "${klant.naam}"`);
+      persist(); persistMeta();
+      toast(`Managementovereenkomst verstuurd naar ${klant.email}.`);
+      refreshPanel(klant);
+    }catch(e){
+      toast('Versturen mislukt: ' + (e.message || e));
+      moDgaSendBtn.disabled = false; moDgaSendBtn.textContent = origLabel;
     }
   });
 
