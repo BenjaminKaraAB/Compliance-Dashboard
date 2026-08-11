@@ -12,7 +12,7 @@
     --navy:#0b1220; --navy2:#141f38; --navy3:#1c2a4a;
     --bg:#f2f4f8; --card:#ffffff; --border:#e4e8f0;
     --text:#16213a; --muted:#65708a; --muted2:#94a0bb;
-    --primary:#2f5dfc; --primary-dark:#1e46e0; --primary-bg:#e9eefe;
+    --primary:#22c58a; --primary-dark:#1ba872; --primary-bg:#dcf7ec;
     --red:#dc2626; --red-bg:#fdeaea; --red-brd:#f6c9c9;
     --amber:#c9770a; --amber-bg:#fdf1de; --amber-brd:#f3d9a8;
     --green:#15884f; --green-bg:#e5f6ee; --green-brd:#bfe6d2;
@@ -34,9 +34,11 @@
     width:250px; flex:0 0 250px; background:linear-gradient(180deg,var(--navy),var(--navy2) 60%, var(--navy3));
     color:#fff; display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
   }
-  .brand{padding:22px 20px 16px; border-bottom:1px solid rgba(255,255,255,.08);}
-  .brand-name{font-size:16px; font-weight:700; letter-spacing:.2px;}
-  .brand-sub{font-size:11.5px; color:#93a0c4; margin-top:3px; letter-spacing:.3px; text-transform:uppercase;}
+  .brand{padding:20px 18px 16px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; gap:8px;}
+  .brand-row{display:flex; align-items:center; gap:10px;}
+  .brand-logo{width:34px; height:34px; flex:0 0 34px;}
+  .brand-name{font-size:16px; font-weight:800; letter-spacing:.2px; color:#fff;}
+  .brand-sub{font-size:10.5px; color:#93a0c4; letter-spacing:.6px; text-transform:uppercase; font-weight:600;}
   .nav{flex:1; padding:14px 12px; display:flex; flex-direction:column; gap:2px;}
   .nav-item{
     display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:9px;
@@ -202,7 +204,7 @@
   .rem-log-item{font-size:11.5px; color:var(--muted); padding:4px 0; display:flex; gap:8px;}
   .rem-log-empty{font-size:12px; color:var(--muted2); font-style:italic;}
 
-  .banner{background:var(--primary-bg); border:1px solid #cddbff; color:var(--primary-dark); border-radius:9px; padding:10px 13px; font-size:11.5px; margin-bottom:14px; line-height:1.5;}
+  .banner{background:var(--primary-bg); border:1px solid #b6ecd2; color:#0f7550; border-radius:9px; padding:10px 13px; font-size:11.5px; margin-bottom:14px; line-height:1.5;}
   textarea{width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; padding:9px; font-size:12.5px; font-family:inherit; resize:vertical;}
 
   .toast-wrap{position:fixed; bottom:22px; right:22px; z-index:60; display:flex; flex-direction:column; gap:8px;}
@@ -1473,7 +1475,15 @@ function render(){
   app.innerHTML = `
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-name">Administratiebox</div>
+        <div class="brand-row">
+          <svg class="brand-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="AdministratieBox logo">
+            <!-- Isometrische kubus in AdministratieBox-groen -->
+            <polygon points="32,8 56,20 32,32 8,20" fill="#4be8a8"/>
+            <polygon points="32,32 56,20 56,44 32,56" fill="#22c58a"/>
+            <polygon points="32,32 8,20 8,44 32,56" fill="#1aa572"/>
+          </svg>
+          <div class="brand-name">AdministratieBox</div>
+        </div>
         <div class="brand-sub">Compliance Dashboard</div>
       </div>
       <div class="nav">
