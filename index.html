@@ -124,7 +124,9 @@
   tbody tr.row-click{cursor:pointer; transition:background .12s ease;}
   tbody tr.row-click:hover{background:#f4faf7;}
   .klant-cell{display:flex; align-items:center; gap:10px;}
-  .klant-avatar{width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11.5px; letter-spacing:.3px; flex:none; box-shadow:inset 0 -1px 0 rgba(0,0,0,.08);}
+  .klant-avatar{width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11.5px; letter-spacing:.3px; flex:none; box-shadow:inset 0 -1px 0 rgba(0,0,0,.08); overflow:hidden;}
+  .klant-avatar.klant-avatar-logo{background:#fff; border:1px solid var(--border); box-shadow:none;}
+  .klant-avatar.klant-avatar-logo img{width:22px; height:22px; object-fit:contain; display:block;}
   .klant-name{font-weight:700; color:var(--text); line-height:1.35;}
   .klant-meta{font-size:11.5px; color:var(--muted); margin-top:1px;}
 
@@ -595,7 +597,7 @@ function addKlant(data){
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
   const klant = {
     id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
-    contact:data.contact||'', email:data.email||'', tel:data.tel||'',
+    contact:data.contact||'', email:data.email||'', tel:data.tel||'', website:data.website||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
     staatOpHold: !!data.staatOpHold,
@@ -1661,10 +1663,32 @@ function initialenVoor(naam){
   if(woorden.length===1) return woorden[0].slice(0,2).toUpperCase();
   return (woorden[0][0] + woorden[woorden.length-1][0]).toUpperCase();
 }
+function klantWebsiteHost(klant){
+  if(!klant || !klant.website) return '';
+  try{
+    // Normaliseer: strip protocol, www., en pad/query/hash — laat alleen de host over.
+    const raw = String(klant.website).trim()
+      .replace(/^\s*https?:\/\//i,'')
+      .replace(/^www\./i,'')
+      .replace(/\/.*$/,'').replace(/[?#].*$/,'');
+    return raw.toLowerCase();
+  }catch(e){ return ''; }
+}
 function klantAvatarHTML(klant){
   const b = bh(klant.bh);
   const kleur = (b && b.kleur) ? b.kleur : '#94a0bb';
-  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialenVoor(klant.naam)}</div>`;
+  const initialen = initialenVoor(klant.naam);
+  const host = klantWebsiteHost(klant);
+  if(host){
+    // Google's favicon-service is gratis, CORS-vrij en werkt voor >99% van de sites.
+    // Bij een 404/laadfout valt de avatar terug op de gekleurde initialen-cirkel (via onerror).
+    // De initialen en boekhouderkleur zitten in data-attributen zodat we geen HTML-escape-lek riskeren
+    // (klantnaam kan aanhalingstekens bevatten).
+    const url = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+    const initialenEsc = String(initialen).replace(/[<>&"']/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}" data-initials="${initialenEsc}" data-kleur="${kleur}"><img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="const p=this.parentNode; p.classList.remove('klant-avatar-logo'); p.style.background=p.dataset.kleur; p.style.color='#fff'; p.style.border='none'; p.textContent=p.dataset.initials;"></div>`;
+  }
+  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialen}</div>`;
 }
 function sidebarFootHTML(){
   const naam = SYNC.account ? (SYNC.account.name || 'Benjamin') : 'Benjamin';
@@ -1758,6 +1782,7 @@ function migrateData(){
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.opHoldReden===undefined) k.opHoldReden='';
+      if(k.website===undefined) k.website='';
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
@@ -4607,6 +4632,7 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
+      <div class="field-row"><label>Website</label><input type="text" id="editKlantWebsite" value="${klant.website||''}" placeholder="bv. www.klant.nl"></div>
     </div></div>
     <div class="panel-section"><h4>Deadlines</h4><div class="inner">
       <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="DD-MM-JJJJ">
@@ -4654,6 +4680,7 @@ function addKlantFormHTML(){
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newKlantEmail" placeholder="naam@bedrijf.nl"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
+      <div class="field-row"><label>Website</label><input type="text" id="newKlantWebsite" placeholder="bv. www.klant.nl"></div>
     </div></div>
     <div class="panel-section"><h4>Eerstvolgende deadlines (optioneel)</h4><div class="inner">
       <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="DD-MM-JJJJ">
@@ -4776,6 +4803,7 @@ function openAddKlantPanel(silent){
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
       tel:document.getElementById('newKlantTel').value.trim(),
+      website:document.getElementById('newKlantWebsite').value.trim(),
       ob:dateOrEmpty(document.getElementById('newKlantOb').value), obHerh:document.getElementById('newKlantObHerh').value,
       vpb:dateOrEmpty(document.getElementById('newKlantVpb').value), vpbHerh:document.getElementById('newKlantVpbHerh').value,
       lh:dateOrEmpty(document.getElementById('newKlantLh').value), lhHerh:document.getElementById('newKlantLhHerh').value,
@@ -4884,6 +4912,7 @@ function attachEditKlantHandlers(klant){
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
     klant.tel = document.getElementById('editKlantTel').value.trim();
+    klant.website = document.getElementById('editKlantWebsite').value.trim();
 
     const f = STORE[klant.id];
     [['OB','editKlantOBDatum','editKlantOBHerh'],['VPB','editKlantVPBDatum','editKlantVPBHerh'],['LH','editKlantLHDatum','editKlantLHHerh'],['JR','editKlantJRDatum','editKlantJRHerh']].forEach(([type,dateId,herhId])=>{
