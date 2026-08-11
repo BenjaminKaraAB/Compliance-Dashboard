@@ -3525,7 +3525,7 @@ function downloadVpbAkkoordverklaringPdf(klant){
 }
 /* scrollX/scrollY:0 compenseren voor de scrollpositie van de pagina op het moment van genereren —
    zonder dit levert html2canvas soms een leeg canvas op als de gebruiker niet bovenaan de pagina staat. */
-const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.98}, html2canvas:{scale:2, useCORS:true, scrollX:0, scrollY:0}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'} };
+const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.95}, html2canvas:{scale:2, useCORS:true, scrollX:0, scrollY:0, windowWidth:800}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'}, pagebreak:{ mode:['avoid-all','css','legacy'] } };
 /* Rendert willekeurige documenthtml (via htmlFn(klant)) in een tijdelijk, voor de gebruiker onzichtbaar
    element, zodat html2pdf.js er een PDF van kan maken zonder dat er iets op het scherm flitst. Generiek
    gemaakt zodat elk documenttype (IB, VPB, en toekomstige) dezelfde PDF-plumbing hergebruikt i.p.v. een
@@ -3556,9 +3556,30 @@ async function genereerDocumentPdfBase64(htmlFn, klant, bestandsnaam){
 }
 function downloadDocumentPdf(htmlFn, klant, bestandsnaam){
   if(typeof html2pdf === 'undefined'){ toast('PDF-bibliotheek kon niet worden geladen (geen internetverbinding?).'); return; }
-  const el = maakVerborgenDocumentElement(htmlFn, klant);
+  let el;
+  try{
+    el = maakVerborgenDocumentElement(htmlFn, klant);
+  }catch(e){
+    toast('Kon documentinhoud niet opbouwen: ' + (e && e.message ? e.message : e));
+    console.error('downloadDocumentPdf HTML-fout:', e);
+    return;
+  }
+  const bron = el.firstElementChild;
+  if(!bron){
+    toast('Interne fout: documentinhoud is leeg. Controleer of alle velden ingevuld zijn.');
+    console.error('downloadDocumentPdf: el.firstElementChild is null', el);
+    try{ document.body.removeChild(el); }catch(_e){}
+    return;
+  }
   const opt = Object.assign({filename: bestandsnaam}, AKKOORD_PDF_OPTS);
-  html2pdf().set(opt).from(el.firstElementChild).save().finally(()=>{ document.body.removeChild(el); });
+  toast('PDF wordt aangemaakt…');
+  html2pdf().set(opt).from(bron).save()
+    .then(()=>{ toast('PDF gedownload: ' + bestandsnaam); })
+    .catch(err=>{
+      toast('PDF-generatie mislukt: ' + (err && err.message ? err.message : err));
+      console.error('downloadDocumentPdf html2pdf-fout:', err);
+    })
+    .finally(()=>{ try{ document.body.removeChild(el); }catch(_e){} });
 }
 function genereerAkkoordverklaringPdfBase64(klant){
   return genereerDocumentPdfBase64(akkoordverklaringHTML, klant, akkoordverklaringBestandsnaam(klant));
