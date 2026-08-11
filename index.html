@@ -276,7 +276,7 @@ let KPI_TACTISCH = {
   Q4: { doel:'', pijlers:[] },
 };
 let KPI_COMMERCIEEL = { week:null, boekhouders:{} };
-/* Actieve Chart.js-instanties op de KPI-lijndiagrammen, bijgehouden zodat we ze expliciet kunnen
+/* Actieve Chart.js-instanties op de KPI-staafdiagrammen, bijgehouden zodat we ze expliciet kunnen
    opruimen (destroy) vóór een canvas opnieuw wordt getekend — anders klaagt Chart.js dat het canvas
    al in gebruik is, of blijven er "spook"-grafieken in het geheugen hangen na elke re-render. */
 let KPI_CHARTS = {};
@@ -1880,7 +1880,7 @@ function kpiOperationeelHTML(){
       <div style="font-size:11.5px; color:var(--muted); margin:14px 0 2px;">Openstaande BTW-aangiftes per kwartaal</div>
       ${kpiLegendHTML(items)}
       <div style="position:relative; width:100%; height:190px;" data-kpi-chart-wrap>
-        <canvas id="kpiBtwChart" role="img" aria-label="Lijndiagram van openstaande BTW-aangiftes per kwartaal"></canvas>
+        <canvas id="kpiBtwChart" role="img" aria-label="Staafdiagram van openstaande BTW-aangiftes per kwartaal"></canvas>
       </div>
     `}
   </div>`;
@@ -2006,13 +2006,13 @@ function kpiCommercieelHTML(){
     return `
       ${kpiLegendHTML(items)}
       <div style="font-size:11.5px; color:var(--muted); margin:10px 0 2px;">Kennismakingsgesprekken</div>
-      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiKgChart" role="img" aria-label="Lijndiagram van kennismakingsgesprekken per week"></canvas></div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiKgChart" role="img" aria-label="Staafdiagram van kennismakingsgesprekken per week"></canvas></div>
       ${kpiCommTabelHTML('kg')}
       <div style="font-size:11.5px; color:var(--muted); margin:16px 0 2px;">Conversieratio</div>
-      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiConvChart" role="img" aria-label="Lijndiagram van conversieratio per week"></canvas></div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiConvChart" role="img" aria-label="Staafdiagram van conversieratio per week"></canvas></div>
       ${kpiCommTabelHTML('conv', '%')}
       <div style="font-size:11.5px; color:var(--muted); margin:16px 0 2px;">Nieuwe klanten</div>
-      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiNkChart" role="img" aria-label="Lijndiagram van nieuwe klanten per week"></canvas></div>
+      <div style="position:relative; width:100%; height:170px;" data-kpi-chart-wrap><canvas id="kpiNkChart" role="img" aria-label="Staafdiagram van nieuwe klanten per week"></canvas></div>
       ${kpiCommTabelHTML('nk')}
     `;
   };
@@ -2054,7 +2054,7 @@ function kpiOverzichtHTML(){
     </div>` : ''}
   </div>`;
 }
-/* Tekent (of hertekent) de KPI-lijndiagrammen. Wordt na elke render() / attachHandlers()-cyclus op de
+/* Tekent (of hertekent) de KPI-staafdiagrammen. Wordt na elke render() / attachHandlers()-cyclus op de
    Overzicht-pagina aangeroepen; no-opt vanzelf als de bijbehorende canvas niet in de DOM staat (paneel
    ingeklapt of in bewerkmodus — dan bestaat de canvas simpelweg niet, en breken we het bestaande
    Chart.js-object daarvoor gewoon af). Vereist dat Chart.js als losse <script> geladen is (zie
@@ -2077,10 +2077,9 @@ function renderKpiCharts(){
     const canvas = document.getElementById(def.id);
     if(!canvas) return;
     KPI_CHARTS[def.id] = new Chart(canvas, {
-      type:'line',
+      type:'bar',
       data:{ labels: def.labels, datasets: items.map((it,i)=>({
-        label: it.naam, data: def.data[i], borderColor: kpiTeamKleur(i), backgroundColor: kpiTeamKleur(i),
-        borderWidth:2, pointRadius:3, pointBackgroundColor: kpiTeamKleur(i), tension:0.25, spanGaps:true
+        label: it.naam, data: def.data[i], backgroundColor: kpiTeamKleur(i), borderRadius:4, maxBarThickness:28
       })) },
       options:{ responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{ display:false } },
@@ -2721,7 +2720,7 @@ function loonheffingOpHoldHTML(){
   }).join('');
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
-      <h3>Op hold</h3>
+      <h3>Inactief</h3>
       <span class="hint">Klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie · ${list.length} klant(en)</span>
     </div>
     <div class="section-body" style="overflow-x:auto;">
@@ -3828,7 +3827,7 @@ function panelHTML(klant){
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
-          <input type="checkbox" id="opHoldToggle" ${klant.staatOpHold?'checked':''}> Staat op hold
+          <input type="checkbox" id="opHoldToggle" ${klant.staatOpHold?'checked':''}> Inactief
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. Verschijnt dan onderaan de Loonheffingen-pagina, onder de geen-DGA-lijst.</div>
         ${klant.staatOpHold ? `<div style="margin-top:8px;">
@@ -4184,7 +4183,7 @@ function addKlantFormHTML(){
       </label>
       <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen.</div>
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
-        <input type="checkbox" id="newKlantOpHold"> Staat op hold
+        <input type="checkbox" id="newKlantOpHold"> Inactief
       </label>
       <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. De reden kun je later toevoegen via het klantdossier.</div>
     </div></div>
@@ -4786,7 +4785,7 @@ function attachHandlers(){
     const input = document.querySelector(`[data-ophold-input="${klantId}"]`);
     klant.opHoldReden = input ? input.value.trim() : '';
     STATE.lhEditNote = null;
-    logActiviteit(`Loonheffingen: reden 'op hold' bijgewerkt bij "${klant.naam}"`);
+    logActiviteit(`Loonheffingen: reden 'inactief' bijgewerkt bij "${klant.naam}"`);
     persistMeta();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -5523,7 +5522,7 @@ function attachPanelHandlers(klant){
   if(opHoldToggle) opHoldToggle.addEventListener('change', (e)=>{
     klant.staatOpHold = e.target.checked;
     persistMeta();
-    toast(e.target.checked ? 'Klant gemarkeerd als "op hold".' : 'Klant niet meer op hold.');
+    toast(e.target.checked ? 'Klant gemarkeerd als "inactief".' : 'Klant niet meer inactief.');
     refreshPanel(klant);
   });
   const opHoldRedenSave = document.getElementById('opHoldRedenSave');
