@@ -65,6 +65,18 @@
   html[data-theme="dark"] .banner{background:rgba(34,197,138,.10); border-color:rgba(34,197,138,.25); color:#4be8a8;}
   html[data-theme="dark"] #cmdkHost .cmdk-panel{background:#0f172a; border-color:#334155;}
   html[data-theme="dark"] #cmdkHost .cmdk-rij:hover, html[data-theme="dark"] #cmdkHost .cmdk-rij.is-active{background:rgba(34,197,138,.13);}
+  /* Force light-mode voor elementen die expliciet [data-theme=light] hebben — nodig voor de verborgen
+     PDF-render-wrapper zodat de PDF nooit dark-mode kleuren pakt. */
+  [data-theme="light"]{
+    --bg:#f6f8fb; --card:#ffffff; --border:#e8ecf3;
+    --text:#0f172a; --muted:#556377; --muted2:#94a0bb;
+    --primary:#22c58a; --primary-dark:#1ba872; --primary-bg:#dcf7ec;
+    --red:#dc2626; --red-bg:#fdeaea; --red-brd:#f6c9c9;
+    --amber:#c9770a; --amber-bg:#fdf1de; --amber-brd:#f3d9a8;
+    --green:#15884f; --green-bg:#e5f6ee; --green-brd:#bfe6d2;
+    --blue:#0e7fa3; --blue-bg:#e5f5fa; --blue-brd:#bfe4ee;
+    color-scheme: light;
+  }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;}
   body{
@@ -1833,7 +1845,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2068,6 +2080,25 @@ function completeLhPeriode(klant, door){
   }
   f.lh.log.push(logEntry);
   if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
+  // Snapshot van de afgeronde periode bewaren met alle aantekeningen, zodat je later kunt
+  // terugbladeren naar wat er per taak is genoteerd in eerdere maanden.
+  if(!Array.isArray(f.lh.periodes)) f.lh.periodes = [];
+  const snap = {
+    id: 'per'+Date.now()+Math.floor(Math.random()*1000),
+    afgerondOp: new Date().toISOString(),
+    door,
+    periodeDatum: logEntry.voorgaandeDatum || null, // de LH-deadline die deze periode vertegenwoordigde
+    taken: f.lh.taken.map(t=>({
+      naam: t.naam,
+      done: !!t.done,
+      door: t.door || null,
+      ts: t.ts || null,
+      aantekeningen: Array.isArray(t.aantekeningen) ? t.aantekeningen.slice() : [],
+    })),
+    overigeNotitie: f.lh.overigeNotitie || '',
+  };
+  f.lh.periodes.push(snap);
+  if(f.lh.periodes.length > 60) f.lh.periodes = f.lh.periodes.slice(-60); // max 5 jaar bij maandelijks
   f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
   persist();
 }
@@ -2136,6 +2167,7 @@ function migrateData(){
           if(f.lh && f.lh.log){
             f.lh.log.forEach(l=>{ if(!l.id) l.id = 'log'+Date.now()+Math.floor(Math.random()*10000); });
           }
+          if(f.lh && !Array.isArray(f.lh.periodes)) f.lh.periodes = [];
         }
         if(f.saldoDebet===undefined) f.saldoDebet = 0;
         if(f.saldoCredit===undefined) f.saldoCredit = 0;
@@ -2924,7 +2956,7 @@ function klantenHTML(){
             return `<tr class="row-click klant-rij ${STATE.selectedKlanten.has(k.id)?'is-selected':''}" data-open-klant="${k.id}" style="--strip:${stripKleur};">
             <td style="padding-left:20px; width:36px;" onclick="event.stopPropagation();"><input type="checkbox" data-bulk-select="${k.id}" ${STATE.selectedKlanten.has(k.id)?'checked':''} style="width:15px; height:15px; accent-color:var(--primary);"></td>
             <td class="strip-cel" style="padding:0;"><div class="rij-strip" style="background:${stripKleur};"></div></td>
-            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm}${k.kvk?' · KvK '+k.kvk:''}</div></td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm}${k.extId?' · Nr. '+k.extId:''}${k.kvk?' · KvK '+k.kvk:''}</div></td>
             <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
@@ -3094,6 +3126,57 @@ function lhNotitiesJaarHTML(k, f){
       ${inhoud}
     </div>`;
 }
+function lhVorigePeriodesHTML(k, f){
+  const periodes = Array.isArray(f.lh && f.lh.periodes) ? f.lh.periodes.slice().reverse() : [];
+  if(!periodes.length) return '';
+  const expanded = STATE.lhPeriodesKlant === k.id;
+  const detailId = STATE.lhPeriodeExpanded;
+  const NL_MAANDEN_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+  const fmtDatumKort = (iso)=>{
+    if(!iso) return '';
+    const d = new Date(iso);
+    return `${d.getDate()} ${NL_MAANDEN_KORT[d.getMonth()]} ${d.getFullYear()}`;
+  };
+  const periodeLabel = (p)=>{
+    if(p.periodeDatum){ const d = new Date(p.periodeDatum); return `${NL_MAANDEN_KORT[d.getMonth()]} ${d.getFullYear()}`; }
+    return `Afgerond op ${fmtDatumKort(p.afgerondOp)}`;
+  };
+  const periodeInhoud = (p)=>{
+    const taakBlokken = (p.taken||[]).map(t=>{
+      const anten = Array.isArray(t.aantekeningen)&&t.aantekeningen.length ? t.aantekeningen.map(a=>`<div style="padding:6px 10px; background:#fff; border:1px solid var(--border); border-radius:6px; margin-top:4px; font-size:11.5px;"><b style="font-weight:600;">${(a.door||'').replace(/</g,'&lt;')}</b> · ${fmtDatumKort(a.ts)}<div style="margin-top:2px;">${(a.tekst||'').replace(/</g,'&lt;')}</div></div>`).join('') : '<div style="font-size:11.5px; color:var(--muted); padding:4px 0;">Geen aantekeningen</div>';
+      const dot = t.done ? '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--green); margin-right:6px;"></span>' : '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--border); margin-right:6px;"></span>';
+      return `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="font-size:12.5px; font-weight:600;">${dot}${t.naam}${t.done?` · afgevinkt door ${t.door||'?'}`:''}</div>
+        ${anten}
+      </div>`;
+    }).join('');
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    return `<div style="padding:10px 12px; background:#fbfcfe;">${taakBlokken}${overige}</div>`;
+  };
+  const periodeRijen = periodes.map(p=>{
+    const isOpen = detailId === p.id;
+    const aantAntekeningen = (p.taken||[]).reduce((n,t)=>n + (Array.isArray(t.aantekeningen)?t.aantekeningen.length:0), 0);
+    const aantAfgevinkt = (p.taken||[]).filter(t=>t.done).length;
+    return `<div style="border-bottom:1px solid var(--border);">
+      <button data-lh-periode-toggle="${k.id}|${p.id}" style="width:100%; padding:10px 12px; border:none; background:${isOpen?'#f4faf7':'transparent'}; cursor:pointer; text-align:left; display:flex; align-items:center; gap:10px;">
+        <span style="font-size:11px; color:var(--muted); transform:rotate(${isOpen?'0':'-90'}deg); transition:transform .15s;">▾</span>
+        <div style="flex:1;">
+          <div style="font-size:12.5px; font-weight:600; text-transform:capitalize;">${periodeLabel(p)}</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:1px;">${aantAfgevinkt}/${(p.taken||[]).length} afgevinkt · ${aantAntekeningen} aantekening${aantAntekeningen===1?'':'en'} · afgerond door ${p.door||'?'}</div>
+        </div>
+      </button>
+      ${isOpen ? periodeInhoud(p) : ''}
+    </div>`;
+  }).join('');
+  return `<div class="rem-log" style="margin-top:14px; border-top:1px solid var(--border); padding-top:10px;">
+    <button data-lh-periodes-toggle="${k.id}" style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:6px; padding:0;">
+      <b style="font-size:12px;">Vorige periodes</b>
+      <span class="hint" style="font-weight:400;">${periodes.length}</span>
+      <span style="font-size:12px; color:var(--muted); margin-left:auto; display:inline-block; transition:transform .15s; transform:rotate(${expanded?'0':'-90'}deg);">▾</span>
+    </button>
+    ${expanded ? `<div style="margin-top:8px; border:1px solid var(--border); border-radius:8px; overflow:hidden;">${periodeRijen || '<div style="padding:12px; color:var(--muted); font-size:12px;">Nog geen afgeronde periodes.</div>'}</div>` : ''}
+  </div>`;
+}
 function loonheffingKlantDetailHTML(k){
   const f = syncLhTaken(k);
   const bewerkbaar = magLhBewerken();
@@ -3220,6 +3303,7 @@ function loonheffingKlantDetailHTML(k){
     ${taakRows}
     ${overigeNotitieHTML}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
+    ${lhVorigePeriodesHTML(k, f)}
     <div class="rem-log" style="margin-top:14px;">
       <button data-lh-activiteit-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; gap:6px; padding:0;">
         <b style="font-size:12px;">Recente activiteit</b>
@@ -4172,7 +4256,7 @@ function downloadVpbAkkoordverklaringPdf(klant){
 }
 /* scrollX/scrollY:0 compenseren voor de scrollpositie van de pagina op het moment van genereren —
    zonder dit levert html2canvas soms een leeg canvas op als de gebruiker niet bovenaan de pagina staat. */
-const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.95}, html2canvas:{scale:2, useCORS:true, scrollX:0, scrollY:0, windowWidth:800}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'}, pagebreak:{ mode:['avoid-all','css','legacy'] } };
+const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.95}, html2canvas:{scale:2, useCORS:true, scrollX:0, scrollY:0, backgroundColor:'#ffffff'}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'}, pagebreak:{ mode:['css','legacy'] } };
 /* Rendert willekeurige documenthtml (via htmlFn(klant)) in een tijdelijk, voor de gebruiker onzichtbaar
    element, zodat html2pdf.js er een PDF van kan maken zonder dat er iets op het scherm flitst. Generiek
    gemaakt zodat elk documenttype (IB, VPB, en toekomstige) dezelfde PDF-plumbing hergebruikt i.p.v. een
@@ -4185,7 +4269,14 @@ const AKKOORD_PDF_OPTS = { margin:0, image:{type:'jpeg', quality:0.95}, html2can
    gemaakt met een negatieve z-index (zit dus achter de rest van de pagina) i.p.v. buiten beeld geschoven. */
 function maakVerborgenDocumentElement(htmlFn, klant){
   const el = document.createElement('div');
-  el.style.position = 'fixed'; el.style.top = '0'; el.style.left = '0'; el.style.zIndex = '-1000'; el.style.pointerEvents = 'none';
+  // Belangrijk: onze document-templates zijn ontworpen op een WITTE achtergrond met donkere tekst.
+  // In dark mode zouden CSS-variabelen die de templates gebruiken (bijv. --text) donker worden en zou
+  // html2canvas een onleesbare PDF genereren. Deze wrapper forceert daarom altijd light-mode kleuren
+  // door color-scheme:light én een expliciete witte achtergrond op de wrapper te zetten.
+  el.style.position = 'fixed'; el.style.top = '0'; el.style.left = '0'; el.style.zIndex = '-1000';
+  el.style.pointerEvents = 'none'; el.style.background = '#ffffff'; el.style.color = '#0f172a';
+  el.style.colorScheme = 'light';
+  el.setAttribute('data-theme', 'light'); // schakelt eventuele [data-theme=dark] regels uit binnen deze subtree
   el.innerHTML = htmlFn(klant);
   document.body.appendChild(el);
   return el;
@@ -4783,7 +4874,7 @@ function panelHTML(klant){
   <div class="panel-head">
     <div class="panel-head-top">
       <div>
-        <div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${klant.vorm} · KvK ${klant.kvk}</div>
+        <div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}</div>
         <div class="panel-klant-name">${klant.naam}</div>
         <div class="panel-klant-meta">
           <span>👤 ${klant.contact}</span>
@@ -5153,6 +5244,7 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>Naam*</label><input type="text" id="editKlantNaam" value="${klant.naam}"></div>
       <div class="field-row"><label>Rechtsvorm</label>${vormSelectHTML('editKlantVorm', klant.vorm)}</div>
       <div class="field-row"><label>Boekhouder*</label><select id="editKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${bhOptions}</select></div>
+      <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="editKlantExtId" value="${klant.extId||''}" placeholder="bv. 1147"></div>
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="editKlantKvk" value="${klant.kvk||''}"></div>
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
@@ -5200,6 +5292,7 @@ function addKlantFormHTML(){
       <div class="field-row"><label>Naam*</label><input type="text" id="newKlantNaam" placeholder="Bedrijfsnaam B.V."></div>
       <div class="field-row"><label>Rechtsvorm</label><select id="newKlantVorm" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="BV">BV</option><option value="Eenmanszaak">Eenmanszaak</option></select></div>
       <div class="field-row"><label>Boekhouder*</label><select id="newKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${bhOptions || '<option value="">Voeg eerst een boekhouder toe</option>'}</select></div>
+      <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="newKlantExtId" placeholder="bv. 1147"></div>
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="newKlantKvk"></div>
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newKlantEmail" placeholder="naam@bedrijf.nl"></div>
@@ -5327,6 +5420,7 @@ function openAddKlantPanel(silent){
     addKlant({
       naam, vorm:document.getElementById('newKlantVorm').value, bh:bhId,
       kvk:document.getElementById('newKlantKvk').value.trim(),
+      extId:document.getElementById('newKlantExtId').value.trim(),
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
       tel:document.getElementById('newKlantTel').value.trim(),
@@ -5451,6 +5545,7 @@ function attachEditKlantHandlers(klant){
     klant.vorm = document.getElementById('editKlantVorm').value;
     klant.bh = bhId;
     klant.kvk = document.getElementById('editKlantKvk').value.trim();
+    klant.extId = document.getElementById('editKlantExtId').value.trim();
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
     klant.tel = document.getElementById('editKlantTel').value.trim();
@@ -6036,6 +6131,18 @@ function attachHandlers(){
     if(e.target.closest('button') || e.target.closest('input')) return;
     const klantId = el.getAttribute('data-lh-toggle-detail');
     STATE.lhExpandedKlant = (STATE.lhExpandedKlant === klantId) ? null : klantId;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-periodes-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    const kid = el.getAttribute('data-lh-periodes-toggle');
+    STATE.lhPeriodesKlant = STATE.lhPeriodesKlant === kid ? null : kid;
+    STATE.lhPeriodeExpanded = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-periode-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    const [kid, pid] = el.getAttribute('data-lh-periode-toggle').split('|');
+    STATE.lhPeriodeExpanded = STATE.lhPeriodeExpanded === pid ? null : pid;
+    STATE.lhPeriodesKlant = kid;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-activiteit-toggle]').forEach(el=>el.addEventListener('click', ()=>{
