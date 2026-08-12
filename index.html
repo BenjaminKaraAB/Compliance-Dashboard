@@ -124,9 +124,7 @@
   tbody tr.row-click{cursor:pointer; transition:background .12s ease;}
   tbody tr.row-click:hover{background:#f4faf7;}
   .klant-cell{display:flex; align-items:center; gap:10px;}
-  .klant-avatar{width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11.5px; letter-spacing:.3px; flex:none; box-shadow:inset 0 -1px 0 rgba(0,0,0,.08); overflow:hidden;}
-  .klant-avatar.klant-avatar-logo{background:#fff; border:1px solid var(--border); box-shadow:none;}
-  .klant-avatar.klant-avatar-logo img{width:22px; height:22px; object-fit:contain; display:block;}
+  .klant-avatar{width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11.5px; letter-spacing:.3px; flex:none; box-shadow:inset 0 -1px 0 rgba(0,0,0,.08);}
   .klant-name{font-weight:700; color:var(--text); line-height:1.35;}
   .klant-meta{font-size:11.5px; color:var(--muted); margin-top:1px;}
 
@@ -597,7 +595,7 @@ function addKlant(data){
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
   const klant = {
     id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
-    contact:data.contact||'', email:data.email||'', tel:data.tel||'', website:data.website||'',
+    contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
     staatOpHold: !!data.staatOpHold,
@@ -1206,11 +1204,16 @@ async function pushRemote(allowInteractive){
     await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SYNC.siteId}/lists/${SYNC.listId}/items/1/fields`, {
       method:'PATCH', body: JSON.stringify({ Data: dataStr })
     }, !!allowInteractive);
+    // Bewaar grootten om in de Instellingen-status te tonen hoe vol SharePoint zit.
+    SYNC.lastPayloadRawBytes = rawJson.length;
+    SYNC.lastPayloadGzBytes = dataStr.length;
+    SYNC.lastPayloadCompressed = (dataStr !== rawJson);
     SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
     SYNC.pendingLocalChanges = false; // succesvol gepusht → niets meer pending
     // Onthoud direct de string die we net hebben verzonden (gecomprimeerd of niet) zodat een fetch
     // die exact deze data terugkrijgt niet nutteloos opnieuw parse+migrate+render triggert.
     try{ laatstVerwerkteSyncData = dataStr; }catch(_e){}
+    console.log(`[sync push] ${SYNC.lastPayloadCompressed?'gzip':'plain'} — ${(SYNC.lastPayloadGzBytes/1024).toFixed(1)} KB verzonden` + (SYNC.lastPayloadCompressed ? ` (was ${(SYNC.lastPayloadRawBytes/1024).toFixed(1)} KB ongecomprimeerd)` : ''));
     updateSyncIndicator();
     persistSync();
     return true;
@@ -1779,6 +1782,12 @@ function syncLhTaken(klant){
   return f;
 }
 function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
+function fmtBytes(n){
+  if(!n && n !== 0) return '—';
+  if(n < 1024) return n + ' B';
+  if(n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/(1024*1024)).toFixed(2) + ' MB';
+}
 function huidigeGebruikerEmail(){ return SYNC.account && SYNC.account.username ? SYNC.account.username : 'niet ingelogd'; }
 function initialenVoor(naam){
   const s = String(naam||'').trim();
@@ -1787,130 +1796,13 @@ function initialenVoor(naam){
   if(woorden.length===1) return woorden[0].slice(0,2).toUpperCase();
   return (woorden[0][0] + woorden[woorden.length-1][0]).toUpperCase();
 }
-function klantWebsiteHost(klant){
-  if(!klant || !klant.website) return '';
-  try{
-    // Normaliseer: strip protocol, www., en pad/query/hash — laat alleen de host over.
-    const raw = String(klant.website).trim()
-      .replace(/^\s*https?:\/\//i,'')
-      .replace(/^www\./i,'')
-      .replace(/\/.*$/,'').replace(/[?#].*$/,'');
-    return raw.toLowerCase();
-  }catch(e){ return ''; }
-}
-
-/* ============================= LOGO-CACHE =============================
-   Waarom een cache? Zonder cache haalt de browser bij ELKE render (elke klik/refresh) opnieuw het
-   favicon-plaatje op via Google. Twee problemen: (1) ad-blockers blokkeren vaak
-   google.com/s2/favicons als tracking en tonen dan telkens initialen; (2) Google's service is niet
-   100% betrouwbaar bij herhaalde requests. Fix: zodra een logo één keer succesvol geladen is,
-   converteren we het via een canvas naar een data-URL en bewaren die in localStorage. Bij volgende
-   renders wordt de img direct met die data-URL geladen — zonder network, zonder ad-blocker in de
-   weg, en de logo's blijven na refresh gewoon staan.
-   Providers-cascade: als het eerste endpoint mislukt proberen we DuckDuckGo als backup; pas als
-   ALLE providers falen wordt de host gemarkeerd als 'FAIL' (met een timestamp zodat we het later
-   nog eens kunnen proberen — bijv. 24u later — als de site alsnog een favicon publiceert). */
-const LOGO_CACHE_KEY = 'compliance_dashboard_logo_cache_v1';
-const LOGO_FAIL_RETRY_MS = 24 * 60 * 60 * 1000; // 24 uur
-let LOGO_CACHE = (function loadLogoCache(){
-  try{ return JSON.parse(localStorage.getItem(LOGO_CACHE_KEY) || '{}') || {}; }catch(e){ return {}; }
-})();
-let _logoCachePersistTimer = null;
-function persistLogoCache(){
-  clearTimeout(_logoCachePersistTimer);
-  _logoCachePersistTimer = setTimeout(()=>{
-    try{ localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(LOGO_CACHE)); }catch(e){}
-  }, 500);
-}
-function logoProvidersVoor(host){
-  return [
-    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
-    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
-  ];
-}
-/* Zet een geladen img om naar een data-URL zodat we hem lokaal kunnen bewaren. Vereist dat de img
-   met crossorigin="anonymous" geladen is EN dat de server CORS-headers stuurt — bij Google's favicon-
-   service is dat het geval. Als canvas.toDataURL() een SecurityError gooit (tainted canvas) vallen
-   we terug op de URL zelf cachen; dat helpt niet tegen ad-blockers maar wel tegen de gewone flikkering. */
-function _imgNaarDataUrl(img){
-  try{
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth || 32; c.height = img.naturalHeight || 32;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    return c.toDataURL('image/png');
-  }catch(e){ return null; }
-}
 function klantAvatarHTML(klant){
   const b = bh(klant.bh);
   const kleur = (b && b.kleur) ? b.kleur : '#94a0bb';
   const initialen = initialenVoor(klant.naam);
-  const host = klantWebsiteHost(klant);
   const initialenEsc = String(initialen).replace(/[<>&"']/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
-
-  if(host){
-    const cached = LOGO_CACHE[host];
-    // Cache-hit: bekend logo → laadt lokaal, geen network, geen ad-blocker in de weg.
-    if(cached && cached.data && typeof cached.data === 'string' && cached.data.indexOf('data:')===0){
-      return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}"><img src="${cached.data}" alt=""></div>`;
-    }
-    // Cache-hit: bekend om te falen (en nog binnen retry-venster) → skip img volledig,
-    // geen flikkering, meteen initialen. Na LOGO_FAIL_RETRY_MS proberen we opnieuw.
-    if(cached && cached.fail && (Date.now() - cached.fail) < LOGO_FAIL_RETRY_MS){
-      return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'} (geen logo beschikbaar voor ${host})">${initialenEsc}</div>`;
-    }
-    // Nog niet in cache (of retry-venster verstreken): probeer live te laden. Bij succes
-    // → converteer naar data-URL en cache. Bij fout → probeer volgende provider; bij totale
-    // mislukking → cache als 'FAIL' zodat volgende render meteen initialen toont.
-    const providers = logoProvidersVoor(host).map(u=>JSON.stringify(u)).join(',');
-    return `<div class="klant-avatar klant-avatar-logo" title="Website: ${host}" data-host="${host}" data-initials="${initialenEsc}" data-kleur="${kleur}"><img crossorigin="anonymous" referrerpolicy="no-referrer" loading="lazy" data-providers='[${providers}]' data-provider-idx="0" src="${logoProvidersVoor(host)[0]}" alt="" onload="window.__onLogoLoad&&window.__onLogoLoad(this)" onerror="window.__onLogoError&&window.__onLogoError(this)"></div>`;
-  }
   return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialenEsc}</div>`;
 }
-
-/* Wereldwijde onload/onerror handlers — één keer geregistreerd op window i.p.v. per img inline
-   omdat inline handlers strenge quote-escaping vergen die snel breekt bij data-URLs met slashes en
-   plussen. window.__onLogoLoad/Error zijn expliciet globaal zodat ze uit de inline attributen
-   aanroepbaar zijn zonder CSP-problemen. */
-window.__onLogoLoad = function(img){
-  const host = img.parentNode && img.parentNode.dataset && img.parentNode.dataset.host;
-  if(!host) return;
-  // Sommige favicon-services geven een 200 OK terug met een 1x1 placeholder als er GEEN favicon
-  // gevonden is. Zo'n "leeg" logo willen we niet cachen — behandel het als een fout en probeer de
-  // volgende provider (of val terug op initialen).
-  if(!img.naturalWidth || img.naturalWidth < 8){
-    return window.__onLogoError(img);
-  }
-  const dataUrl = _imgNaarDataUrl(img);
-  if(dataUrl){
-    LOGO_CACHE[host] = { data: dataUrl, ts: Date.now() };
-    persistLogoCache();
-  }
-};
-window.__onLogoError = function(img){
-  const p = img.parentNode; if(!p) return;
-  const host = p.dataset && p.dataset.host;
-  let providers = [];
-  try{ providers = JSON.parse(p.querySelector('img').dataset.providers || '[]'); }catch(e){}
-  let idx = parseInt(img.dataset.providerIdx || '0', 10);
-  idx++;
-  if(providers[idx]){
-    // Probeer volgende provider (bijv. DuckDuckGo na Google-fout)
-    img.dataset.providerIdx = String(idx);
-    img.src = providers[idx];
-    return;
-  }
-  // Alle providers geprobeerd, allemaal mislukt → cache 'FAIL' met timestamp en toon initialen.
-  if(host){
-    LOGO_CACHE[host] = { fail: Date.now() };
-    persistLogoCache();
-  }
-  p.classList.remove('klant-avatar-logo');
-  p.style.background = p.dataset.kleur || '#94a0bb';
-  p.style.color = '#fff';
-  p.style.border = 'none';
-  p.textContent = p.dataset.initials || '?';
-};
 function sidebarFootHTML(){
   const naam = SYNC.account ? (SYNC.account.name || 'Benjamin') : 'Benjamin';
   const mail = huidigeGebruikerEmail();
@@ -2004,7 +1896,6 @@ function migrateData(){
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.opHoldReden===undefined) k.opHoldReden='';
-      if(k.website===undefined) k.website='';
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
@@ -3585,6 +3476,29 @@ function instellingenHTML(){
         Status: <b style="color:${SYNC.lastError?'var(--red)':'var(--green)'}">${!SYNC.enabled ? 'Uitgeschakeld' : (SYNC.lastError ? 'Fout — '+SYNC.lastError : (SYNC.account ? 'Ingelogd als '+SYNC.account.username : 'Nog niet ingelogd'))}</b>
         ${SYNC.lastSync ? ' · laatst gelukt: '+new Date(SYNC.lastSync).toLocaleString('nl-NL') : ''}
       </div>
+      ${SYNC.lastPayloadGzBytes ? (function(){
+        const gz = SYNC.lastPayloadGzBytes;
+        const raw = SYNC.lastPayloadRawBytes || 0;
+        // SharePoint "Multiple lines of text" met "Unlimited length" aangevinkt: ~1 MB werkbaar
+        const limiet = 1024 * 1024;
+        const pct = Math.min(100, (gz / limiet) * 100);
+        const reductie = raw ? Math.round((1 - gz/raw) * 100) : 0;
+        const balkKleur = pct < 60 ? 'var(--green)' : (pct < 85 ? 'var(--amber)' : 'var(--red)');
+        return `<div style="margin-top:10px; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span><b>SharePoint gevuld:</b> ${fmtBytes(gz)} van ~${fmtBytes(limiet)} (Multiple lines of text, unlimited)</span>
+            <span style="color:${balkKleur}; font-weight:700;">${pct.toFixed(1)}%</span>
+          </div>
+          <div style="height:6px; background:var(--border); border-radius:3px; overflow:hidden;">
+            <div style="height:100%; width:${pct}%; background:${balkKleur}; transition:width .3s;"></div>
+          </div>
+          <div style="margin-top:6px; color:var(--muted); font-size:11.5px;">
+            ${SYNC.lastPayloadCompressed
+              ? `Ongecomprimeerd: ${fmtBytes(raw)} → gzip: ${fmtBytes(gz)} (${reductie}% kleiner)`
+              : `Ongecomprimeerd (jouw browser ondersteunt geen gzip): ${fmtBytes(gz)}`}
+          </div>
+        </div>`;
+      })() : ''}
     </div>
   </div>
 
@@ -4854,7 +4768,6 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
-      <div class="field-row"><label>Website</label><input type="text" id="editKlantWebsite" value="${klant.website||''}" placeholder="bv. www.klant.nl"></div>
     </div></div>
     <div class="panel-section"><h4>Deadlines</h4><div class="inner">
       <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="DD-MM-JJJJ">
@@ -4902,7 +4815,6 @@ function addKlantFormHTML(){
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newKlantEmail" placeholder="naam@bedrijf.nl"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
-      <div class="field-row"><label>Website</label><input type="text" id="newKlantWebsite" placeholder="bv. www.klant.nl"></div>
     </div></div>
     <div class="panel-section"><h4>Eerstvolgende deadlines (optioneel)</h4><div class="inner">
       <div class="field-row"><label>OB</label><input type="text" id="newKlantOb" placeholder="DD-MM-JJJJ">
@@ -5025,7 +4937,6 @@ function openAddKlantPanel(silent){
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
       tel:document.getElementById('newKlantTel').value.trim(),
-      website:document.getElementById('newKlantWebsite').value.trim(),
       ob:dateOrEmpty(document.getElementById('newKlantOb').value), obHerh:document.getElementById('newKlantObHerh').value,
       vpb:dateOrEmpty(document.getElementById('newKlantVpb').value), vpbHerh:document.getElementById('newKlantVpbHerh').value,
       lh:dateOrEmpty(document.getElementById('newKlantLh').value), lhHerh:document.getElementById('newKlantLhHerh').value,
@@ -5134,7 +5045,6 @@ function attachEditKlantHandlers(klant){
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
     klant.tel = document.getElementById('editKlantTel').value.trim();
-    klant.website = document.getElementById('editKlantWebsite').value.trim();
 
     const f = STORE[klant.id];
     [['OB','editKlantOBDatum','editKlantOBHerh'],['VPB','editKlantVPBDatum','editKlantVPBHerh'],['LH','editKlantLHDatum','editKlantLHHerh'],['JR','editKlantJRDatum','editKlantJRHerh']].forEach(([type,dateId,herhId])=>{
