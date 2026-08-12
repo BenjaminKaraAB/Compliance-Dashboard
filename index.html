@@ -39,7 +39,24 @@
   .sidebar{
     width:250px; flex:0 0 250px; background:#ffffff; border-right:1px solid var(--border);
     color:var(--text); display:flex; flex-direction:column; position:sticky; top:0; height:100vh;
+    transition: width .18s ease, flex-basis .18s ease;
   }
+  .sidebar.is-collapsed{width:64px; flex-basis:64px;}
+  .sidebar.is-collapsed .brand-name,
+  .sidebar.is-collapsed .brand-sub,
+  .sidebar.is-collapsed .nav-group-label,
+  .sidebar.is-collapsed .nav-item span,
+  .sidebar.is-collapsed .nav-foot .user{display:none;}
+  .sidebar.is-collapsed .brand{padding:12px; align-items:center;}
+  .sidebar.is-collapsed .brand-row{justify-content:center; gap:0; width:100%;}
+  .sidebar.is-collapsed .sidebar-collapse-btn{margin-left:0;}
+  .sidebar.is-collapsed .nav-item{justify-content:center; padding:10px 8px;}
+  .sidebar.is-collapsed .nav-item.active::before{left:-8px;}
+  .sidebar.is-collapsed .nav-foot{padding:12px; justify-content:center;}
+  .sidebar-collapse-btn{margin-left:auto; background:transparent; border:none; color:var(--muted); cursor:pointer; padding:4px; border-radius:6px; display:flex; align-items:center; justify-content:center; transition:background .12s ease;}
+  .sidebar-collapse-btn:hover{background:var(--bg); color:var(--text);}
+  .sidebar-collapse-btn i{font-size:16px;}
+  .sidebar.is-collapsed .sidebar-collapse-btn i::before{content:'\ea48';}
   .brand{padding:20px 18px 16px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px;}
   .brand-row{display:flex; align-items:center; gap:10px;}
   .brand-logo{width:34px; height:34px; flex:0 0 34px;}
@@ -195,10 +212,14 @@
   .overlay.open{opacity:1; pointer-events:auto;}
   .panel{
     position:fixed; top:0; right:0; height:100vh; width:600px; max-width:94vw; background:var(--bg);
-    transform:translateX(100%); transition:transform .28s cubic-bezier(.16,1,.3,1); z-index:41; display:flex; flex-direction:column;
+    transform:translateX(100%); transition:transform .28s cubic-bezier(.16,1,.3,1), width .22s ease, max-width .22s ease; z-index:41; display:flex; flex-direction:column;
     box-shadow:-12px 0 40px rgba(15,23,42,.16);
   }
   .panel.open{transform:translateX(0);}
+  .panel.is-focus{width:100vw; max-width:100vw;}
+  .panel.is-focus .panel-body{max-width:960px; margin:0 auto; padding:24px 32px 80px;}
+  .panel.is-focus .panel-head{padding:24px 32px;}
+  .panel.is-focus .panel-head-top{max-width:960px; margin:0 auto; width:100%;}
   .panel-head{background:linear-gradient(180deg,#0f172a,#1e293b); color:#fff; padding:22px 24px; flex:none;}
   .panel-head-top{display:flex; justify-content:space-between; align-items:flex-start;}
   .panel-close{background:rgba(255,255,255,.1); border:none; color:#fff; width:32px; height:32px; border-radius:9px; cursor:pointer; font-size:15px; transition:background .12s ease;}
@@ -255,11 +276,23 @@
     border:1px solid rgba(255,255,255,.08);
   }
   .toast::before{content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--primary);}
+  .toast-undo{background:transparent; border:1px solid rgba(255,255,255,.25); color:var(--primary); padding:5px 11px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:background .12s;}
+  .toast-undo:hover{background:rgba(34,197,138,.15);}
   @keyframes slidein{from{transform:translateY(14px); opacity:0;} to{transform:translateY(0); opacity:1;}}
 
   .empty-state{padding:48px 24px; text-align:center; color:var(--muted); font-size:13px; line-height:1.6;}
   .saldo-edit{display:inline-flex; align-items:center; gap:6px;}
   .saldo-edit input{width:100px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;}
+
+  /* LH kalender */
+  .lh-kalender{display:grid; grid-template-columns:repeat(8, 1fr); gap:6px; align-items:end;}
+  .lh-week{display:flex; flex-direction:column; align-items:center; padding:4px 2px; border-radius:8px; transition:background .12s;}
+  .lh-week.is-nu{background:#fdf1de;}
+  .lh-week-nr{font-size:10px; color:var(--muted); font-weight:500; margin-bottom:4px;}
+  .lh-week-bar-wrap{width:100%; display:flex; align-items:flex-end; justify-content:center; min-height:44px;}
+  .lh-week-bar{width:100%; min-height:10px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:700; transition:opacity .12s;}
+  .lh-week-bar:hover{opacity:.85;}
+  .lh-week-datum{font-size:10.5px; color:var(--muted); margin-top:6px;}
 
   /* Command palette */
   #cmdkHost .cmdk-overlay{position:fixed; inset:0; background:rgba(15,23,42,.35); backdrop-filter:blur(2px); z-index:80;}
@@ -687,12 +720,24 @@ function deleteBoekhouder(id){
 function confirmDeleteKlant(id){
   const k = RAW_KLANTEN.find(x=>x.id===id);
   if(!k) return;
-  if(!confirm(`Weet je zeker dat je "${k.naam}" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  if(!confirm(`Weet je zeker dat je "${k.naam}" wilt verwijderen?`)) return;
+  // Deep-copy klant + STORE-record zodat "Ongedaan maken" alles precies terugzet.
+  const klantSnap = JSON.parse(JSON.stringify(k));
+  const storeSnap = STORE[id] ? JSON.parse(JSON.stringify(STORE[id])) : null;
+  const originalIdx = RAW_KLANTEN.findIndex(x=>x.id===id);
   logActiviteit(`Klant verwijderd: "${k.naam}"`);
   deleteKlant(id);
-  toast(`Klant "${k.naam}" verwijderd.`);
   closePanel();
   render();
+  toast(`Klant "${k.naam}" verwijderd`, { duration: 6000, undo: ()=>{
+    // Zet klant op de oorspronkelijke positie terug (i.p.v. aan het einde) en herstel STORE.
+    RAW_KLANTEN.splice(originalIdx, 0, klantSnap);
+    if(storeSnap) STORE[id] = storeSnap;
+    persistMeta(); persist();
+    logActiviteit(`Verwijdering van "${klantSnap.naam}" ongedaan gemaakt`);
+    render();
+    toast(`Klant "${klantSnap.naam}" hersteld`);
+  }});
 }
 function addAuto(data){
   const id = nextId(AUTOS,'auto');
@@ -1506,11 +1551,24 @@ function bh(id){
 function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
 function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
-function toast(msg){
+function toast(msg, opts){
   const wrap = document.getElementById('toastWrap');
-  const el = document.createElement('div'); el.className='toast'; el.textContent = msg;
+  const el = document.createElement('div'); el.className='toast';
+  const duration = (opts && opts.duration) || 3200;
+  if(opts && opts.undo){
+    el.innerHTML = `<span style="flex:1;">${String(msg).replace(/</g,'&lt;')}</span><button class="toast-undo">Ongedaan maken</button>`;
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '12px';
+    el.querySelector('.toast-undo').addEventListener('click', ()=>{
+      try{ opts.undo(); }catch(e){ console.error('undo mislukt:', e); }
+      el.style.opacity='0'; el.style.transition='opacity .2s'; setTimeout(()=>el.remove(),200);
+    });
+  } else {
+    el.textContent = msg;
+  }
   wrap.appendChild(el);
-  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .25s'; setTimeout(()=>el.remove(),250); }, 3200);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .25s'; setTimeout(()=>el.remove(),250); }, duration);
 }
 
 /* ============================= BIJTELLING-REKENMODULE (Autolijst) =============================
@@ -1658,7 +1716,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
+let STATE = { view:'dashboard', sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1683,16 +1741,16 @@ function render(){
   onthoudHuidigePagina(STATE.view);
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="sidebar">
+    <div class="sidebar ${STATE.sidebarCollapsed?'is-collapsed':''}">
       <div class="brand">
         <div class="brand-row">
           <svg class="brand-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="AdministratieBox logo">
-            <!-- Isometrische kubus in AdministratieBox-groen -->
             <polygon points="32,8 56,20 32,32 8,20" fill="#4be8a8"/>
             <polygon points="32,32 56,20 56,44 32,56" fill="#22c58a"/>
             <polygon points="32,32 8,20 8,44 32,56" fill="#1aa572"/>
           </svg>
           <div class="brand-name">AdministratieBox</div>
+          <button class="sidebar-collapse-btn" data-sidebar-toggle title="Sidebar in-/uitklappen" aria-label="Sidebar in-/uitklappen"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>
         </div>
         <div class="brand-sub">Compliance Dashboard</div>
       </div>
@@ -3102,6 +3160,82 @@ function loonheffingOpHoldHTML(){
     </div>
   </div>`;
 }
+function lhKalenderHTML(list){
+  // Compact 8-weken overzicht bovenaan Loonheffingen. Toont per week hoeveel LH-deadlines er zijn,
+  // en hoeveel daarvan al zijn ingediend. Weeknummers volgens ISO 8601 (maandag als eerste dag).
+  function isoWeek(d){
+    const target = new Date(d.getTime());
+    target.setHours(0,0,0,0);
+    // Donderdag in huidige week bepaalt jaar
+    target.setDate(target.getDate() + 3 - ((target.getDay() + 6) % 7));
+    const firstThursday = new Date(target.getFullYear(), 0, 4);
+    firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7));
+    return 1 + Math.round(((target - firstThursday) / 86400000 - 3) / 7);
+  }
+  function startVanWeek(d){
+    const dt = new Date(d.getTime()); dt.setHours(0,0,0,0);
+    const dag = (dt.getDay() + 6) % 7; // 0=maandag
+    dt.setDate(dt.getDate() - dag);
+    return dt;
+  }
+  const start = startVanWeek(TODAY);
+  const weken = [];
+  for(let i=0; i<8; i++){
+    const wstart = new Date(start.getTime()); wstart.setDate(wstart.getDate() + i*7);
+    const wend = new Date(wstart.getTime()); wend.setDate(wend.getDate() + 6);
+    weken.push({ start:wstart, end:wend, nr:isoWeek(wstart), deadlines:0, ingediend:0, klanten:[] });
+  }
+  list.forEach(k=>{
+    const dl = STORE[k.id] && STORE[k.id].dl && STORE[k.id].dl.LH;
+    if(!dl || dl.na || !dl.datum) return;
+    const dt = new Date(dl.datum); dt.setHours(0,0,0,0);
+    weken.forEach(w=>{
+      if(dt >= w.start && dt <= w.end){
+        w.deadlines++;
+        if(dl.status==='ingediend') w.ingediend++;
+        w.klanten.push(k.naam);
+      }
+    });
+  });
+  const maxDeadlines = Math.max(1, ...weken.map(w=>w.deadlines));
+  const NL_MAAND_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+  const wekenHtml = weken.map((w,idx)=>{
+    const pct = w.deadlines ? Math.round((w.ingediend / w.deadlines) * 100) : 0;
+    const kleur = w.deadlines===0 ? '#eef0f4' : (pct===100 ? '#22c58a' : (idx===0 ? '#c9770a' : '#94a0bb'));
+    const kleurText = w.deadlines===0 ? 'var(--muted2)' : (pct===100 ? '#fff' : 'var(--text)');
+    const hoogte = Math.max(10, (w.deadlines / maxDeadlines) * 42);
+    const isNu = idx===0;
+    const isHuidigeMaand = w.start.getMonth() === TODAY.getMonth();
+    const label = w.start.getDate() + ' ' + NL_MAAND_KORT[w.start.getMonth()];
+    return `<div class="lh-week ${isNu?'is-nu':''}" title="Week ${w.nr}: ${w.ingediend} van ${w.deadlines} ingediend${w.klanten.length?' — '+w.klanten.slice(0,5).join(', ')+(w.klanten.length>5?'…':''):''}">
+      <div class="lh-week-nr">wk ${w.nr}</div>
+      <div class="lh-week-bar-wrap">
+        <div class="lh-week-bar" style="height:${hoogte}px; background:${kleur};">
+          ${w.deadlines ? `<span style="color:${kleurText};">${w.ingediend}/${w.deadlines}</span>` : ''}
+        </div>
+      </div>
+      <div class="lh-week-datum">${label}</div>
+    </div>`;
+  }).join('');
+
+  const totDeadlines = weken.reduce((s,w)=>s+w.deadlines, 0);
+  const totIngediend = weken.reduce((s,w)=>s+w.ingediend, 0);
+
+  return `<div class="section" style="margin-bottom:18px;">
+    <div class="section-head">
+      <h3>Komende 8 weken</h3>
+      <span class="hint">${totIngediend} van ${totDeadlines} LH-deadlines ingediend</span>
+    </div>
+    <div class="section-body pad" style="padding:18px 20px 14px;">
+      <div class="lh-kalender">${wekenHtml}</div>
+      <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#c9770a; display:inline-block;"></span>Deze week</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#94a0bb; display:inline-block;"></span>Nog te doen</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#22c58a; display:inline-block;"></span>Volledig ingediend</span>
+      </div>
+    </div>
+  </div>`;
+}
 function loonheffingHTML(){
   let list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
   if(STATE.search){
@@ -3113,6 +3247,7 @@ function loonheffingHTML(){
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
 
   return `
+  ${list.length ? lhKalenderHTML(list) : ''}
   <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
   ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">🔒 Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
   ${bewerkbaar ? `<div class="section" style="margin-bottom:18px;">
@@ -3311,6 +3446,10 @@ function openAddAutoPanel(silent){
   const auto = STATE.editAuto ? AUTOS.find(a=>a.id===STATE.editAuto) : null;
   panel.innerHTML = autoFormHTML(auto);
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   document.querySelector('[data-save-auto]').addEventListener('click', ()=>{
     const klantId = document.getElementById('autoKlant').value;
@@ -4497,6 +4636,7 @@ function panelHTML(klant){
       </div>
       <div style="display:flex; gap:6px; flex:none;">
         <button class="btn sm" data-edit-klant="${klant.id}" style="background:rgba(255,255,255,.12); border:none; color:#fff;">✎ Bewerken</button>
+        <button class="panel-close" data-panel-focus title="Focus-modus (Shift+F)" aria-label="Focus-modus" style="margin-right:4px;"><i class="ti ti-arrows-diagonal" aria-hidden="true"></i></button>
         <button class="panel-close" data-close-panel>✕</button>
       </div>
     </div>
@@ -5017,6 +5157,10 @@ function openAddKlantPanel(silent){
   const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
   panel.innerHTML = addKlantFormHTML();
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   document.querySelector('[data-save-new-klant]').addEventListener('click', ()=>{
     const naam = document.getElementById('newKlantNaam').value.trim();
@@ -5047,6 +5191,10 @@ function openAddBhPanel(silent){
   const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
   panel.innerHTML = addBhFormHTML();
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   document.querySelector('[data-save-new-bh]').addEventListener('click', ()=>{
     const naam = document.getElementById('newBhNaam').value.trim();
@@ -5064,6 +5212,10 @@ function openEditBhPanel(bhId, silent){
   if(!b){ STATE.editBh=null; return; }
   panel.innerHTML = editBhFormHTML(b);
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   document.querySelector('[data-save-edit-bh]').addEventListener('click', ()=>{
     const naam = document.getElementById('editBhNaam').value.trim();
@@ -5084,6 +5236,10 @@ function openAddTeamPanel(silent){
   const panel = document.getElementById('panel'); const overlay = document.getElementById('overlay');
   panel.innerHTML = addTeamFormHTML();
   requestAnimationFrame(()=>{ panel.classList.add('open'); overlay.classList.add('open'); });
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   document.querySelector('[data-save-new-team]').addEventListener('click', ()=>{
     const naam = document.getElementById('newTeamNaam').value.trim();
@@ -5112,6 +5268,10 @@ function closePanelDom(){
 }
 function closePanel(){ STATE.panelKlant=null; STATE.editKlant=null; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; STATE.editBh=null; closePanelDom(); }
 function attachEditKlantHandlers(klant){
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
   const cancelBtn = document.querySelector('[data-cancel-edit-klant]');
   if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ STATE.editKlant=null; openPanel(klant.id); });
@@ -5386,6 +5546,11 @@ function attachHandlers(){
   document.querySelectorAll('[data-edit-bh-btn]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation();
     STATE.editBh = el.getAttribute('data-edit-bh-btn');
+    render();
+  }));
+  document.querySelectorAll('[data-sidebar-toggle]').forEach(el=>bindOnce(el, 'click', ()=>{
+    STATE.sidebarCollapsed = !STATE.sidebarCollapsed;
+    try{ localStorage.setItem('cd_sidebar_collapsed', STATE.sidebarCollapsed?'1':'0'); }catch(e){}
     render();
   }));
   const searchInput = document.getElementById('searchInput');
@@ -6297,6 +6462,10 @@ function renderBulkTxnPreview(rows){
 
 function attachPanelHandlers(klant){
   const f = STORE[klant.id];
+  document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
+    const panel = document.getElementById('panel');
+    if(panel){ panel.classList.toggle('is-focus'); }
+  }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
 
   const editBtn = document.querySelector('[data-edit-klant]');
@@ -6755,6 +6924,11 @@ function cmdkKies(r){
   }
 }
 document.addEventListener('keydown', e=>{
+  if(e.shiftKey && e.key.toLowerCase()==='f' && !isTypingInField() && STATE.panelKlant){
+    e.preventDefault();
+    const panel = document.getElementById('panel');
+    if(panel && panel.classList.contains('open')){ panel.classList.toggle('is-focus'); }
+  }
   if((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k'){
     e.preventDefault();
     if(CMDK_STATE.open) cmdkSluiten(); else cmdkOpen();
