@@ -97,6 +97,25 @@
   button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{outline:2px solid var(--primary); outline-offset:2px; border-radius:6px;}
   .bulk-act:hover, .bulk-close:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);}
 
+  .ai-launch-btn{background:var(--primary-bg); border:1px solid transparent; color:var(--primary-dark);}
+  .ai-launch-btn:hover{background:var(--primary-bg); filter:brightness(0.97);}
+  .nav-badge{margin-left:auto; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; background:var(--amber-bg); color:#8a4b06; padding:2px 6px; border-radius:20px;}
+  html[data-theme="dark"] .nav-badge{background:rgba(250,199,117,.16); color:#facc7a;}
+  #aiHost .ai-overlay{position:fixed; inset:0; z-index:70;}
+  #aiHost .ai-panel{position:fixed; top:60px; right:22px; width:380px; max-width:calc(100vw - 44px); height:min(560px, 70vh); background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); z-index:71; overflow:hidden; display:flex; flex-direction:column; animation:notifIn .18s cubic-bezier(.16,1,.3,1);}
+  #aiHost .ai-head{padding:12px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;}
+  #aiHost .ai-badge{font-size:9.5px; font-weight:700; text-transform:uppercase; background:var(--amber-bg); color:#8a4b06; padding:2px 6px; border-radius:20px;}
+  #aiHost .ai-body-wrap{flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px;}
+  #aiHost .ai-empty{margin:auto; text-align:center; display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--muted); font-size:12.5px; max-width:220px;}
+  #aiHost .ai-msg{display:flex; gap:8px; align-items:flex-start;}
+  #aiHost .ai-msg.user{justify-content:flex-end;}
+  #aiHost .ai-msg-avatar{width:24px; height:24px; border-radius:50%; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:12px;}
+  #aiHost .ai-msg-bubble{font-size:12.5px; line-height:1.5; padding:8px 11px; border-radius:12px; max-width:78%; background:var(--bg);}
+  #aiHost .ai-msg.user .ai-msg-bubble{background:var(--primary); color:#fff; border-radius:12px 12px 2px 12px;}
+  #aiHost .ai-msg.assistant .ai-msg-bubble{border-radius:12px 12px 12px 2px;}
+  #aiHost .ai-foot{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border);}
+  #aiHost .ai-foot input{flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px; background:var(--card); color:var(--text);}
+
   /* Force light-mode voor elementen die expliciet [data-theme=light] hebben — nodig voor de verborgen
      PDF-render-wrapper zodat de PDF nooit dark-mode kleuren pakt. */
   [data-theme="light"]{
@@ -1898,6 +1917,7 @@ const ICONS = {
   team:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   loon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 12l2 2 4-4"/></svg>',
   auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l1.5-5.5A2 2 0 0 1 7.4 9h9.2a2 2 0 0 1 1.9 1.5L20 16"/><rect x="2.5" y="16" width="19" height="4.5" rx="1.5"/><circle cx="7" cy="20.5" r="1.6"/><circle cx="17" cy="20.5" r="1.6"/><path d="M4 13h16"/></svg>',
+  notion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 7v10M7.5 7l9 10M16.5 7v10"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
@@ -1930,6 +1950,7 @@ function render(){
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         <div class="nav-group-label">Overig</div>
+        ${navItem('notion','notion','Notion','later')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       ${sidebarFootHTML()}
@@ -1943,6 +1964,7 @@ function render(){
         <div class="topbar-right">
           <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/><span class="search-kbd">⌘K</span></div>
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
+          <button class="btn sm ai-launch-btn" id="aiToggleBtn" title="AI-assistent" aria-label="AI-assistent" style="padding:6px 10px;"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
           <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen" style="padding:6px 10px;"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="padding:6px 10px; position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
           <div class="today-pill"><i class="ti ti-calendar" aria-hidden="true"></i> ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
@@ -1964,11 +1986,11 @@ function render(){
   attachHandlers();
   updateSyncIndicator();
 }
-function navItem(view, icon, label){
-  return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span></button>`;
+function navItem(view, icon, label, badge){
+  return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -1979,7 +2001,8 @@ function pageSub(){
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
     loonheffing:`Maandelijkse loonaangifte-taken en voortgang per collega · ${RAW_KLANTEN.filter(k=>k.doetLoonaangifte).length} klant(en) totaal`,
     autolijst:`Auto's per klant met automatische bijtelling- en btw-correctieberekening · ${AUTOS.length} auto('s)`,
-    instellingen:'Live synchronisatie tussen collega\'s'
+    instellingen:'Live synchronisatie tussen collega\'s',
+    notion:'Gedeelde pagina\'s en data-sync uit Notion'
   }[STATE.view];
 }
 
@@ -1993,7 +2016,33 @@ function viewHTML(){
   if(STATE.view==='loonheffing') return loonheffingHTML();
   if(STATE.view==='autolijst') return autolijstHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
+  if(STATE.view==='notion') return notionHTML();
   return '';
+}
+/* ============================= NOTION APP-SECTIE (PLACEHOLDER) =============================
+   Benjamin wil de compliance-app straks een tab geven waarin gedeelde Notion-pagina's te bekijken
+   zijn (bv. interne werkinstructies), plus automatische data-sync uit specifieke Notion-databases.
+   Dat vraagt een klein serverless tussenlaagje (Notion's API blokkeert directe browser-calls door
+   CORS) en een Notion-integratie met gedeelde pagina's — allebei nog niet ingericht. Deze pagina is
+   bewust een eerlijke "binnenkort"-pagina i.p.v. een kapotte link, zodat de navigatie al klopt en het
+   straks alleen nog een kwestie is van embedHTML hier invullen. */
+function notionHTML(){
+  return `
+  <div class="section">
+    <div class="section-body" style="text-align:center; padding:56px 24px;">
+      <div style="width:56px; height:56px; border-radius:14px; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;">
+        <i class="ti ti-brand-notion" style="font-size:26px;" aria-hidden="true"></i>
+      </div>
+      <h3 style="margin:0 0 8px;">Notion-koppeling volgt binnenkort</h3>
+      <p style="max-width:440px; margin:0 auto 20px; color:var(--muted); font-size:13.5px; line-height:1.6;">
+        Hier komt een overzicht van gedeelde Notion-pagina's voor collega's, en automatische data-sync vanuit
+        specifieke Notion-databases. Dit vraagt eerst een interne Notion-integratie met gedeelde toegang
+        (momenteel gast-toegang, dat is nog niet genoeg) en een klein serverless tussenlaagje, omdat Notion's
+        API niet rechtstreeks vanuit de browser aangeroepen kan worden.
+      </p>
+      <a class="btn sm" href="https://notion.so" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open Notion in nieuw tabblad</a>
+    </div>
+  </div>`;
 }
 
 function allDeadlineRows(){
@@ -5952,6 +6001,8 @@ function attachHandlers(){
   if(themeToggleBtn){ updateThemeButton(); bindOnce(themeToggleBtn, 'click', toggleTheme); }
   const notifToggleBtn = document.getElementById('notifToggleBtn');
   if(notifToggleBtn){ updateNotifDot(); bindOnce(notifToggleBtn, 'click', (e)=>{ e.stopPropagation(); if(NOTIF_STATE.open) notifSluiten(); else notifOpen(); }); }
+  const aiToggleBtn = document.getElementById('aiToggleBtn');
+  if(aiToggleBtn) bindOnce(aiToggleBtn, 'click', (e)=>{ e.stopPropagation(); if(AI_STATE.open) aiSluiten(); else aiOpen(); });
   const searchInput = document.getElementById('searchInput');
   bindOnce(searchInput, 'input', (e)=>{
     // STATE.search wordt meteen bijgewerkt, maar het herbouwen van de (mogelijk grote) klantentabel
@@ -7594,6 +7645,65 @@ function _relatievTijd(ts){
 }
 function notifOpen(){ NOTIF_STATE.open = true; renderNotifDropdown(); }
 function notifSluiten(){ NOTIF_STATE.open = false; renderNotifDropdown(); _notifMarkeerAllesGelezen(); }
+
+/* ============================= AI-ASSISTENT PANEEL (PREVIEW) =============================
+   UI-schil voor de ingebouwde AI-assistent die Benjamin wil. Nog NIET gekoppeld aan een taalmodel —
+   dat vraagt een Cloudflare Worker (om de Anthropic API-key niet in de browser te hoeven zetten) die
+   er nog niet is. Bewust een eerlijke preview-staat i.p.v. nepantwoorden verzinnen: elk bericht krijgt
+   een duidelijke uitleg terug in plaats van een gesimuleerd "AI-antwoord". Zodra de Worker er is, hoeft
+   alleen aiVerstuurBericht() een echte fetch-aanroep te doen i.p.v. de placeholder-reactie hieronder.  */
+const AI_STATE = { open:false, messages: (function(){ try{ return JSON.parse(localStorage.getItem('cd_ai_messages')||'[]'); }catch(e){ return []; } })() };
+function _aiBewaarBerichten(){
+  try{ localStorage.setItem('cd_ai_messages', JSON.stringify(AI_STATE.messages.slice(-30))); }catch(e){}
+}
+function renderAiPanel(){
+  let host = document.getElementById('aiHost');
+  if(!host){ host = document.createElement('div'); host.id = 'aiHost'; document.body.appendChild(host); }
+  if(!AI_STATE.open){ host.innerHTML=''; return; }
+  const berichtenHtml = AI_STATE.messages.length ? AI_STATE.messages.map(m=>`
+    <div class="ai-msg ${m.role}">
+      ${m.role==='assistant' ? '<div class="ai-msg-avatar"><i class="ti ti-sparkles" aria-hidden="true"></i></div>' : ''}
+      <div class="ai-msg-bubble">${String(m.text).replace(/</g,'&lt;')}</div>
+    </div>`).join('') : `
+    <div class="ai-empty">
+      <i class="ti ti-sparkles" style="font-size:22px; color:var(--muted2);" aria-hidden="true"></i>
+      <p>Stel straks een vraag over klanten, deadlines of taken.</p>
+    </div>`;
+  host.innerHTML = `
+    <div class="ai-overlay" data-ai-close></div>
+    <div class="ai-panel">
+      <div class="ai-head">
+        <div style="display:flex; align-items:center; gap:8px;"><i class="ti ti-sparkles" style="color:var(--primary-dark);" aria-hidden="true"></i><span style="font-weight:600; font-size:14px;">AI-assistent</span><span class="ai-badge">preview</span></div>
+        <button class="notif-mark-read" data-ai-close style="padding:4px 8px;"><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div class="ai-body-wrap" id="aiBodyWrap">${berichtenHtml}</div>
+      <div class="ai-foot">
+        <input type="text" id="aiInput" placeholder="Vraag iets over klanten of deadlines…" autocomplete="off">
+        <button class="btn sm primary" id="aiSendBtn" aria-label="Versturen"><i class="ti ti-send" aria-hidden="true"></i></button>
+      </div>
+    </div>
+  `;
+  host.querySelectorAll('[data-ai-close]').forEach(el=>el.addEventListener('click', aiSluiten));
+  const input = document.getElementById('aiInput');
+  const stuur = ()=>{
+    const tekst = (input.value||'').trim();
+    if(!tekst) return;
+    aiVerstuurBericht(tekst);
+    input.value = '';
+  };
+  document.getElementById('aiSendBtn').addEventListener('click', stuur);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') stuur(); });
+  const wrap = document.getElementById('aiBodyWrap');
+  if(wrap) wrap.scrollTop = wrap.scrollHeight;
+}
+function aiVerstuurBericht(tekst){
+  AI_STATE.messages.push({role:'user', text:tekst});
+  AI_STATE.messages.push({role:'assistant', text:'De AI-assistent is nog niet gekoppeld aan een taalmodel. Zodra de Cloudflare Worker en Anthropic API-key zijn ingesteld, beantwoord ik hier automatisch vragen over klanten, deadlines en taken.'});
+  _aiBewaarBerichten();
+  renderAiPanel();
+}
+function aiOpen(){ AI_STATE.open = true; renderAiPanel(); }
+function aiSluiten(){ AI_STATE.open = false; renderAiPanel(); }
 
 // Vang op dat gedebouncede localStorage-writes (persist/persistMeta) niet verloren gaan als het
 // tabblad direct na een wijziging wordt gesloten.
