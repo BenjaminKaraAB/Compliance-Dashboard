@@ -25,7 +25,46 @@
     --radius:12px;
     --shadow:0 1px 2px rgba(15,23,42,.04), 0 4px 14px rgba(15,23,42,.05);
     --shadow-lg:0 4px 8px rgba(15,23,42,.04), 0 16px 40px rgba(15,23,42,.08);
+    color-scheme: light;
   }
+  html[data-theme="dark"]{
+    --bg:#0b1220; --card:#0f172a; --border:#1e293b;
+    --text:#f1f5f9; --muted:#94a0bb; --muted2:#64748b;
+    --primary:#22c58a; --primary-dark:#4be8a8; --primary-bg:rgba(34,197,138,.13);
+    --red:#f87171; --red-bg:#3d1414; --red-brd:#7f1d1d;
+    --amber:#fbbf24; --amber-bg:#3d2c14; --amber-brd:#78350f;
+    --green:#4ade80; --green-bg:#14311f; --green-brd:#166534;
+    --blue:#60a5fa; --blue-bg:#0e2a44; --blue-brd:#1e3a5f;
+    --gray-bg:#1e293b; --gray-brd:#334155;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.35);
+    --shadow-lg:0 4px 8px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.55);
+    color-scheme: dark;
+  }
+  html[data-theme="dark"] .sidebar{background:#0f172a; border-right-color:#1e293b;}
+  html[data-theme="dark"] .brand-name{color:#f1f5f9;}
+  html[data-theme="dark"] .topbar{background:#0f172a; border-bottom-color:#1e293b;}
+  html[data-theme="dark"] table thead th{background:#1a2438; color:#94a0bb;}
+  html[data-theme="dark"] tbody tr.row-click:hover{background:#152036;}
+  html[data-theme="dark"] .panel{background:#0b1220;}
+  html[data-theme="dark"] .panel-section{background:#0f172a; border-color:#1e293b;}
+  html[data-theme="dark"] .panel-section h4{background:#152036; color:#94a0bb;}
+  html[data-theme="dark"] .kpi-card{background:#0f172a; border-color:#1e293b;}
+  html[data-theme="dark"] .section{background:#0f172a; border-color:#1e293b;}
+  html[data-theme="dark"] .btn{background:#1e293b; color:#f1f5f9; border-color:#334155;}
+  html[data-theme="dark"] .btn:hover{background:#334155;}
+  html[data-theme="dark"] .btn.primary{background:#22c58a; color:#0b1220;}
+  html[data-theme="dark"] .btn.primary:hover{background:#4be8a8;}
+  html[data-theme="dark"] .today-pill{background:#1e293b; border-color:#334155; color:#94a0bb;}
+  html[data-theme="dark"] .search-wrap input{background:#1e293b; border-color:#334155; color:#f1f5f9;}
+  html[data-theme="dark"] .search-wrap input:focus{background:#152036;}
+  html[data-theme="dark"] .search-wrap .search-kbd{background:#0f172a; border-color:#334155; color:#94a0bb;}
+  html[data-theme="dark"] input[type=text], html[data-theme="dark"] input[type=number], html[data-theme="dark"] select, html[data-theme="dark"] textarea{background:#152036; color:#f1f5f9; border-color:#334155;}
+  html[data-theme="dark"] .toast{background:#0f172a; border-color:#334155;}
+  html[data-theme="dark"] .nav-item.active{background:rgba(34,197,138,.13); color:#4be8a8;}
+  html[data-theme="dark"] .nav-item.active svg{color:#4be8a8;}
+  html[data-theme="dark"] .banner{background:rgba(34,197,138,.10); border-color:rgba(34,197,138,.25); color:#4be8a8;}
+  html[data-theme="dark"] #cmdkHost .cmdk-panel{background:#0f172a; border-color:#334155;}
+  html[data-theme="dark"] #cmdkHost .cmdk-rij:hover, html[data-theme="dark"] #cmdkHost .cmdk-rij.is-active{background:rgba(34,197,138,.13);}
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;height:100%;}
   body{
@@ -142,6 +181,23 @@
   tbody tr:last-child td{border-bottom:none;}
   tbody tr.row-click{cursor:pointer; transition:background .12s ease;}
   tbody tr.row-click:hover{background:#f4faf7;}
+  .view-toggle{display:flex; padding:3px; background:var(--bg); border-radius:8px; border:1px solid var(--border);}
+  .view-toggle button{padding:5px 8px; background:transparent; border:none; border-radius:6px; cursor:pointer; color:var(--muted); display:flex; align-items:center; justify-content:center; transition:all .12s;}
+  .view-toggle button.is-active{background:var(--card); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.05);}
+  .view-toggle button i{font-size:15px;}
+  .klanten-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px; padding:16px 20px 20px;}
+  .klant-kaart{background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; position:relative;}
+  .klant-kaart:hover{transform:translateY(-1px); box-shadow:var(--shadow-lg); border-color:var(--muted2);}
+  .klant-kaart-strip{position:absolute; top:0; left:0; right:0; height:3px;}
+  .klant-kaart-inner{padding:14px;}
+  .klant-kaart-head{display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;}
+  .klant-kaart-naam{font-weight:600; font-size:13.5px; color:var(--text); line-height:1.3;}
+  .klant-kaart-sub{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .klant-kaart-badge{padding:3px 8px; border-radius:12px; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.3px; flex:none; white-space:nowrap;}
+  .klant-kaart-stripes{display:flex; gap:3px; margin-bottom:10px;}
+  .klant-kaart-stripes > div{flex:1; height:4px; border-radius:2px;}
+  .klant-kaart-foot{display:flex; justify-content:space-between; align-items:center; font-size:11.5px;}
+  .klant-kaart-saldo{color:var(--muted);}
   tbody tr.klant-rij .strip-cel{padding:0; width:4px; position:relative;}
   tbody tr.klant-rij .rij-strip{position:absolute; left:0; top:6px; bottom:6px; width:3px; border-radius:0 2px 2px 0;}
   tbody tr.klant-rij:hover .rij-strip{width:4px;}
@@ -294,6 +350,39 @@
   .lh-week-bar:hover{opacity:.85;}
   .lh-week-datum{font-size:10.5px; color:var(--muted); margin-top:6px;}
 
+  /* Bulk-actie bar */
+  #bulkActionBar{position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:#0f172a; color:#fff; padding:8px 12px 8px 16px; border-radius:12px; display:flex; align-items:center; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,.24); z-index:55; border:1px solid rgba(255,255,255,.08); animation:bulkIn .22s cubic-bezier(.16,1,.3,1);}
+  @keyframes bulkIn{from{transform:translate(-50%, 20px); opacity:0;} to{transform:translate(-50%, 0); opacity:1;}}
+  #bulkActionBar .bulk-count{display:flex; align-items:center; gap:8px; padding-right:10px; border-right:1px solid rgba(255,255,255,.15); font-size:12.5px; font-weight:500;}
+  #bulkActionBar .bulk-num{width:24px; height:24px; border-radius:50%; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+  #bulkActionBar .bulk-act{background:rgba(255,255,255,.08); border:none; color:#fff; padding:6px 12px; border-radius:8px; font-size:12px; font-weight:500; display:flex; align-items:center; gap:6px; cursor:pointer; transition:background .12s;}
+  #bulkActionBar .bulk-act:hover{background:rgba(255,255,255,.16);}
+  #bulkActionBar .bulk-act i{font-size:14px;}
+  #bulkActionBar .bulk-close{background:transparent; border:none; color:#a9b4d4; padding:6px 8px; cursor:pointer; border-radius:6px;}
+  #bulkActionBar .bulk-close:hover{background:rgba(255,255,255,.1); color:#fff;}
+  tbody tr.klant-rij.is-selected{background:var(--primary-bg);}
+
+  /* Notification center */
+  .notif-dot{position:absolute; top:6px; right:6px; width:8px; height:8px; border-radius:50%; background:var(--primary); border:2px solid var(--card); animation:pulseNotif 2.4s ease-in-out infinite;}
+  @keyframes pulseNotif{0%,100%{transform:scale(1); opacity:1;} 50%{transform:scale(1.15); opacity:.85;}}
+  #notifHost .notif-overlay{position:fixed; inset:0; z-index:70;}
+  #notifHost .notif-panel{position:fixed; top:60px; right:22px; width:380px; max-width:calc(100vw - 44px); max-height:70vh; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); z-index:71; overflow:hidden; display:flex; flex-direction:column; animation:notifIn .18s cubic-bezier(.16,1,.3,1);}
+  @keyframes notifIn{from{transform:translateY(-6px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  #notifHost .notif-head{padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;}
+  #notifHost .notif-mark-read{background:transparent; border:none; color:var(--muted); font-size:11.5px; cursor:pointer; padding:2px 4px;}
+  #notifHost .notif-mark-read:hover{color:var(--text);}
+  #notifHost .notif-body-wrap{overflow-y:auto; flex:1;}
+  #notifHost .notif-rij{padding:12px 16px; display:flex; gap:12px; align-items:flex-start; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s;}
+  #notifHost .notif-rij:hover{background:var(--primary-bg);}
+  #notifHost .notif-rij.is-ongelezen{background:var(--primary-bg);}
+  #notifHost .notif-rij.is-ongelezen:hover{background:var(--primary-bg); filter:brightness(0.96);}
+  #notifHost .notif-icoon{width:32px; height:32px; border-radius:8px; flex:none; display:flex; align-items:center; justify-content:center;}
+  #notifHost .notif-body{flex:1; min-width:0;}
+  #notifHost .notif-tekst{font-size:13px; line-height:1.4; color:var(--text);}
+  #notifHost .notif-meta{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  #notifHost .notif-nieuw{width:7px; height:7px; border-radius:50%; background:var(--primary); margin-top:6px; flex:none;}
+  #notifHost .notif-leeg{padding:24px; text-align:center; color:var(--muted); font-size:13px;}
+
   /* Command palette */
   #cmdkHost .cmdk-overlay{position:fixed; inset:0; background:rgba(15,23,42,.35); backdrop-filter:blur(2px); z-index:80;}
   #cmdkHost .cmdk-panel{position:fixed; top:14vh; left:50%; transform:translateX(-50%); width:560px; max-width:92vw; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-lg); z-index:81; overflow:hidden; display:flex; flex-direction:column;}
@@ -324,6 +413,34 @@
 
 /* ============================= DATA ============================= */
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+
+/* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
+function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
+function initTheme(){
+  const root = _themeRoot(); if(!root || !root.setAttribute) return;
+  try{
+    const saved = localStorage.getItem('cd_theme');
+    if(saved==='dark' || saved==='light'){ root.setAttribute('data-theme', saved); }
+    else if(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches){
+      root.setAttribute('data-theme', 'dark');
+    }
+  }catch(e){}
+}
+function toggleTheme(){
+  const root = _themeRoot(); if(!root || !root.setAttribute) return;
+  const nu = root.getAttribute('data-theme')==='dark' ? 'light' : 'dark';
+  root.setAttribute('data-theme', nu);
+  try{ localStorage.setItem('cd_theme', nu); }catch(e){}
+  updateThemeButton();
+}
+function updateThemeButton(){
+  const btn = document.getElementById('themeToggleBtn'); if(!btn) return;
+  const root = _themeRoot();
+  const isDark = root && root.getAttribute && root.getAttribute('data-theme')==='dark';
+  btn.innerHTML = `<i class="ti ${isDark?'ti-sun':'ti-moon'}" aria-hidden="true"></i>`;
+  btn.title = isDark ? 'Naar licht thema' : 'Naar donker thema';
+}
+initTheme();
 const NL_MAANDEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 function fmtDatumLang(date){ return `${date.getDate()} ${NL_MAANDEN[date.getMonth()]} ${date.getFullYear()}`; }
 /* Logo uit het briefhoofd van AdministratieBox, ingebed als data-URI zodat gegenereerde PDF's
@@ -1716,7 +1833,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
+let STATE = { view:'dashboard', selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1779,6 +1896,8 @@ function render(){
         <div class="topbar-right">
           <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/><span class="search-kbd">⌘K</span></div>
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
+          <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen" style="padding:6px 10px;"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="padding:6px 10px; position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
           <div class="today-pill">📅 ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
         </div>
       </div>
@@ -2737,7 +2856,11 @@ function klantenHTML(){
   <div class="section">
     <div class="section-head">
       <h3>Klantenlijst</h3>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div class="view-toggle">
+          <button data-klanten-view="tabel" class="${STATE.klantenView==='tabel'?'is-active':''}" title="Tabelweergave"><i class="ti ti-list" aria-hidden="true"></i></button>
+          <button data-klanten-view="kaarten" class="${STATE.klantenView==='kaarten'?'is-active':''}" title="Kaartweergave"><i class="ti ti-layout-grid" aria-hidden="true"></i></button>
+        </div>
         <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Importeren<input type="file" id="klantenCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
         <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
       </div>
@@ -2757,8 +2880,40 @@ function klantenHTML(){
       </div>
     </div>
     <div class="section-body" style="padding-top:6px;">
-      <table class="klanten-tabel">
-        <thead><tr><th style="width:4px;"></th><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
+      ${STATE.klantenView==='kaarten' ? `<div class="klanten-grid">${list.map(k=>{
+        const w = worstStatus(k);
+        const stripKleur = {actie:'#dc2626', nadert:'#c9770a', schema:'#22c58a', ingediend:'#0e7fa3'}[w] || '#e4e8f0';
+        const stKl = {actie:{bg:'#fdeaea',fg:'#791f1f',lbl:'Actie'}, nadert:{bg:'#fdf1de',fg:'#633806',lbl:'Nadert'}, schema:{bg:'#dcf7ec',fg:'#0f7550',lbl:'Op schema'}, ingediend:{bg:'#e5f5fa',fg:'#0c447c',lbl:'Ingediend'}}[w] || {bg:'#eef0f4',fg:'#556377',lbl:'—'};
+        const boekhouder = bhVoor(k.bh);
+        const kolomKl = t=>{ const st = statusOf(effDL(k,t)).key; return ({actie:'#dc2626',nadert:'#c9770a',schema:'#22c58a',ingediend:'#0e7fa3',na:'#e4e8f0'})[st]||'#e4e8f0'; };
+        const nextTypeArr = ['OB','VPB','LH','JR'].map(t=>({t, s:statusOf(effDL(k,t))})).filter(x=>x.s.dagen!==undefined).sort((a,b)=>a.s.dagen-b.s.dagen);
+        const next = nextTypeArr[0];
+        const nextText = next ? (next.s.dagen<0 ? `${TYPE_LABEL[next.t]}: ${Math.abs(next.s.dagen)}d te laat` : `${TYPE_LABEL[next.t]} in ${next.s.dagen}d`) : 'Geen deadlines';
+        return `<div class="klant-kaart" data-open-klant="${k.id}">
+          <div class="klant-kaart-strip" style="background:${stripKleur};"></div>
+          <div class="klant-kaart-inner">
+            <div class="klant-kaart-head">
+              <div>
+                <div class="klant-kaart-naam">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ' <span style="color:var(--red);">🚩</span>' : ''}</div>
+                <div class="klant-kaart-sub">${k.vorm} · ${boekhouder.naam}</div>
+              </div>
+              <span class="klant-kaart-badge" style="background:${stKl.bg}; color:${stKl.fg};">${stKl.lbl}</span>
+            </div>
+            <div class="klant-kaart-stripes">
+              <div style="background:${kolomKl('OB')};" title="OB"></div>
+              <div style="background:${kolomKl('VPB')};" title="VPB"></div>
+              <div style="background:${kolomKl('LH')};" title="LH"></div>
+              <div style="background:${kolomKl('JR')};" title="JR/JA"></div>
+            </div>
+            <div class="klant-kaart-foot">
+              <span style="color:${stKl.fg}; font-weight:500;">${nextText}</span>
+              <span class="klant-kaart-saldo" style="font-variant-numeric:tabular-nums;">${fmtEUR(STORE[k.id].saldo)}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}</div>${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}`
+      : `<table class="klanten-tabel">
+        <thead><tr><th style="width:36px; padding-left:20px;"><input type="checkbox" data-bulk-selectall style="width:15px; height:15px; accent-color:var(--primary);"></th><th style="width:4px; padding:0;"></th><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
         <tbody>
           ${list.map(k=>{
             const ov = STORE[k.id].dl.overige||[];
@@ -2766,8 +2921,9 @@ function klantenHTML(){
             const boekhouder = bhVoor(k.bh);
             const w = worstStatus(k);
             const stripKleur = {actie:'#dc2626', nadert:'#c9770a', schema:'#22c58a', ingediend:'#0e7fa3'}[w] || '#e4e8f0';
-            return `<tr class="row-click klant-rij" data-open-klant="${k.id}" style="--strip:${stripKleur};">
-            <td class="strip-cel"><div class="rij-strip" style="background:${stripKleur};"></div></td>
+            return `<tr class="row-click klant-rij ${STATE.selectedKlanten.has(k.id)?'is-selected':''}" data-open-klant="${k.id}" style="--strip:${stripKleur};">
+            <td style="padding-left:20px; width:36px;" onclick="event.stopPropagation();"><input type="checkbox" data-bulk-select="${k.id}" ${STATE.selectedKlanten.has(k.id)?'checked':''} style="width:15px; height:15px; accent-color:var(--primary);"></td>
+            <td class="strip-cel" style="padding:0;"><div class="rij-strip" style="background:${stripKleur};"></div></td>
             <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm}${k.kvk?' · KvK '+k.kvk:''}</div></td>
             <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
@@ -2783,7 +2939,7 @@ function klantenHTML(){
           </tr>`;}).join('')}
         </tbody>
       </table>
-      ${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}
+      ${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}`}
     </div>
   </div>`;
 }
@@ -5553,6 +5709,10 @@ function attachHandlers(){
     try{ localStorage.setItem('cd_sidebar_collapsed', STATE.sidebarCollapsed?'1':'0'); }catch(e){}
     render();
   }));
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
+  if(themeToggleBtn){ updateThemeButton(); bindOnce(themeToggleBtn, 'click', toggleTheme); }
+  const notifToggleBtn = document.getElementById('notifToggleBtn');
+  if(notifToggleBtn){ updateNotifDot(); bindOnce(notifToggleBtn, 'click', (e)=>{ e.stopPropagation(); if(NOTIF_STATE.open) notifSluiten(); else notifOpen(); }); }
   const searchInput = document.getElementById('searchInput');
   bindOnce(searchInput, 'input', (e)=>{
     // STATE.search wordt meteen bijgewerkt, maar het herbouwen van de (mogelijk grote) klantentabel
@@ -5578,6 +5738,27 @@ function attachHandlers(){
   if(filterBh) filterBh.addEventListener('change', e=>{ STATE.bhFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const filterStatus = document.getElementById('filterStatus');
   if(filterStatus) filterStatus.addEventListener('change', e=>{ STATE.statusFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  document.querySelectorAll('[data-bulk-select]').forEach(el=>bindOnce(el, 'change', ()=>{
+    const id = el.dataset.bulkSelect;
+    if(el.checked) STATE.selectedKlanten.add(id); else STATE.selectedKlanten.delete(id);
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  }));
+  const bulkAll = document.querySelector('[data-bulk-selectall]');
+  if(bulkAll) bindOnce(bulkAll, 'change', ()=>{
+    if(bulkAll.checked){ RAW_KLANTEN.forEach(k=>STATE.selectedKlanten.add(k.id)); }
+    else { STATE.selectedKlanten.clear(); }
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  });
+  renderBulkBar();
+  document.querySelectorAll('[data-klanten-view]').forEach(el=>bindOnce(el, 'click', ()=>{
+    STATE.klantenView = el.dataset.klantenView;
+    try{ localStorage.setItem('cd_klanten_view', STATE.klantenView); }catch(e){}
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('.klant-kaart').forEach(el=>bindOnce(el, 'click', ()=>{
+    const id = el.getAttribute('data-open-klant'); const k = RAW_KLANTEN.find(k=>k.id===id);
+    if(k && typeof openKlantPanel==='function') openKlantPanel(k);
+  }));
   document.querySelectorAll('[data-status-chip]').forEach(el=>bindOnce(el, 'click', e=>{
     STATE.statusFilter = el.dataset.statusChip;
     document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
@@ -6936,6 +7117,161 @@ document.addEventListener('keydown', e=>{
     cmdkSluiten();
   }
 });
+
+/* ============================= BULK-SELECTIE + ACTIEBAR =============================
+   Checkbox-selectie in klantentabel + floating actiebar onderaan. Verwijderen via bulk hergebruikt
+   de undo-toast (elke klant wordt individueel deleted en één samengevoegde undo-toast wordt getoond). */
+function renderBulkBar(){
+  let bar = document.getElementById('bulkActionBar');
+  const n = STATE.selectedKlanten.size;
+  if(n === 0){ if(bar) bar.remove(); return; }
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'bulkActionBar';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `
+    <div class="bulk-count"><span class="bulk-num">${n}</span> geselecteerd</div>
+    <button class="bulk-act" data-bulk-remove title="Selectie leegmaken"><i class="ti ti-trash" aria-hidden="true"></i>Verwijderen</button>
+    <button class="bulk-act" data-bulk-export title="Selectie exporteren"><i class="ti ti-download" aria-hidden="true"></i>Exporteren</button>
+    <button class="bulk-close" data-bulk-close title="Selectie leegmaken" aria-label="Sluiten"><i class="ti ti-x" aria-hidden="true"></i></button>
+  `;
+  bar.querySelector('[data-bulk-close]').addEventListener('click', ()=>{ STATE.selectedKlanten.clear(); document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  bar.querySelector('[data-bulk-remove]').addEventListener('click', bulkVerwijderen);
+  bar.querySelector('[data-bulk-export]').addEventListener('click', bulkExporteren);
+}
+function bulkVerwijderen(){
+  const ids = Array.from(STATE.selectedKlanten);
+  if(!ids.length) return;
+  if(!confirm(`${ids.length} klant(en) verwijderen?`)) return;
+  const snapshots = ids.map(id=>{
+    const k = RAW_KLANTEN.find(x=>x.id===id);
+    const store = STORE[id];
+    const idx = RAW_KLANTEN.findIndex(x=>x.id===id);
+    return k ? { klant: JSON.parse(JSON.stringify(k)), store: store?JSON.parse(JSON.stringify(store)):null, idx } : null;
+  }).filter(Boolean);
+  snapshots.forEach(s=>{ deleteKlant(s.klant.id); });
+  logActiviteit(`${snapshots.length} klanten in bulk verwijderd`);
+  STATE.selectedKlanten.clear();
+  document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  toast(`${snapshots.length} klant(en) verwijderd`, { duration:6000, undo: ()=>{
+    snapshots.sort((a,b)=>a.idx-b.idx).forEach(s=>{
+      RAW_KLANTEN.splice(s.idx, 0, s.klant);
+      if(s.store) STORE[s.klant.id] = s.store;
+    });
+    persistMeta(); persist();
+    logActiviteit(`Bulk-verwijdering ongedaan gemaakt (${snapshots.length} klanten)`);
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+    toast(`${snapshots.length} klant(en) hersteld`);
+  }});
+}
+function bulkExporteren(){
+  const ids = Array.from(STATE.selectedKlanten);
+  const rijen = [['Naam','KvK','Vorm','Boekhouder','Email','Telefoon','Openstaand saldo']];
+  ids.forEach(id=>{
+    const k = RAW_KLANTEN.find(x=>x.id===id); if(!k) return;
+    const b = bh(k.bh);
+    rijen.push([k.naam, k.kvk||'', k.vorm||'', b?b.naam:'', k.email||'', k.tel||'', String(STORE[k.id]?STORE[k.id].saldo:0)]);
+  });
+  const csv = rijen.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `klantenexport-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`${ids.length} klant(en) geëxporteerd`);
+}
+
+/* ============================= NOTIFICATION CENTER =============================
+   Bell-icoon in topbar. Toont recente items uit ACTIVITEITENLOG + door de app afgeleide meldingen
+   (klanten waarvan een deadline vandaag naar "actie" is verschoven, sync-fouten). Ongelezen-count
+   is het aantal items met een timestamp na de laatst-gelezen tijdstip in localStorage. */
+const NOTIF_STATE = { open:false };
+function _notifLaatstGelezen(){
+  try{ return parseInt(localStorage.getItem('cd_notif_read_ts') || '0', 10) || 0; }catch(e){ return 0; }
+}
+function _notifMarkeerAllesGelezen(){
+  try{ localStorage.setItem('cd_notif_read_ts', String(Date.now())); }catch(e){}
+  updateNotifDot();
+}
+function _notifItems(){
+  const items = [];
+  // 1. Recente activiteitenlog (max 20)
+  (ACTIVITEITENLOG||[]).slice(0, 20).forEach(a=>{
+    if(!a || !a.ts) return;
+    const t = new Date(a.ts).getTime();
+    let icon = 'ti-activity', kleur = 'blauw';
+    const act = String(a.actie||'');
+    if(/verwijderd/i.test(act)){ icon='ti-trash'; kleur='rood'; }
+    else if(/toegevoegd/i.test(act)){ icon='ti-user-plus'; kleur='groen'; }
+    else if(/afgevinkt|ingediend|verstuurd/i.test(act)){ icon='ti-check'; kleur='groen'; }
+    else if(/bijgewerkt|bewerkt/i.test(act)){ icon='ti-edit'; kleur='blauw'; }
+    items.push({ts:t, icon, kleur, tekst:act, door:a.door||''});
+  });
+  // 2. Sync-fout (indien aanwezig)
+  if(SYNC && SYNC.lastError){
+    items.unshift({ts:Date.now(), icon:'ti-alert-triangle', kleur:'rood',
+      tekst:'Sync-fout: '+SYNC.lastError, door:'Systeem'});
+  }
+  return items.sort((a,b)=>b.ts - a.ts).slice(0, 20);
+}
+function updateNotifDot(){
+  const dot = document.getElementById('notifDot'); if(!dot) return;
+  const laatstGelezen = _notifLaatstGelezen();
+  const ongelezen = _notifItems().filter(i=>i.ts > laatstGelezen).length;
+  dot.style.display = ongelezen > 0 ? 'block' : 'none';
+}
+function renderNotifDropdown(){
+  let host = document.getElementById('notifHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'notifHost';
+    document.body.appendChild(host);
+  }
+  if(!NOTIF_STATE.open){ host.innerHTML=''; return; }
+  const items = _notifItems();
+  const laatstGelezen = _notifLaatstGelezen();
+  const kleurMap = {rood:'#fdeaea|#791f1f', groen:'#dcf7ec|#0f7550', oranje:'#fdf1de|#633806', blauw:'#e5f5fa|#0c447c'};
+  const rijenHtml = items.map(i=>{
+    const [bg, fg] = (kleurMap[i.kleur]||'#eef0f4|#556377').split('|');
+    const ongelezen = i.ts > laatstGelezen;
+    const tijdText = _relatievTijd(i.ts);
+    return `<div class="notif-rij ${ongelezen?'is-ongelezen':''}">
+      <div class="notif-icoon" style="background:${bg}; color:${fg};"><i class="ti ${i.icon}" style="font-size:16px;" aria-hidden="true"></i></div>
+      <div class="notif-body">
+        <div class="notif-tekst">${String(i.tekst).replace(/</g,'&lt;')}</div>
+        <div class="notif-meta">${i.door ? i.door + ' · ' : ''}${tijdText}</div>
+      </div>
+      ${ongelezen ? '<span class="notif-nieuw"></span>' : ''}
+    </div>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="notif-overlay" data-notif-close></div>
+    <div class="notif-panel">
+      <div class="notif-head">
+        <span style="font-weight:600; font-size:14px;">Meldingen</span>
+        <button class="notif-mark-read" data-notif-mark-read>Markeer alles gelezen</button>
+      </div>
+      <div class="notif-body-wrap">
+        ${items.length ? rijenHtml : '<div class="notif-leeg">Geen meldingen.</div>'}
+      </div>
+    </div>
+  `;
+  host.querySelectorAll('[data-notif-close]').forEach(el=>el.addEventListener('click', notifSluiten));
+  host.querySelectorAll('[data-notif-mark-read]').forEach(el=>el.addEventListener('click', ()=>{
+    _notifMarkeerAllesGelezen(); renderNotifDropdown();
+  }));
+}
+function _relatievTijd(ts){
+  const sec = Math.round((Date.now() - ts)/1000);
+  if(sec < 60) return 'zojuist';
+  if(sec < 3600) return Math.floor(sec/60) + ' min geleden';
+  if(sec < 86400) return Math.floor(sec/3600) + ' uur geleden';
+  if(sec < 604800) return Math.floor(sec/86400) + ' dagen geleden';
+  return new Date(ts).toLocaleDateString('nl-NL');
+}
+function notifOpen(){ NOTIF_STATE.open = true; renderNotifDropdown(); }
+function notifSluiten(){ NOTIF_STATE.open = false; renderNotifDropdown(); _notifMarkeerAllesGelezen(); }
 
 // Vang op dat gedebouncede localStorage-writes (persist/persistMeta) niet verloren gaan als het
 // tabblad direct na een wijziging wordt gesloten.
