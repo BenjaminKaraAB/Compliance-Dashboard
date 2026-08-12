@@ -2439,7 +2439,7 @@ function dashboardHTML(){
     <div class="section-body">
       ${urgent.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Type</th><th>Deadline</th><th>Status</th><th></th></tr></thead><tbody>
         ${urgent.map(r=>`<tr class="row-click" data-open-klant="${r.klant.id}">
-          <td><div class="klant-cell">${klantAvatarHTML(r.klant)}<div><div class="klant-name">${r.klant.naam}</div><div class="klant-meta">${r.klant.vorm}</div></div></div></td>
+          <td><div class="klant-name">${r.klant.naam}</div><div class="klant-meta">${r.klant.vorm}</div></td>
           <td>${bh(r.klant.bh).naam}</td>
           <td>${typeof r.type==='string' && TYPE_LABEL[r.type] ? TYPE_LABEL[r.type] : (r.entry.naam||r.type)}</td>
           <td>${fmtDate(r.entry.datum)}</td>
@@ -2459,7 +2459,7 @@ function dashboardHTML(){
         return flagged.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Status</th><th>Openstaande transacties</th><th></th></tr></thead><tbody>
         ${flagged.map(k=>{ const w = worstStatus(k); const meta = STATUS_META[w];
           return `<tr class="row-click" data-open-klant="${k.id}">
-            <td><div class="klant-cell">${klantAvatarHTML(k)}<div><div class="klant-name">${k.naam}</div></div></div></td>
+            <td><div class="klant-name">${k.naam}</div></td>
             <td>${bh(k.bh).naam}</td>
             <td><span class="badge ${meta.cls}"><span class="dot ${meta.cls}"></span>${meta.label}</span></td>
             <td>${STORE[k.id].txn} transactie(s)</td>
@@ -2630,7 +2630,7 @@ function klantenHTML(){
             const ovWorst = ov.length ? ov.map(o=>statusOf(o).key).sort((a,b)=>({actie:0,nadert:1,ingediend:2,schema:3}[a]-{actie:0,nadert:1,ingediend:2,schema:3}[b]))[0] : null;
             const boekhouder = bhVoor(k.bh);
             return `<tr class="row-click" data-open-klant="${k.id}">
-            <td><div class="klant-cell">${klantAvatarHTML(k)}<div><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${boekhouder.naam}</div></div></div></td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${boekhouder.naam}</div></td>
             <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
@@ -2725,7 +2725,7 @@ function aanleveringHTML(){
             const f = STORE[k.id];
             const open = f.items.filter(i=>!i.done).length;
             return `<tr>
-              <td class="row-click" data-open-klant="${k.id}"><div class="klant-cell">${klantAvatarHTML(k)}<div><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm}</div></div></div></td>
+              <td class="row-click" data-open-klant="${k.id}"><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm}</div></td>
               <td>${bh(k.bh).naam}</td>
               <td>
                 <span class="saldo-edit">
@@ -2957,7 +2957,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     }).join('');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:#f7f9fd;':''}">
       <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
-      <td><div class="klant-cell">${klantAvatarHTML(k)}<div><div class="klant-name">${heeftVolgendeMaandNotitie ? '<span title="Notitie klaargezet voor volgende maand" style=\'margin-right:4px;\'>⭐</span>' : ''}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></div></div></td>
+      <td><div class="klant-name">${heeftVolgendeMaandNotitie ? '<span title="Notitie klaargezet voor volgende maand" style=\'margin-right:4px;\'>⭐</span>' : ''}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
