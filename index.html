@@ -115,6 +115,10 @@
   #aiHost .ai-msg.assistant .ai-msg-bubble{border-radius:12px 12px 12px 2px;}
   #aiHost .ai-foot{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border);}
   #aiHost .ai-foot input{flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px; background:var(--card); color:var(--text);}
+  #aiHost .ai-typing{display:flex; gap:4px; align-items:center; padding:11px 12px;}
+  #aiHost .ai-typing span{width:5px; height:5px; border-radius:50%; background:var(--muted2); animation:aiTyping 1s infinite ease-in-out;}
+  #aiHost .ai-typing span:nth-child(2){animation-delay:.15s;} #aiHost .ai-typing span:nth-child(3){animation-delay:.3s;}
+  @keyframes aiTyping{0%,60%,100%{opacity:.3; transform:translateY(0);} 30%{opacity:1; transform:translateY(-2px);}}
 
   /* Force light-mode voor elementen die expliciet [data-theme=light] hebben — nodig voor de verborgen
      PDF-render-wrapper zodat de PDF nooit dark-mode kleuren pakt. */
@@ -7646,15 +7650,30 @@ function _relatievTijd(ts){
 function notifOpen(){ NOTIF_STATE.open = true; renderNotifDropdown(); }
 function notifSluiten(){ NOTIF_STATE.open = false; renderNotifDropdown(); _notifMarkeerAllesGelezen(); }
 
-/* ============================= AI-ASSISTENT PANEEL (PREVIEW) =============================
-   UI-schil voor de ingebouwde AI-assistent die Benjamin wil. Nog NIET gekoppeld aan een taalmodel —
-   dat vraagt een Cloudflare Worker (om de Anthropic API-key niet in de browser te hoeven zetten) die
-   er nog niet is. Bewust een eerlijke preview-staat i.p.v. nepantwoorden verzinnen: elk bericht krijgt
-   een duidelijke uitleg terug in plaats van een gesimuleerd "AI-antwoord". Zodra de Worker er is, hoeft
-   alleen aiVerstuurBericht() een echte fetch-aanroep te doen i.p.v. de placeholder-reactie hieronder.  */
-const AI_STATE = { open:false, messages: (function(){ try{ return JSON.parse(localStorage.getItem('cd_ai_messages')||'[]'); }catch(e){ return []; } })() };
+/* ============================= AI-ASSISTENT PANEEL =============================
+   Chatpaneel dat vragen doorstuurt naar een kleine Cloudflare Worker (AI_WORKER_URL), die op zijn beurt
+   een Cloudflare-gehost taalmodel aanroept via de Workers AI-binding. Geen API-key in deze broncode nodig
+   — die logica zit in de Worker. aiContextSamenvatting() geeft de assistent een compacte, actuele
+   samenvatting van de belangrijkste dashboarddata mee (geen volledige klantendump, om tokens/kosten en
+   privacy-blootstelling te beperken). */
+const AI_WORKER_URL = 'https://compliancebox-ai.benjamin-092.workers.dev';
+const AI_STATE = { open:false, loading:false, messages: (function(){ try{ return JSON.parse(localStorage.getItem('cd_ai_messages')||'[]'); }catch(e){ return []; } })() };
 function _aiBewaarBerichten(){
   try{ localStorage.setItem('cd_ai_messages', JSON.stringify(AI_STATE.messages.slice(-30))); }catch(e){}
+}
+function aiContextSamenvatting(){
+  try{
+    const rows = allDeadlineRows();
+    const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
+    rows.forEach(r=>cnt[r.st.key]++);
+    const urgent = rows.filter(r=>r.st.key==='actie' || r.st.key==='nadert')
+      .sort((a,b)=> daysDiff(a.entry.datum) - daysDiff(b.entry.datum))
+      .slice(0,15)
+      .map(r=>`- ${r.klant.naam} (${bh(r.klant.bh).naam}): ${typeof r.type==='string' && TYPE_LABEL[r.type] ? TYPE_LABEL[r.type] : r.type}, deadline ${fmtDate(r.entry.datum)}, status ${r.st.key}`)
+      .join('\n');
+    const totalSaldo = RAW_KLANTEN.reduce((s,k)=>s+STORE[k.id].saldo,0);
+    return `Vandaag: ${TODAY.toLocaleDateString('nl-NL')}. Totaal ${RAW_KLANTEN.length} klanten. Deadlinestatus: ${cnt.actie} actie vereist, ${cnt.nadert} nadert, ${cnt.schema} op schema. Totaal openstaand banksaldo: ${fmtEUR(totalSaldo)}.\nMeest urgente deadlines:\n${urgent || '(geen)'}`;
+  }catch(e){ return 'Geen dashboarddata beschikbaar.'; }
 }
 function renderAiPanel(){
   let host = document.getElementById('aiHost');
@@ -7667,19 +7686,24 @@ function renderAiPanel(){
     </div>`).join('') : `
     <div class="ai-empty">
       <i class="ti ti-sparkles" style="font-size:22px; color:var(--muted2);" aria-hidden="true"></i>
-      <p>Stel straks een vraag over klanten, deadlines of taken.</p>
+      <p>Stel een vraag over klanten, deadlines of taken.</p>
     </div>`;
+  const typingHtml = AI_STATE.loading ? `
+    <div class="ai-msg assistant">
+      <div class="ai-msg-avatar"><i class="ti ti-sparkles" aria-hidden="true"></i></div>
+      <div class="ai-msg-bubble ai-typing"><span></span><span></span><span></span></div>
+    </div>` : '';
   host.innerHTML = `
     <div class="ai-overlay" data-ai-close></div>
     <div class="ai-panel">
       <div class="ai-head">
-        <div style="display:flex; align-items:center; gap:8px;"><i class="ti ti-sparkles" style="color:var(--primary-dark);" aria-hidden="true"></i><span style="font-weight:600; font-size:14px;">AI-assistent</span><span class="ai-badge">preview</span></div>
+        <div style="display:flex; align-items:center; gap:8px;"><i class="ti ti-sparkles" style="color:var(--primary-dark);" aria-hidden="true"></i><span style="font-weight:600; font-size:14px;">AI-assistent</span></div>
         <button class="notif-mark-read" data-ai-close style="padding:4px 8px;"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
-      <div class="ai-body-wrap" id="aiBodyWrap">${berichtenHtml}</div>
+      <div class="ai-body-wrap" id="aiBodyWrap">${berichtenHtml}${typingHtml}</div>
       <div class="ai-foot">
-        <input type="text" id="aiInput" placeholder="Vraag iets over klanten of deadlines…" autocomplete="off">
-        <button class="btn sm primary" id="aiSendBtn" aria-label="Versturen"><i class="ti ti-send" aria-hidden="true"></i></button>
+        <input type="text" id="aiInput" placeholder="Vraag iets over klanten of deadlines…" autocomplete="off" ${AI_STATE.loading?'disabled':''}>
+        <button class="btn sm primary" id="aiSendBtn" aria-label="Versturen" ${AI_STATE.loading?'disabled':''}><i class="ti ti-send" aria-hidden="true"></i></button>
       </div>
     </div>
   `;
@@ -7687,18 +7711,40 @@ function renderAiPanel(){
   const input = document.getElementById('aiInput');
   const stuur = ()=>{
     const tekst = (input.value||'').trim();
-    if(!tekst) return;
+    if(!tekst || AI_STATE.loading) return;
     aiVerstuurBericht(tekst);
     input.value = '';
   };
   document.getElementById('aiSendBtn').addEventListener('click', stuur);
   input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') stuur(); });
+  if(!AI_STATE.loading) input.focus();
   const wrap = document.getElementById('aiBodyWrap');
   if(wrap) wrap.scrollTop = wrap.scrollHeight;
 }
-function aiVerstuurBericht(tekst){
+async function aiVerstuurBericht(tekst){
   AI_STATE.messages.push({role:'user', text:tekst});
-  AI_STATE.messages.push({role:'assistant', text:'De AI-assistent is nog niet gekoppeld aan een taalmodel. Zodra de Cloudflare Worker en Anthropic API-key zijn ingesteld, beantwoord ik hier automatisch vragen over klanten, deadlines en taken.'});
+  AI_STATE.loading = true;
+  _aiBewaarBerichten();
+  renderAiPanel();
+  try{
+    const res = await fetch(AI_WORKER_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: AI_STATE.messages.slice(-10).map(m=>({role:m.role, text:m.text})),
+        context: aiContextSamenvatting()
+      })
+    });
+    if(!res.ok){
+      const errBody = await res.text().catch(()=> '');
+      throw new Error(`Server gaf status ${res.status}${errBody ? ' — ' + errBody.slice(0,200) : ''}`);
+    }
+    const data = await res.json();
+    AI_STATE.messages.push({role:'assistant', text: data.reply || 'Geen antwoord ontvangen.'});
+  }catch(e){
+    AI_STATE.messages.push({role:'assistant', text: 'Kon de AI-assistent niet bereiken (' + ((e&&e.message)||'onbekende fout') + '). Controleer of de Cloudflare Worker actief is en het adres in AI_WORKER_URL klopt.'});
+  }
+  AI_STATE.loading = false;
   _aiBewaarBerichten();
   renderAiPanel();
 }
