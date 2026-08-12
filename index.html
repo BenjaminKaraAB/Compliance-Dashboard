@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Compliance Dashboard — Administratiebox</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -84,6 +85,7 @@
   }
   .search-wrap input:focus{border-color:var(--primary); background:#fff; box-shadow:0 0 0 3px rgba(34,197,138,.15);}
   .search-wrap svg{position:absolute; left:10px; top:9px; width:15px; height:15px; color:var(--muted2);}
+  .search-wrap .search-kbd{position:absolute; right:10px; top:8px; font-size:10.5px; color:var(--muted); background:#fff; padding:2px 6px; border-radius:4px; border:1px solid var(--border); font-family:ui-monospace,monospace;}
   .topbar-right{display:flex; align-items:center; gap:14px;}
   .today-pill{font-size:12px; color:var(--muted); background:var(--bg); border:1px solid var(--border); padding:7px 12px; border-radius:20px;}
 
@@ -123,6 +125,9 @@
   tbody tr:last-child td{border-bottom:none;}
   tbody tr.row-click{cursor:pointer; transition:background .12s ease;}
   tbody tr.row-click:hover{background:#f4faf7;}
+  tbody tr.klant-rij .strip-cel{padding:0; width:4px; position:relative;}
+  tbody tr.klant-rij .rij-strip{position:absolute; left:0; top:6px; bottom:6px; width:3px; border-radius:0 2px 2px 0;}
+  tbody tr.klant-rij:hover .rij-strip{width:4px;}
   .klant-cell{display:flex; align-items:center; gap:10px;}
   .klant-avatar{width:32px; height:32px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11.5px; letter-spacing:.3px; flex:none; box-shadow:inset 0 -1px 0 rgba(0,0,0,.08);}
   .klant-name{font-weight:700; color:var(--text); line-height:1.35;}
@@ -205,13 +210,15 @@
   .panel-section h4{margin:0; padding:13px 16px; border-bottom:1px solid var(--border); font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; background:#fafbfd;}
   .panel-section .inner{padding:14px 16px;}
 
-  .deadline-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:14px 16px;}
-  .dl-card{border:1px solid var(--border); border-radius:9px; padding:11px 12px;}
-  .dl-card .dl-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
-  .dl-card .dl-name{font-weight:700; font-size:12.5px;}
-  .dl-card .dl-date{font-size:11.5px; color:var(--muted); margin-top:2px;}
-  .dl-card .dl-days{font-size:11px; margin-top:4px; font-weight:600;}
-  .dl-card .dl-actions{margin-top:8px; display:flex; gap:6px;}
+  .deadline-grid{display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; padding:14px 16px;}
+  .dl-card{border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column;}
+  .dl-card.dl-card-na{background:#eef0f4; opacity:.7;}
+  .dl-card .dl-card-inner{padding:10px 12px;}
+  .dl-card .dl-label{font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; font-weight:600;}
+  .dl-card .dl-big{font-size:15px; font-weight:700; margin-top:5px; letter-spacing:-0.2px;}
+  .dl-card .dl-small{font-size:11px; margin-top:2px;}
+  .dl-card .dl-card-actions{padding:8px 10px; display:flex; gap:4px; flex-direction:column;}
+  .dl-card .dl-card-actions select, .dl-card .dl-card-actions button{width:100%;}
   .dl-na{color:var(--muted2); font-size:12px; padding:14px 16px;}
 
   .overige-row{display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-top:1px solid var(--border);}
@@ -253,6 +260,24 @@
   .empty-state{padding:48px 24px; text-align:center; color:var(--muted); font-size:13px; line-height:1.6;}
   .saldo-edit{display:inline-flex; align-items:center; gap:6px;}
   .saldo-edit input{width:100px; padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;}
+
+  /* Command palette */
+  #cmdkHost .cmdk-overlay{position:fixed; inset:0; background:rgba(15,23,42,.35); backdrop-filter:blur(2px); z-index:80;}
+  #cmdkHost .cmdk-panel{position:fixed; top:14vh; left:50%; transform:translateX(-50%); width:560px; max-width:92vw; background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-lg); z-index:81; overflow:hidden; display:flex; flex-direction:column;}
+  #cmdkHost .cmdk-input-wrap{display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--border);}
+  #cmdkHost .cmdk-input-wrap input{flex:1; border:none; outline:none; font-size:15px; background:transparent; font-family:inherit; color:var(--text);}
+  #cmdkHost .cmdk-input-wrap input::placeholder{color:var(--muted2);}
+  #cmdkHost .cmdk-esc{font-size:10.5px; color:var(--muted); background:var(--bg); padding:3px 6px; border-radius:5px; border:1px solid var(--border); font-family:ui-monospace,monospace;}
+  #cmdkHost .cmdk-body{max-height:380px; overflow-y:auto; padding:6px;}
+  #cmdkHost .cmdk-rij{display:flex; align-items:center; gap:12px; padding:9px 12px; border-radius:8px; cursor:pointer; transition:background .08s;}
+  #cmdkHost .cmdk-rij:hover, #cmdkHost .cmdk-rij.is-active{background:var(--primary-bg);}
+  #cmdkHost .cmdk-rij.is-active i{color:var(--primary-dark);}
+  #cmdkHost .cmdk-label{font-size:13.5px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  #cmdkHost .cmdk-sub{font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  #cmdkHost .cmdk-type{font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted2); background:var(--bg); padding:2px 7px; border-radius:5px; font-weight:600;}
+  #cmdkHost .cmdk-leeg{padding:22px; text-align:center; color:var(--muted); font-size:13px;}
+  #cmdkHost .cmdk-foot{display:flex; gap:14px; padding:8px 14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); background:var(--bg);}
+  #cmdkHost kbd{font-family:ui-monospace,monospace; background:var(--card); border:1px solid var(--border); padding:1px 5px; border-radius:4px; font-size:10.5px; margin-right:4px;}
 
   @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} .bh-grid{grid-template-columns:repeat(2,1fr);} }
 </style>
@@ -1694,7 +1719,7 @@ function render(){
           <div class="page-sub">${pageSub()}</div>
         </div>
         <div class="topbar-right">
-          <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/></div>
+          <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/><span class="search-kbd">⌘K</span></div>
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
           <div class="today-pill">📅 ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
         </div>
@@ -2427,11 +2452,46 @@ function dashboardHTML(){
     ${teamFilter && teamOf(teamFilter) ? `<span class="hint">Gefilterd op team ${teamOf(teamFilter).naam} · ${klantenGefilterd.length} klant(en)</span>` : ''}
   </div>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="kpi-label">Totaal klanten</div><div class="kpi-value">${klantenGefilterd.length}</div><div class="kpi-sub" style="color:var(--muted)">Verdeeld over ${teamFilter ? boekhoudersOfTeam(teamFilter).length : BOEKHOUDERS.length} boekhouders</div></div>
-    <div class="kpi-card red"><div class="kpi-label">Actie vereist</div><div class="kpi-value">${cnt.actie}</div><div class="kpi-sub" style="color:var(--red)">Deadlines verlopen of ≤ 7 dagen</div></div>
-    <div class="kpi-card amber"><div class="kpi-label">Deadline nadert</div><div class="kpi-value">${cnt.nadert}</div><div class="kpi-sub" style="color:var(--amber)">Binnen 8–30 dagen</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Op schema</div><div class="kpi-value">${cnt.schema}</div><div class="kpi-sub" style="color:var(--green)">Ruim op tijd</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Open banksaldo</div><div class="kpi-value" style="font-size:22px;">${fmtEUR(totalSaldo)}</div><div class="kpi-sub" style="color:var(--muted)">${teamFilter ? 'Over dit team' : 'Over alle klanten'}</div></div>
+    <div class="kpi-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+        <div class="kpi-label">Totaal klanten</div>
+        <i class="ti ti-users" style="font-size:16px; color:var(--muted2);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${klantenGefilterd.length}</div>
+      <div class="kpi-sub" style="color:var(--muted)">${teamFilter ? boekhoudersOfTeam(teamFilter).length : BOEKHOUDERS.length} boekhouders</div>
+    </div>
+    <div class="kpi-card red">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+        <div class="kpi-label">Actie vereist</div>
+        <i class="ti ti-alert-triangle" style="font-size:16px; color:var(--red);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${cnt.actie}</div>
+      <div class="kpi-sub" style="color:var(--red)">Verlopen of ≤ 7 dagen</div>
+    </div>
+    <div class="kpi-card amber">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+        <div class="kpi-label">Deadline nadert</div>
+        <i class="ti ti-clock" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${cnt.nadert}</div>
+      <div class="kpi-sub" style="color:var(--amber)">Binnen 8–30 dagen</div>
+    </div>
+    <div class="kpi-card green">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+        <div class="kpi-label">Op schema</div>
+        <i class="ti ti-check" style="font-size:16px; color:var(--green);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${cnt.schema}</div>
+      <div class="kpi-sub" style="color:var(--green)">Ruim op tijd</div>
+    </div>
+    <div class="kpi-card blue">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+        <div class="kpi-label">Open banksaldo</div>
+        <i class="ti ti-wallet" style="font-size:16px; color:var(--primary);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value" style="font-size:22px;">${fmtEUR(totalSaldo)}</div>
+      <div class="kpi-sub" style="color:var(--muted)">${teamFilter ? 'Dit team' : 'Alle klanten'}</div>
+    </div>
   </div>
 
   <div class="section">
@@ -2595,52 +2655,72 @@ function klantenHTML(){
     list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
   }
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${STATE.bhFilter===b.id?'selected':''}>${b.naam}</option>`).join('');
-  // isAdmin() en de boekhouder-lookup zijn hetzelfde voor de héle lijst — buiten de loop berekenen
-  // i.p.v. per rij (tot 2x per klant) scheelt merkbaar werk bij een grote klantenlijst.
   const magVerwijderen = isAdmin();
   const bhCache = new Map();
   const bhVoor = (id)=>{ if(!bhCache.has(id)) bhCache.set(id, bh(id)); return bhCache.get(id); };
+
+  // Tellingen voor status-chips
+  const tellingen = {alle: RAW_KLANTEN.length, actie:0, nadert:0, schema:0, ingediend:0};
+  RAW_KLANTEN.forEach(k=>{ const w = worstStatus(k); if(tellingen[w]!==undefined) tellingen[w]++; });
+
+  const chip = (val, label, count, kleurCls)=>{
+    const actief = STATE.statusFilter===val;
+    const base = 'padding:6px 12px; border-radius:20px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .12s ease; border:1px solid transparent; font-weight:500;';
+    const actiefStijl = kleurCls==='groen' ? 'background:#dcf7ec; border-color:#b6ecd2; color:#0f7550;'
+      : kleurCls==='rood' ? 'background:#fdeaea; border-color:#f6c9c9; color:#791f1f;'
+      : kleurCls==='oranje' ? 'background:#fdf1de; border-color:#f3d9a8; color:#633806;'
+      : kleurCls==='blauw' ? 'background:#e5f5fa; border-color:#bfe4ee; color:#0e7fa3;'
+      : 'background:#e6faf1; border-color:#b6ecd2; color:#0f7550;';
+    const inactiefStijl = 'background:transparent; border-color:var(--border); color:var(--muted);';
+    return `<button data-status-chip="${val}" style="${base} ${actief?actiefStijl:inactiefStijl}">${label}<span style="opacity:.75;">${count}</span></button>`;
+  };
 
   return `
   <div class="section">
     <div class="section-head">
       <h3>Klantenlijst</h3>
       <div style="display:flex; gap:8px;">
-        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Klanten importeren (CSV/Excel)<input type="file" id="klantenCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Importeren<input type="file" id="klantenCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
         <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
       </div>
     </div>
     <div id="klantImportResult" style="padding:0 20px;"></div>
-    <div class="filters">
-      <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
-      <select id="filterStatus">
-        <option value="">Alle statussen</option>
-        <option value="actie" ${STATE.statusFilter==='actie'?'selected':''}>Actie vereist</option>
-        <option value="nadert" ${STATE.statusFilter==='nadert'?'selected':''}>Deadline nadert</option>
-        <option value="schema" ${STATE.statusFilter==='schema'?'selected':''}>Op schema</option>
-      </select>
-      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${list.length} van ${RAW_KLANTEN.length} klanten</span>
+    <div style="padding:14px 20px 4px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${chip('', 'Alle', tellingen.alle, 'default')}
+        ${chip('actie', 'Actie vereist', tellingen.actie, 'rood')}
+        ${chip('nadert', 'Deadline nadert', tellingen.nadert, 'oranje')}
+        ${chip('schema', 'Op schema', tellingen.schema, 'groen')}
+        ${chip('ingediend', 'Ingediend', tellingen.ingediend, 'blauw')}
+      </div>
+      <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        <select id="filterBh" style="padding:6px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; background:#fff;"><option value="">Alle boekhouders</option>${bhOptions}</select>
+        <span style="font-size:12px; color:var(--muted);">${list.length} van ${RAW_KLANTEN.length}</span>
+      </div>
     </div>
-    <div class="section-body">
-      <table>
-        <thead><tr><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
+    <div class="section-body" style="padding-top:6px;">
+      <table class="klanten-tabel">
+        <thead><tr><th style="width:4px;"></th><th>Klant</th><th>Boekhouder</th><th>OB</th><th>VPB</th><th>LH</th><th>JR/JA</th><th>Overige</th><th>Open saldo</th><th></th></tr></thead>
         <tbody>
           ${list.map(k=>{
             const ov = STORE[k.id].dl.overige||[];
             const ovWorst = ov.length ? ov.map(o=>statusOf(o).key).sort((a,b)=>({actie:0,nadert:1,ingediend:2,schema:3}[a]-{actie:0,nadert:1,ingediend:2,schema:3}[b]))[0] : null;
             const boekhouder = bhVoor(k.bh);
-            return `<tr class="row-click" data-open-klant="${k.id}">
-            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm} · ${boekhouder.naam}</div></td>
+            const w = worstStatus(k);
+            const stripKleur = {actie:'#dc2626', nadert:'#c9770a', schema:'#22c58a', ingediend:'#0e7fa3'}[w] || '#e4e8f0';
+            return `<tr class="row-click klant-rij" data-open-klant="${k.id}" style="--strip:${stripKleur};">
+            <td class="strip-cel"><div class="rij-strip" style="background:${stripKleur};"></div></td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm}${k.kvk?' · KvK '+k.kvk:''}</div></td>
             <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
             <td>${badge(effDL(k,'LH'))}</td>
             <td>${badge(effDL(k,'JR'))}</td>
             <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
-            <td>${fmtEUR(STORE[k.id].saldo)}</td>
+            <td style="font-variant-numeric:tabular-nums;">${fmtEUR(STORE[k.id].saldo)}</td>
             <td style="text-align:right; white-space:nowrap;">
               ${magVerwijderen ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);">🗑</button>` : ''}
-              <button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button>
+              <button class="btn sm ghost" data-open-klant="${k.id}">Openen <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
             </td>
           </tr>`;}).join('')}
         </tbody>
@@ -3554,26 +3634,35 @@ function instellingenHTML(){
 /* ============================= PANEL: KLANT DETAIL ============================= */
 function deadlineCard(type, entry){
   if(entry.na){
-    return `<div class="dl-card"><div class="dl-top"><span class="dl-name">${TYPE_LABEL[type]}</span></div><div class="dl-na" style="padding:0;">Niet van toepassing</div></div>`;
+    return `<div class="dl-card dl-card-na">
+      <div class="dl-card-inner"><div class="dl-label">${TYPE_LABEL[type]}</div><div class="dl-big">N.v.t.</div></div>
+    </div>`;
   }
   const st = statusOf(entry); const meta = STATUS_META[st.key];
-  const daysTxt = entry.status==='ingediend' ? `Ingediend op ${fmtDate(entry.datum)}` : (st.dagen<0 ? `${Math.abs(st.dagen)} dagen te laat` : `Nog ${st.dagen} dagen`);
+  const kleuren = {
+    actie: {bg:'#fdeaea', brd:'#f6c9c9', txt:'#791f1f', sub:'#a32d2d'},
+    nadert:{bg:'#fdf1de', brd:'#f3d9a8', txt:'#633806', sub:'#854f0b'},
+    schema:{bg:'#e5f6ee', brd:'#bfe6d2', txt:'#173404', sub:'#27500a'},
+    ingediend:{bg:'#e5f5fa', brd:'#bfe4ee', txt:'#0c447c', sub:'#185fa5'},
+  };
+  const kl = kleuren[st.key] || {bg:'#eef0f4', brd:'#dde1ea', txt:'var(--text)', sub:'var(--muted)'};
+  const bigTxt = entry.status==='ingediend' ? 'Ingediend' : (st.dagen<0 ? `${Math.abs(st.dagen)}d te laat` : `${st.dagen} dagen`);
+  const subTxt = entry.status==='ingediend' ? `Op ${fmtDate(entry.datum)}` : fmtDate(entry.datum);
   const herh = entry.herhaling || 'geen';
-  return `<div class="dl-card">
-    <div class="dl-top"><span class="dl-name">${TYPE_LABEL[type]}</span>${badge(entry)}</div>
-    <div class="dl-date">Deadline: ${fmtDate(entry.datum)}</div>
-    <div class="dl-days" style="color:var(--${meta.cls==='gray'?'muted':meta.cls})">${daysTxt}</div>
-    <div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
-      <label style="font-size:11px; color:var(--muted);">Herhaling:</label>
-      <select data-set-herhaling="${type}" style="padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
-        <option value="geen" ${herh==='geen'?'selected':''}>Geen</option>
+  return `<div class="dl-card dl-card-tegel" style="background:${kl.bg}; border-color:${kl.brd};">
+    <div class="dl-card-inner">
+      <div class="dl-label" style="color:${kl.txt};">${TYPE_LABEL[type]}</div>
+      <div class="dl-big" style="color:${kl.txt};">${bigTxt}</div>
+      <div class="dl-small" style="color:${kl.sub};">${subTxt}</div>
+    </div>
+    <div class="dl-card-actions" style="border-top:1px solid ${kl.brd};">
+      <select data-set-herhaling="${type}" style="padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px; background:#fff;">
+        <option value="geen" ${herh==='geen'?'selected':''}>Geen herhaling</option>
         <option value="maandelijks" ${herh==='maandelijks'?'selected':''}>Maandelijks</option>
         <option value="kwartaal" ${herh==='kwartaal'?'selected':''}>Per kwartaal</option>
         <option value="jaarlijks" ${herh==='jaarlijks'?'selected':''}>Jaarlijks</option>
       </select>
-    </div>
-    <div class="dl-actions">
-      ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}">Markeer als ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}">Ongedaan maken</button>`}
+      ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}" style="background:#fff;">Markeer ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}" style="background:#fff;">Ongedaan maken</button>`}
     </div>
   </div>`;
 }
@@ -4413,8 +4502,12 @@ function panelHTML(klant){
     </div>
   </div>
   <div class="panel-body">
-    ${heeftUrgenteHerinneringNodig(klant) ? `<div class="banner" style="background:var(--red-bg); border-color:var(--red-brd); color:var(--red);">
-      🚩 <b>Let op:</b> een deadline nadert of is verstreken én er staan nog ${STORE[klant.id].txn} banktransactie(s) open. Overweeg een herinnering te sturen (zie "Automatische herinneringen" hieronder).
+    ${heeftUrgenteHerinneringNodig(klant) ? `<div style="display:flex; gap:14px; align-items:center; background:var(--red-bg); border:1px solid var(--red-brd); border-radius:12px; padding:14px 16px; margin-bottom:16px;">
+      <div style="width:36px; height:36px; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; flex:none;"><i class="ti ti-alert-triangle" style="font-size:18px;" aria-hidden="true"></i></div>
+      <div style="flex:1;">
+        <div style="font-size:13.5px; font-weight:600; color:#791f1f;">Deadline nadert of verstreken</div>
+        <div style="font-size:12px; color:#a32d2d; margin-top:1px;">Er staan nog ${STORE[klant.id].txn} banktransactie(s) open. Stuur een herinnering.</div>
+      </div>
     </div>` : ''}
     <div class="panel-section">
       <h4>Contact</h4>
@@ -5320,6 +5413,10 @@ function attachHandlers(){
   if(filterBh) filterBh.addEventListener('change', e=>{ STATE.bhFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const filterStatus = document.getElementById('filterStatus');
   if(filterStatus) filterStatus.addEventListener('change', e=>{ STATE.statusFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  document.querySelectorAll('[data-status-chip]').forEach(el=>bindOnce(el, 'click', e=>{
+    STATE.statusFilter = el.dataset.statusChip;
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  }));
   const filterTeamDashboard = document.getElementById('filterTeamDashboard');
   if(filterTeamDashboard) filterTeamDashboard.addEventListener('change', e=>{ STATE.dashboardTeamFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   const overlay = document.getElementById('overlay');
@@ -6553,6 +6650,118 @@ setInterval(()=>{
   }
 }, 45000);
 
+
+/* ============================= COMMAND PALETTE (⌘K) =============================
+   Snelle navigatie: druk Cmd+K (Mac) of Ctrl+K (Windows/Linux) en typ om klanten of pagina's te
+   zoeken. Enter = openen, Esc = sluiten, ↑/↓ = navigeren. Werkt vanaf elke pagina, ook als een
+   klantpaneel open staat. Bewust bovenop de bestaande overlay/panel-stack — z-index hoger dan
+   het klant-paneel (z=41) zodat de palette altijd zichtbaar is. */
+const CMDK_STATE = { open:false, query:'', idx:0 };
+function cmdkResultaten(){
+  const q = CMDK_STATE.query.trim().toLowerCase();
+  const paginas = [
+    {type:'pagina', label:'Overzicht',              view:'dashboard',    icon:'ti-layout-dashboard'},
+    {type:'pagina', label:'Boekhouders',            view:'boekhouders',  icon:'ti-users-group'},
+    {type:'pagina', label:'Teams',                  view:'teams',        icon:'ti-users'},
+    {type:'pagina', label:'Klanten',                view:'klanten',      icon:'ti-building'},
+    {type:'pagina', label:'Aanlevering & Saldo',    view:'aanlevering',  icon:'ti-cash'},
+    {type:'pagina', label:'Loonheffingen',          view:'loonheffing',  icon:'ti-receipt'},
+    {type:'pagina', label:'Autolijst',              view:'autolijst',    icon:'ti-car'},
+    {type:'pagina', label:'Instellingen',           view:'instellingen', icon:'ti-settings'},
+  ];
+  const paginaHits = q ? paginas.filter(p=>p.label.toLowerCase().includes(q)) : paginas;
+  const klantHits = q
+    ? RAW_KLANTEN.filter(k=>k.naam.toLowerCase().includes(q) || (k.contact||'').toLowerCase().includes(q)).slice(0,20)
+    : [];
+  const results = [];
+  paginaHits.forEach(p=>results.push({...p, key:'view:'+p.view}));
+  klantHits.forEach(k=>{
+    const b = bh(k.bh);
+    results.push({type:'klant', label:k.naam, sub: (b?b.naam+' · ':'') + k.vorm, id:k.id, icon:'ti-user', key:'klant:'+k.id});
+  });
+  return results;
+}
+function renderCmdk(){
+  let host = document.getElementById('cmdkHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'cmdkHost';
+    document.body.appendChild(host);
+  }
+  if(!CMDK_STATE.open){ host.innerHTML=''; return; }
+  const results = cmdkResultaten();
+  if(CMDK_STATE.idx >= results.length) CMDK_STATE.idx = Math.max(0, results.length-1);
+  const rijenHtml = results.map((r,i)=>`
+    <div class="cmdk-rij ${i===CMDK_STATE.idx?'is-active':''}" data-cmdk-idx="${i}">
+      <i class="ti ${r.icon}" style="font-size:16px; color:var(--muted); flex:none;" aria-hidden="true"></i>
+      <div style="flex:1; min-width:0;">
+        <div class="cmdk-label">${(r.label||'').replace(/</g,'&lt;')}</div>
+        ${r.sub ? `<div class="cmdk-sub">${r.sub.replace(/</g,'&lt;')}</div>` : ''}
+      </div>
+      <div class="cmdk-type">${r.type}</div>
+    </div>
+  `).join('');
+  host.innerHTML = `
+    <div class="cmdk-overlay" data-cmdk-close></div>
+    <div class="cmdk-panel">
+      <div class="cmdk-input-wrap">
+        <i class="ti ti-search" style="font-size:18px; color:var(--muted);" aria-hidden="true"></i>
+        <input id="cmdkInput" placeholder="Zoek klant of pagina…" value="${CMDK_STATE.query.replace(/"/g,'&quot;')}" autocomplete="off"/>
+        <span class="cmdk-esc">esc</span>
+      </div>
+      <div class="cmdk-body">
+        ${results.length ? rijenHtml : '<div class="cmdk-leeg">Niets gevonden.</div>'}
+      </div>
+      <div class="cmdk-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigeren</span>
+        <span><kbd>↵</kbd> openen</span>
+        <span><kbd>esc</kbd> sluiten</span>
+      </div>
+    </div>
+  `;
+  const input = document.getElementById('cmdkInput');
+  if(input){
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.addEventListener('input', e=>{ CMDK_STATE.query = e.target.value; CMDK_STATE.idx = 0; renderCmdk(); });
+    input.addEventListener('keydown', e=>{
+      const res = cmdkResultaten();
+      if(e.key==='ArrowDown'){ e.preventDefault(); CMDK_STATE.idx = Math.min(res.length-1, CMDK_STATE.idx+1); renderCmdk(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); CMDK_STATE.idx = Math.max(0, CMDK_STATE.idx-1); renderCmdk(); }
+      else if(e.key==='Enter'){ e.preventDefault(); cmdkKies(res[CMDK_STATE.idx]); }
+      else if(e.key==='Escape'){ e.preventDefault(); cmdkSluiten(); }
+    });
+  }
+  host.querySelectorAll('[data-cmdk-close]').forEach(el=>el.addEventListener('click', cmdkSluiten));
+  host.querySelectorAll('[data-cmdk-idx]').forEach(el=>el.addEventListener('click', ()=>{
+    const i = parseInt(el.dataset.cmdkIdx, 10);
+    cmdkKies(cmdkResultaten()[i]);
+  }));
+}
+function cmdkOpen(){ CMDK_STATE.open = true; CMDK_STATE.query = ''; CMDK_STATE.idx = 0; renderCmdk(); }
+function cmdkSluiten(){ CMDK_STATE.open = false; renderCmdk(); }
+function cmdkKies(r){
+  if(!r) return;
+  cmdkSluiten();
+  if(r.type==='pagina'){
+    STATE.view = r.view;
+    STATE.panelKlant = null; STATE.editKlant = null; STATE.showAddKlant = false;
+    render();
+  } else if(r.type==='klant'){
+    STATE.view = 'klanten';
+    render();
+    // Wacht kort tot render klaar is, open dan het klantpaneel
+    setTimeout(()=>{ const klant = RAW_KLANTEN.find(k=>k.id===r.id); if(klant && typeof openKlantPanel==='function') openKlantPanel(klant); }, 30);
+  }
+}
+document.addEventListener('keydown', e=>{
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='k'){
+    e.preventDefault();
+    if(CMDK_STATE.open) cmdkSluiten(); else cmdkOpen();
+  } else if(e.key==='Escape' && CMDK_STATE.open){
+    cmdkSluiten();
+  }
+});
 
 // Vang op dat gedebouncede localStorage-writes (persist/persistMeta) niet verloren gaan als het
 // tabblad direct na een wijziging wordt gesloten.
