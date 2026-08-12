@@ -65,6 +65,38 @@
   html[data-theme="dark"] .banner{background:rgba(34,197,138,.10); border-color:rgba(34,197,138,.25); color:#4be8a8;}
   html[data-theme="dark"] #cmdkHost .cmdk-panel{background:#0f172a; border-color:#334155;}
   html[data-theme="dark"] #cmdkHost .cmdk-rij:hover, html[data-theme="dark"] #cmdkHost .cmdk-rij.is-active{background:rgba(34,197,138,.13);}
+
+  .hero-banner{background:linear-gradient(180deg, var(--card) 0%, var(--card) 100%); background:var(--card); border:1px solid var(--border); border-radius:16px; padding:22px 26px; margin-bottom:18px; position:relative; overflow:hidden;}
+  .hero-banner::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--primary);}
+  .hero-top{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:16px;}
+  .hero-date{font-size:12.5px; color:var(--muted); margin:0 0 4px;}
+  .hero-greeting{font-size:21px; font-weight:700; margin:0; color:var(--text);}
+  .hero-avatar{width:38px; height:38px; border-radius:50%; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0;}
+  .hero-stats{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin-bottom:14px;}
+  .hero-stat{background:var(--bg); border-radius:10px; padding:10px 12px;}
+  .hero-stat .n{font-size:20px; font-weight:700; line-height:1.2;}
+  .hero-stat .l{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .hero-digest{background:var(--primary-bg); border-radius:10px; padding:12px 14px; display:flex; gap:10px; align-items:flex-start;}
+  .hero-digest i{font-size:17px; color:var(--primary-dark); margin-top:1px; flex-shrink:0;}
+  .hero-digest-title{font-size:12.5px; font-weight:700; color:var(--primary-dark); margin:0 0 3px;}
+  .hero-digest-body{font-size:12.5px; color:var(--primary-dark); margin:0; line-height:1.55;}
+  .hero-digest-empty{background:var(--bg); border-radius:10px; padding:12px 14px; display:flex; gap:10px; align-items:center; color:var(--muted); font-size:12.5px;}
+  .hero-digest-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .hero-digest-actions button{font-size:12px; padding:6px 12px;}
+  html[data-theme="dark"] .hero-stat{background:rgba(255,255,255,.03);}
+
+  .panel-section{scroll-margin-top:52px;}
+  .panel-section-head{position:sticky; top:0; z-index:5; background:var(--card); display:flex; align-items:center; gap:8px; padding:10px 4px; border-bottom:1px solid var(--border); margin-bottom:10px;}
+  .panel-section-head i{font-size:16px; color:var(--muted);}
+  .panel-section-head .t{font-size:13px; font-weight:700; color:var(--text);}
+  html[data-theme="dark"] .panel-section-head{background:var(--card);}
+
+  button, .btn{transition:transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;}
+  button:hover:not(:disabled), .btn:hover{transform:translateY(-1px);}
+  button:active:not(:disabled), .btn:active{transform:translateY(0); transition-duration:.05s;}
+  button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{outline:2px solid var(--primary); outline-offset:2px; border-radius:6px;}
+  .bulk-act:hover, .bulk-close:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);}
+
   /* Force light-mode voor elementen die expliciet [data-theme=light] hebben — nodig voor de verborgen
      PDF-render-wrapper zodat de PDF nooit dark-mode kleuren pakt. */
   [data-theme="light"]{
@@ -455,6 +487,9 @@ function updateThemeButton(){
 initTheme();
 const NL_MAANDEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
 function fmtDatumLang(date){ return `${date.getDate()} ${NL_MAANDEN[date.getMonth()]} ${date.getFullYear()}`; }
+const NL_DAGEN = ['zondag','maandag','dinsdag','woensdag','donderdag','vrijdag','zaterdag'];
+function fmtDagVolledig(date){ return `${NL_DAGEN[date.getDay()][0].toUpperCase()}${NL_DAGEN[date.getDay()].slice(1)} ${date.getDate()} ${NL_MAANDEN[date.getMonth()]}`; }
+
 /* Logo uit het briefhoofd van AdministratieBox, ingebed als data-URI zodat gegenereerde PDF's
    (bijv. de akkoordverklaring aangifte IB) zelfstandig blijven werken — geen externe afbeelding nodig,
    werkt dus ook offline en zonder CORS-gedoe bij het client-side genereren van de PDF. */
@@ -1504,9 +1539,9 @@ async function fetchRemoteAndMerge(showFeedback){
 function updateSyncIndicator(){
   const el = document.getElementById('syncIndicator');
   if(!el) return;
-  if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '☁️ Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
-  if(SYNC.lastError){ el.innerHTML = '⚠️ Sync mislukt'; el.style.color = 'var(--red)'; return; }
-  el.innerHTML = '☁️ '+SYNC.account.username+(SYNC.lastSync ? ' · '+new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '');
+  if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '<i class="ti ti-cloud-off" aria-hidden="true"></i> Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
+  if(SYNC.lastError){ el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt'; el.style.color = 'var(--red)'; return; }
+  el.innerHTML = '<i class="ti ti-cloud" aria-hidden="true"></i> '+SYNC.account.username+(SYNC.lastSync ? ' · '+new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '');
   el.style.color = 'var(--green)';
 }
 
@@ -1910,7 +1945,7 @@ function render(){
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
           <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen" style="padding:6px 10px;"><i class="ti ti-moon" aria-hidden="true"></i></button>
           <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="padding:6px 10px; position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
-          <div class="today-pill">📅 ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
+          <div class="today-pill"><i class="ti ti-calendar" aria-hidden="true"></i> ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
         </div>
       </div>
       <div class="content" id="contentArea"></div>
@@ -2373,12 +2408,12 @@ function kpiOperationeelHTML(){
   const legeStaat = mode==='team' ? 'Nog geen teams aangemaakt. Voeg teams toe bij "Teams" in het menu.' : 'Dit team heeft nog geen boekhouders.';
   return `<div>
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-      <span style="font-size:13.5px; font-weight:700;">📊 Operationele KPI's</span>
+      <span style="font-size:13.5px; font-weight:700;"><i class="ti ti-chart-bar" aria-hidden="true"></i> Operationele KPI's</span>
       <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
         <span class="hint">${mode==='team' ? 'Som per team' : 'Per boekhouder'} · handmatig ingevuld</span>
         ${bewerkbaar ? (editMode
           ? `<div style="display:flex; gap:6px;"><button class="btn sm primary" data-kpi-op-save>Opslaan</button><button class="btn sm ghost" data-kpi-op-cancel>Annuleren</button></div>`
-          : `<button class="btn sm ghost" data-kpi-op-edit>✎ Bewerken</button>`) : ''}
+          : `<button class="btn sm ghost" data-kpi-op-edit><i class="ti ti-pencil" aria-hidden="true"></i> Bewerken</button>`) : ''}
       </div>
     </div>
     ${!items.length && !editMode ? `<div class="empty-state">${legeStaat}</div>` : editMode ? (!editEntiteiten.length ? `<div class="empty-state">${legeStaat}</div>` : `<div style="overflow-x:auto; margin-top:10px;">
@@ -2445,8 +2480,8 @@ function kpiTactischGroepenHTML(kwartaal){
         <td style="padding:6px 4px; color:var(--muted);">${p.target}</td>
         <td style="padding:6px 4px;"><span class="badge ${kls}"><span class="dot ${kls}"></span>${p.status}</span></td>
         ${bewerkbaar ? `<td style="text-align:right; padding:6px 4px; white-space:nowrap;">
-          <button class="btn sm ghost" title="Bewerken" data-kpi-pijler-edit="${kwartaal}|${p.id}" style="padding:2px 6px;">✎</button>
-          <button class="btn sm ghost" title="Verwijderen" data-kpi-pijler-delete="${kwartaal}|${p.id}" style="padding:2px 6px; color:var(--red);">🗑</button>
+          <button class="btn sm ghost" title="Bewerken" data-kpi-pijler-edit="${kwartaal}|${p.id}" style="padding:2px 6px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" title="Verwijderen" data-kpi-pijler-delete="${kwartaal}|${p.id}" style="padding:2px 6px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </td>` : ''}
       </tr>`;
     }).join('') : `<tr><td colspan="5" style="padding:6px 4px; color:var(--muted); font-size:11.5px;">Nog geen pijlers voor ${mode==='team' ? 'dit team' : 'deze boekhouder'}.</td></tr>`;
@@ -2473,12 +2508,12 @@ function kpiTactischHTML(){
     }
     return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:8px;">
       <div style="font-size:13px; font-weight:700; color:${data.doel?'var(--text)':'var(--muted)'};">${data.doel ? data.doel.replace(/</g,'&lt;') : 'Nog geen doel ingesteld voor dit kwartaal.'}</div>
-      ${bewerkbaar ? `<button class="btn sm ghost" data-kpi-doel-edit="${kwartaal}" style="flex-shrink:0;">✎</button>` : ''}
+      ${bewerkbaar ? `<button class="btn sm ghost" data-kpi-doel-edit="${kwartaal}" style="flex-shrink:0;"><i class="ti ti-pencil" aria-hidden="true"></i></button>` : ''}
     </div>`;
   })();
   return `<div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--border);">
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-      <span style="font-size:13.5px; font-weight:700;">🎯 Tactische KPI's</span>
+      <span style="font-size:13.5px; font-weight:700;"><i class="ti ti-target" aria-hidden="true"></i> Tactische KPI's</span>
       <span class="hint" style="margin-left:auto;">${mode==='team' ? 'Per team' : 'Per boekhouder'} · handmatig ingevuld</span>
     </div>
     <div style="display:flex; gap:6px; margin:10px 0 4px;">${tabs}</div>
@@ -2540,12 +2575,12 @@ function kpiCommercieelHTML(){
   const legeStaat = mode==='team' ? 'Nog geen teams aangemaakt.' : 'Dit team heeft nog geen boekhouders.';
   return `<div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--border);">
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-      <span style="font-size:13.5px; font-weight:700;">📈 Commerciële KPI's</span>
+      <span style="font-size:13.5px; font-weight:700;"><i class="ti ti-trending-up" aria-hidden="true"></i> Commerciële KPI's</span>
       <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
         ${weekHTML}
         ${bewerkbaar ? (editMode
           ? `<div style="display:flex; gap:6px;"><button class="btn sm primary" data-kpi-comm-save>Opslaan</button><button class="btn sm ghost" data-kpi-comm-cancel>Annuleren</button></div>`
-          : `<button class="btn sm ghost" data-kpi-comm-edit>✎ Bewerken</button>`) : ''}
+          : `<button class="btn sm ghost" data-kpi-comm-edit><i class="ti ti-pencil" aria-hidden="true"></i> Bewerken</button>`) : ''}
       </div>
     </div>
     ${!items.length && !editMode ? `<div class="empty-state">${legeStaat}</div>` : editMode ? (!editEntiteiten.length ? `<div class="empty-state">${legeStaat}</div>` : `<div style="overflow-x:auto; margin-top:10px;">
@@ -2612,6 +2647,113 @@ function renderKpiCharts(){
     });
   });
 }
+/* ============================= HERO-WELKOM BANNER =============================
+   Boven het dashboard: begroeting + datum + automatisch samengestelde signalering van wat er
+   deze week aandacht nodig heeft. Puur samenvattend — leest bestaande data (deadline-rows,
+   heeftUrgenteHerinneringNodig, LH-periodes) uit, voegt zelf niets toe aan het datamodel. */
+function heroGroet(){
+  const uur = new Date().getHours();
+  if(uur < 6) return 'Goedenavond';
+  if(uur < 12) return 'Goedemorgen';
+  if(uur < 18) return 'Goedemiddag';
+  return 'Goedenavond';
+}
+function heroBannerHTML(rows, klantenGefilterd, cnt){
+  const naamVol = huidigeGebruiker();
+  const voornaam = (naamVol||'Benjamin').split(' ')[0];
+  const initiaal = voornaam.slice(0,1).toUpperCase();
+  const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
+  const lhBinnenkort = klantenGefilterd.filter(k=>{
+    const entry = STORE[k.id] && STORE[k.id].dl && STORE[k.id].dl.LH;
+    if(!entry || entry.na || entry.status==='ingediend') return false;
+    const d = daysDiff(entry.datum);
+    return d!==null && !isNaN(d) && d>=0 && d<=3;
+  });
+  const zonderKlantnr = klantenGefilterd.filter(k=>!k.extId).length;
+  const delen = [];
+  if(cnt.actie) delen.push(`<b>${cnt.actie}</b> deadline(s) verlopen of binnen 7 dagen`);
+  if(lhBinnenkort.length) delen.push(`<b>${lhBinnenkort.length}</b> loonheffing-periode(s) sluiten binnen 3 dagen`);
+  if(flagged.length) delen.push(`<b>${flagged.length}</b> klant(en) met openstaande transacties én naderende deadline`);
+  if(zonderKlantnr) delen.push(`<b>${zonderKlantnr}</b> klant(en) zonder klantnummer`);
+  const digest = delen.length
+    ? `<div class="hero-digest">
+        <i class="ti ti-sparkles" aria-hidden="true"></i>
+        <div style="flex:1">
+          <p class="hero-digest-title">Automatisch voor je gesignaleerd</p>
+          <p class="hero-digest-body">${delen.join(' · ')}.</p>
+          <div class="hero-digest-actions">
+            ${flagged.length ? `<button class="btn sm" data-hero-bulk-herinnering>Verstuur herinneringen (${flagged.length})</button>` : ''}
+            <button class="btn sm ghost" data-hero-weekoverzicht><i class="ti ti-mail" aria-hidden="true"></i> Weekoverzicht mailen</button>
+          </div>
+        </div>
+      </div>`
+    : `<div class="hero-digest-empty"><i class="ti ti-check" aria-hidden="true"></i> Niets dat nu om actie vraagt — alles op schema.</div>`;
+  return `
+  <div class="hero-banner">
+    <div class="hero-top">
+      <div>
+        <p class="hero-date">${fmtDagVolledig(new Date())}</p>
+        <h1 class="hero-greeting">${heroGroet()}, ${voornaam}</h1>
+      </div>
+      <div class="hero-avatar">${initiaal}</div>
+    </div>
+    ${digest}
+  </div>`;
+}
+/* Verstuurt een korte herinneringsmail naar één klant (openstaande transacties + naderende deadline).
+   Geen achtergrond-automatisering mogelijk op een statisch gehost dashboard zonder server — dit blijft
+   dus altijd een bewuste, directe klik van de gebruiker (zelfde beperking als de bestaande document-mails). */
+async function verstuurHerinneringMail(klant){
+  if(!klant.email) return {ok:false, reden:'geen e-mailadres'};
+  const b = bh(klant.bh);
+  const f = STORE[klant.id];
+  const open = f.items.filter(i=>!i.done).length;
+  const body = `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Beste ${(klant.contact||klant.naam||'').trim() || klant.naam},</p>
+    <p>Wij zien nog ${open} openstaand aanleverpunt en/of ${fmtEUR(f.saldo)} openstaand banksaldo dat verwerking nodig heeft, terwijl er een deadline nadert. Zou u de ontbrekende stukken op korte termijn willen aanleveren?</p>
+    <p>Met vriendelijke groet,<br>${b?b.naam:'AdministratieBox'}<br>AdministratieBox</p>
+  </div>`;
+  try{
+    await sendGraphMail(klant.email, `Herinnering aanlevering — ${klant.naam}`, body, []);
+    return {ok:true};
+  }catch(e){ return {ok:false, reden: (e&&e.message) || 'onbekende fout'}; }
+}
+async function verstuurHerinneringenBulk(klanten){
+  const metMail = klanten.filter(k=>k.email);
+  const zonderMail = klanten.length - metMail.length;
+  let gelukt = 0, mislukt = 0;
+  for(const k of metMail){
+    const r = await verstuurHerinneringMail(k);
+    if(r.ok) gelukt++; else mislukt++;
+  }
+  logActiviteit(`${gelukt} herinneringsmail(s) verstuurd${mislukt?`, ${mislukt} mislukt`:''}${zonderMail?`, ${zonderMail} overgeslagen (geen e-mailadres)`:''}`);
+  toast(`${gelukt} herinnering(en) verstuurd${mislukt||zonderMail ? ` · ${mislukt+zonderMail} overgeslagen` : ''}`);
+}
+/* Weekoverzicht: samenvatting van open taken/deadlines/saldo, eenklik naar het eigen mailadres van de
+   ingelogde gebruiker. Ook dit is best-effort automatisering: er is geen achtergrondproces op GitHub
+   Pages, dus het overzicht wordt pas verstuurd zodra iemand de app opent en op de knop klikt — niet
+   ongevraagd op de achtergrond. Het venster onthoudt via localStorage wanneer het voor het laatst is
+   getoond, zodat de suggestie niet elke dag terugkomt. */
+function weekoverzichtHTML(rows, klantenGefilterd, cnt){
+  const totalSaldo = klantenGefilterd.reduce((s,k)=>s+STORE[k.id].saldo,0);
+  const nu = new Date();
+  const rijen = rows.filter(r=>r.st.key==='actie'||r.st.key==='nadert').slice(0,20)
+    .map(r=>`<tr><td>${r.klant.naam}</td><td>${typeof r.type==='string' && TYPE_LABEL[r.type] ? TYPE_LABEL[r.type] : r.type}</td><td>${fmtDate(r.entry.datum)}</td></tr>`).join('');
+  return `<div style="font-family:Arial,Helvetica,sans-serif; font-size:13px; color:#1a1a1a;">
+    <p>Weekoverzicht ${fmtDagVolledig(nu)}</p>
+    <p>${cnt.actie} deadline(s) vereisen actie, ${cnt.nadert} naderen. Totaal openstaand banksaldo: ${fmtEUR(totalSaldo)}.</p>
+    ${rijen ? `<table style="border-collapse:collapse; width:100%;" cellpadding="6"><thead><tr style="text-align:left; border-bottom:1px solid #ccc;"><th>Klant</th><th>Type</th><th>Deadline</th></tr></thead><tbody>${rijen}</tbody></table>` : '<p>Geen urgente deadlines.</p>'}
+  </div>`;
+}
+async function verstuurWeekoverzicht(rows, klantenGefilterd, cnt){
+  const mail = huidigeGebruikerEmail();
+  if(!mail || mail==='niet ingelogd'){ toast('Log eerst in om het weekoverzicht te versturen.'); return; }
+  try{
+    await sendGraphMail(mail, `Weekoverzicht compliance dashboard — ${fmtDatumLang(new Date())}`, weekoverzichtHTML(rows, klantenGefilterd, cnt), []);
+    try{ localStorage.setItem('cd_laatste_weekoverzicht', new Date().toISOString()); }catch(e){}
+    toast('Weekoverzicht verstuurd naar ' + mail);
+  }catch(e){ toast('Versturen mislukt: ' + ((e&&e.message)||'onbekende fout')); }
+}
 function dashboardHTML(){
   const teamFilter = STATE.dashboardTeamFilter;
   const klantInTeam = (k)=>{ if(!teamFilter) return true; const b = bh(k.bh); return !!(b && b.team===teamFilter); };
@@ -2650,8 +2792,10 @@ function dashboardHTML(){
   }).slice(0,6);
 
   const teamOptions = TEAMS.map(t=>`<option value="${t.id}" ${teamFilter===t.id?'selected':''}>${t.naam}</option>`).join('');
+  const heroHTML = heroBannerHTML(rows, klantenGefilterd, cnt);
 
   return `
+  ${heroHTML}
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
     <label style="font-size:12.5px; color:var(--muted);">Weergave</label>
     <select id="filterTeamDashboard" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
@@ -2715,14 +2859,14 @@ function dashboardHTML(){
           <td>${badge(r.entry,{days:true})}</td>
           <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${r.klant.id}">Bekijk →</button></td>
         </tr>`).join('')}
-      </tbody></table>` : `<div class="empty-state">Geen urgente acties — alles op schema. 🎉</div>`}
+      </tbody></table>` : `<div class="empty-state">Geen urgente acties — alles op schema.</div>`}
     </div>
   </div>
 
   ${kpiOverzichtHTML()}
 
   <div class="section">
-    <div class="section-head"><h3>🚩 Stuur een herinnering</h3><span class="hint">Deadline nadert/verstreken én banktransacties nog niet verwerkt</span></div>
+    <div class="section-head"><h3><i class="ti ti-flag" aria-hidden="true"></i> Stuur een herinnering</h3><span class="hint">Deadline nadert/verstreken én banktransacties nog niet verwerkt</span></div>
     <div class="section-body">
       ${(()=>{ const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
         return flagged.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Status</th><th>Openstaande transacties</th><th></th></tr></thead><tbody>
@@ -2734,7 +2878,7 @@ function dashboardHTML(){
             <td>${STORE[k.id].txn} transactie(s)</td>
             <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
           </tr>`; }).join('')}
-        </tbody></table>` : `<div class="empty-state">Niets dat nu om een herinnering vraagt. 🎉</div>`; })()}
+        </tbody></table>` : `<div class="empty-state">Niets dat nu om een herinnering vraagt.</div>`; })()}
     </div>
   </div>
 
@@ -2768,8 +2912,8 @@ function boekhoudersHTML(){
     klanten.forEach(k=>{ const w = worstStatus(k); if(c[w]!==undefined) c[w]++; else c.schema++; });
     return `<div class="bh-card" data-nav-bh="${b.id}" style="position:relative;">
       <div style="position:absolute; top:10px; right:10px; display:flex; gap:4px;">
-        <button class="btn sm ghost" data-edit-bh-btn="${b.id}" title="Boekhouder bewerken (o.a. kleur)" style="padding:4px 7px;">✎</button>
-        ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="padding:4px 7px; color:var(--red);">🗑</button>` : ''}
+        <button class="btn sm ghost" data-edit-bh-btn="${b.id}" title="Boekhouder bewerken (o.a. kleur)" style="padding:4px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+        ${isAdmin() ? `<button class="btn sm ghost" data-delete-bh="${b.id}" title="Boekhouder verwijderen" style="padding:4px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
       </div>
       <div class="bh-top">
         <div class="avatar" style="background:${b.kleur}">${initials(b.naam)}</div>
@@ -2821,14 +2965,14 @@ function teamsHTML(){
           <h3>${t.naam}</h3>
           <span class="hint">${leden.length} boekhouder(s) · ${klanten.length} klanten · ${totalOpen} deadline(s) nog open</span>
         </div>
-        ${isAdmin() ? `<button class="btn sm ghost" data-delete-team="${t.id}" title="Team verwijderen" style="color:var(--red);">🗑 Verwijderen</button>` : ''}
+        ${isAdmin() ? `<button class="btn sm ghost" data-delete-team="${t.id}" title="Team verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Verwijderen</button>` : ''}
       </div>
       <div class="section-body pad">
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
           ${leden.length ? leden.map(b=>`
             <span class="badge gray" style="gap:8px;">
               <span class="dot" style="background:${b.kleur}"></span>${b.naam}
-              <button data-remove-from-team="${b.id}" title="Uit team halen" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; padding:0 0 0 4px;">✕</button>
+              <button data-remove-from-team="${b.id}" title="Uit team halen" style="border:none; background:none; cursor:pointer; color:var(--muted); font-weight:700; padding:0 0 0 4px;"><i class="ti ti-x" aria-hidden="true"></i></button>
             </span>`).join('') : '<span style="font-size:12px; color:var(--muted2);">Nog geen boekhouders in dit team.</span>'}
         </div>
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:18px;">
@@ -2926,7 +3070,7 @@ function klantenHTML(){
           <div class="klant-kaart-inner">
             <div class="klant-kaart-head">
               <div>
-                <div class="klant-kaart-naam">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ' <span style="color:var(--red);">🚩</span>' : ''}</div>
+                <div class="klant-kaart-naam">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ' <span style="color:var(--red);"><i class="ti ti-flag" aria-hidden="true"></i></span>' : ''}</div>
                 <div class="klant-kaart-sub">${k.vorm} · ${boekhouder.naam}</div>
               </div>
               <span class="klant-kaart-badge" style="background:${stKl.bg}; color:${stKl.fg};">${stKl.lbl}</span>
@@ -2956,7 +3100,7 @@ function klantenHTML(){
             return `<tr class="row-click klant-rij ${STATE.selectedKlanten.has(k.id)?'is-selected':''}" data-open-klant="${k.id}" style="--strip:${stripKleur};">
             <td style="padding-left:20px; width:36px;" onclick="event.stopPropagation();"><input type="checkbox" data-bulk-select="${k.id}" ${STATE.selectedKlanten.has(k.id)?'checked':''} style="width:15px; height:15px; accent-color:var(--primary);"></td>
             <td class="strip-cel" style="padding:0;"><div class="rij-strip" style="background:${stripKleur};"></div></td>
-            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);">🚩</span>` : ''}</div><div class="klant-meta">${k.vorm}${k.extId?' · Nr. '+k.extId:''}${k.kvk?' · KvK '+k.kvk:''}</div></td>
+            <td><div class="klant-name">${k.naam}${heeftUrgenteHerinneringNodig(k) ? ` <span title="Deadline nadert én banktransacties nog niet verwerkt — stuur een herinnering" style="color:var(--red);"><i class="ti ti-flag" aria-hidden="true"></i></span>` : ''}</div><div class="klant-meta">${k.vorm}${k.extId?' · Nr. '+k.extId:''}${k.kvk?' · KvK '+k.kvk:''}</div></td>
             <td>${boekhouder.naam}</td>
             <td>${badge(effDL(k,'OB'))}</td>
             <td>${badge(effDL(k,'VPB'))}</td>
@@ -2965,7 +3109,7 @@ function klantenHTML(){
             <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
             <td style="font-variant-numeric:tabular-nums;">${fmtEUR(STORE[k.id].saldo)}</td>
             <td style="text-align:right; white-space:nowrap;">
-              ${magVerwijderen ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);">🗑</button>` : ''}
+              ${magVerwijderen ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
               <button class="btn sm ghost" data-open-klant="${k.id}">Openen <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
             </td>
           </tr>`;}).join('')}
@@ -2988,7 +3132,7 @@ function aanleveringHTML(){
 
   return `
   <div class="banner">
-    💡 <b>Bankkoppeling:</b> upload hier een CSV-export uit jullie banktool (kolommen: <code>klant,saldo,transacties</code>) om openstaande saldi in bulk bij te werken, of pas een klant handmatig aan. Automatische e-mail/WhatsApp-herinneringen worden per klant ingesteld — klik op een klant om ze te versturen of te plannen.
+    <i class="ti ti-bulb" aria-hidden="true"></i> <b>Bankkoppeling:</b> upload hier een CSV-export uit jullie banktool (kolommen: <code>klant,saldo,transacties</code>) om openstaande saldi in bulk bij te werken, of pas een klant handmatig aan. Automatische e-mail/WhatsApp-herinneringen worden per klant ingesteld — klik op een klant om ze te versturen of te plannen.
   </div>
 
   <div class="section">
@@ -3056,7 +3200,7 @@ function aanleveringHTML(){
               <td>
                 <span class="saldo-edit">
                   <span id="saldoDisplay-${k.id}">${fmtEUR(f.saldo)}</span>
-                  <button class="btn sm ghost" data-edit-saldo="${k.id}" title="Bewerken">✎</button>
+                  <button class="btn sm ghost" data-edit-saldo="${k.id}" title="Bewerken"><i class="ti ti-pencil" aria-hidden="true"></i></button>
                 </span>
               </td>
               <td>${f.txn}</td>
@@ -3197,8 +3341,8 @@ function loonheffingKlantDetailHTML(k){
       return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:#fff8e1; border:1px solid #f0d98c; border-radius:6px; max-width:420px;">
         <div style="font-size:11.5px; min-width:0;"><span style="margin-right:4px;">⭐</span>${huidigeTekst.replace(/</g,'&lt;')}</div>
         ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
-          <button class="btn sm ghost" title="Bewerken" data-lh-volgendemaand-edit="${k.id}" style="padding:3px 7px;">✎</button>
-          <button class="btn sm ghost" title="Verwijderen" data-lh-volgendemaand-delete="${k.id}" style="padding:3px 7px; color:var(--red);">🗑</button>
+          <button class="btn sm ghost" title="Bewerken" data-lh-volgendemaand-edit="${k.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" title="Verwijderen" data-lh-volgendemaand-delete="${k.id}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>` : ''}
       </div>`;
     }
@@ -3225,8 +3369,8 @@ function loonheffingKlantDetailHTML(k){
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:520px;">
           <div style="font-size:12.5px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
           ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
-            <button class="btn sm ghost" title="Bewerken" data-lh-klantnotitie-edit="${k.id}" style="padding:3px 7px;">✎</button>
-            <button class="btn sm ghost" title="Verwijderen" data-lh-klantnotitie-delete="${k.id}" style="padding:3px 7px; color:var(--red);">🗑</button>
+            <button class="btn sm ghost" title="Bewerken" data-lh-klantnotitie-edit="${k.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+            <button class="btn sm ghost" title="Verwijderen" data-lh-klantnotitie-delete="${k.id}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
           </div>` : ''}
         </div>
       </div>`;
@@ -3250,8 +3394,8 @@ function loonheffingKlantDetailHTML(k){
           <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
         </div>
         ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
-          <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;">✎</button>
-          <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);">🗑</button>
+          <button class="btn sm ghost" title="Bewerken" data-lh-note-edit="${editKey}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" title="Verwijderen" data-lh-note-delete="${editKey}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>` : ''}
       </div>`;
     }).join('');
@@ -3270,7 +3414,7 @@ function loonheffingKlantDetailHTML(k){
       <input type="checkbox" data-lh-toggle="${k.id}|${idx}" ${t.done?'checked':''} ${bewerkbaar?'':'disabled'}>
       <div style="flex:1; min-width:220px;">
         <label>${t.naam}</label>
-        ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span>✓ ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        ${t.done ? `<div style="font-size:10.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:5px;"><span style="width:8px; height:8px; border-radius:50%; background:${kleur||'#999'}; display:inline-block; flex-shrink:0;"></span><i class="ti ti-check" aria-hidden="true"></i> ${t.door} · ${new Date(t.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
         ${aantekeningenHTML(t, idx)}
       </div>
     </div>`;
@@ -3286,7 +3430,7 @@ function loonheffingKlantDetailHTML(k){
     return l.actie;
   };
   return `
-    ${!bewerkbaar ? `<div class="banner" style="margin-bottom:12px;">🔒 Je hebt geen bewerkrechten voor Loonheffingen. Vraag een beheerder om je toe te voegen bij Instellingen → Bevoegdheid Loonheffingen.</div>` : ''}
+    ${!bewerkbaar ? `<div class="banner" style="margin-bottom:12px;"><i class="ti ti-lock" aria-hidden="true"></i> Je hebt geen bewerkrechten voor Loonheffingen. Vraag een beheerder om je toe te voegen bij Instellingen → Bevoegdheid Loonheffingen.</div>` : ''}
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
@@ -3295,11 +3439,11 @@ function loonheffingKlantDetailHTML(k){
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap;">
         <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
-        <button class="btn sm ghost" data-lh-notities-toggle="${k.id}">${STATE.lhNotitiesKlant===k.id ? 'Notities verbergen ✕' : 'Notities terugkijken 🕘'}</button>
+        <button class="btn sm ghost" data-lh-notities-toggle="${k.id}">${STATE.lhNotitiesKlant===k.id ? 'Notities verbergen <i class="ti ti-x" aria-hidden="true"></i>' : 'Notities terugkijken <i class="ti ti-clock" aria-hidden="true"></i>'}</button>
         ${bewerkbaar ? `<button class="btn sm" data-lh-complete="${k.id}">Periode afronden →</button>` : ''}
       </div>
     </div>
-    <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;">⚠️ Let op! Loon vandaag openen!</div>
+    <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Let op! Loon vandaag openen!</div>
     ${taakRows}
     ${overigeNotitieHTML}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
@@ -3311,8 +3455,8 @@ function loonheffingKlantDetailHTML(k){
         <span style="font-size:12px; color:var(--muted); margin-left:auto; display:inline-block; transition:transform .15s; transform:rotate(${STATE.lhActiviteitExpanded?'0':'-90'}deg);">▾</span>
       </button>
       ${STATE.lhActiviteitExpanded ? (recentLog.length ? recentLog.map(l=>`<div class="rem-log-item" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <span>📝 <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
-        ${bewerkbaar && l.id ? `<button class="btn sm ghost" title="Verwijderen uit logboek" data-lh-log-delete="${k.id}|${l.id}" style="padding:2px 6px; color:var(--red); flex-shrink:0;">🗑</button>` : ''}
+        <span><i class="ti ti-notes" aria-hidden="true"></i> <b>${l.door}</b> ${logLine(l)} — ${new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+        ${bewerkbaar && l.id ? `<button class="btn sm ghost" title="Verwijderen uit logboek" data-lh-log-delete="${k.id}|${l.id}" style="padding:2px 6px; color:var(--red); flex-shrink:0;"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
       </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>') : ''}
     </div>`;
 }
@@ -3379,7 +3523,7 @@ function loonheffingOpHoldHTML(){
         </div>`
       : `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
           <span style="font-size:12px; color:${k.opHoldReden?'var(--text)':'var(--muted)'};">${k.opHoldReden ? k.opHoldReden.replace(/</g,'&lt;') : '—'}</span>
-          ${bewerkbaar ? `<button class="btn sm ghost" title="Reden bewerken" data-ophold-edit="${k.id}" style="padding:3px 7px; flex-shrink:0;">✎</button>` : ''}
+          ${bewerkbaar ? `<button class="btn sm ghost" title="Reden bewerken" data-ophold-edit="${k.id}" style="padding:3px 7px; flex-shrink:0;"><i class="ti ti-pencil" aria-hidden="true"></i></button>` : ''}
         </div>`;
     return `<tr>
       <td><div class="klant-name">${k.naam}</div></td>
@@ -3488,8 +3632,8 @@ function loonheffingHTML(){
 
   return `
   ${list.length ? lhKalenderHTML(list) : ''}
-  <div class="banner">💡 Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
-  ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">🔒 Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
+  <div class="banner"><i class="ti ti-bulb" aria-hidden="true"></i> Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
+  ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-lock" aria-hidden="true"></i> Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
   ${bewerkbaar ? `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
       <h3>Klanten loonheffingen importeren</h3>
@@ -3500,7 +3644,7 @@ function loonheffingHTML(){
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Excel-bestand kiezen<input type="file" id="lhKlantenImportFile" accept=".xlsx,.xls" style="display:none;"></label>
       <div id="lhKlantenImportResult" style="margin-top:12px;"></div>
       <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-        <button class="btn sm" data-lh-bulk-deadline>📅 LH-deadline bulk bijwerken (2e week volgende maand)</button>
+        <button class="btn sm" data-lh-bulk-deadline><i class="ti ti-calendar" aria-hidden="true"></i> LH-deadline bulk bijwerken (2e week volgende maand)</button>
         <span class="hint" style="margin-left:8px;">Zet de deadline van alle ${list.length} loonheffing-klant(en) in één keer op ${fmtDate(volgendeMaandTweedeWeek())}</span>
       </div>
     </div>
@@ -3540,14 +3684,14 @@ function autolijstHTML(){
   const admin = isAdmin();
 
   return `
-  <div class="banner">💡 De bijtelling en BTW-correctie worden hier automatisch berekend — op dezelfde manier als in het oude Excel-bestand (inclusief de 60-maanden-regeling voor elektrische auto's en de youngtimer-regeling). Vul de datum 1e inschrijving en cataloguswaarde in en de rest volgt vanzelf.</div>
+  <div class="banner"><i class="ti ti-bulb" aria-hidden="true"></i> De bijtelling en BTW-correctie worden hier automatisch berekend — op dezelfde manier als in het oude Excel-bestand (inclusief de 60-maanden-regeling voor elektrische auto's en de youngtimer-regeling). Vul de datum 1e inschrijving en cataloguswaarde in en de rest volgt vanzelf.</div>
   <div class="section">
     <div class="section-head">
       <h3>Autolijst</h3>
       <div style="display:flex; gap:8px;">
         <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Auto's importeren (Excel)<input type="file" id="autoExcelUpload" accept=".xlsx,.xls" style="display:none;"></label>
         <button class="btn sm primary" data-add-auto-btn>+ Nieuwe auto</button>
-        ${admin && AUTOS.length ? `<button class="btn sm ghost" data-clear-all-autos title="Alle auto's verwijderen (bijv. om met een schone lei opnieuw te importeren)" style="color:var(--red);">🗑 Alles wissen</button>` : ''}
+        ${admin && AUTOS.length ? `<button class="btn sm ghost" data-clear-all-autos title="Alle auto's verwijderen (bijv. om met een schone lei opnieuw te importeren)" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Alles wissen</button>` : ''}
       </div>
     </div>
     <div id="autoImportResult" style="padding:0 20px;"></div>
@@ -3570,16 +3714,16 @@ function autolijstHTML(){
             const btw = berekenBtwCorrectieProRata(a);
             const warn = autoWaarschuwingen(a);
             return `<tr>
-            <td><b>${a.kenteken||'—'}</b>${warn.length ? ` <span title="${warn.join(' ').replace(/"/g,'&quot;')}" style="color:var(--amber);">⚠️</span>` : ''}</td>
+            <td><b>${a.kenteken||'—'}</b>${warn.length ? ` <span title="${warn.join(' ').replace(/"/g,'&quot;')}" style="color:var(--amber);"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span>` : ''}</td>
             <td>${a.merk||'—'}</td>
             <td>${k ? k.naam : '<span style="color:var(--red);">Onbekende klant</span>'}</td>
-            <td>${a.type}${a.elektrisch==='ja'?' · ⚡':''}${isJongtimer(a)?' · youngtimer':''}</td>
+            <td>${a.type}${a.elektrisch==='ja'?' · <i class="ti ti-bolt" aria-hidden="true"></i>':''}${isJongtimer(a)?' · youngtimer':''}</td>
             <td>${fmtEUR(a.cataloguswaarde)}</td>
             <td>${autoBedragCel(bijtelling)}</td>
             <td>${autoBedragCel(btw)}</td>
             <td style="text-align:right; white-space:nowrap;">
               <button class="btn sm ghost" data-edit-auto="${a.id}">Bewerk</button>
-              ${admin ? `<button class="btn sm ghost" data-delete-auto="${a.id}" title="Auto verwijderen" style="color:var(--red);">🗑</button>` : ''}
+              ${admin ? `<button class="btn sm ghost" data-delete-auto="${a.id}" title="Auto verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
             </td>
           </tr>`;}).join('')}
         </tbody>
@@ -3595,7 +3739,7 @@ function bijtellingBeheerHTML(){
   <div class="section" style="margin-top:18px;">
     <div class="section-head">
       <h3>Bijtellingspercentages beheren</h3>
-      <button class="btn sm ghost" data-toggle-bijtelling-beheer>${STATE.showBijtellingBeheer ? 'Verbergen ✕' : 'Tonen / bewerken ⚙️'}</button>
+      <button class="btn sm ghost" data-toggle-bijtelling-beheer>${STATE.showBijtellingBeheer ? 'Verbergen <i class="ti ti-x" aria-hidden="true"></i>' : 'Tonen / bewerken <i class="ti ti-settings" aria-hidden="true"></i>'}</button>
     </div>
     ${STATE.showBijtellingBeheer ? `
     <div class="section-body pad">
@@ -3608,7 +3752,7 @@ function bijtellingBeheerHTML(){
           <td><input type="number" step="0.001" class="bijtelling-input" data-bt-laag="${r.jaar}" value="${r.laag===null||r.laag===undefined?'':r.laag}" placeholder="—" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
           <td><input type="number" class="bijtelling-input" data-bt-cap="${r.jaar}" value="${r.cap===null||r.cap===undefined?'':r.cap}" placeholder="—" style="width:110px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
           <td><input type="number" step="0.001" class="bijtelling-input" data-bt-algemeen="${r.jaar}" value="${r.algemeen}" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px;"></td>
-          <td><button class="btn sm ghost" data-bt-verwijder="${r.jaar}" style="color:var(--red);">🗑</button></td>
+          <td><button class="btn sm ghost" data-bt-verwijder="${r.jaar}" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -3628,7 +3772,7 @@ function autoFormHTML(auto){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${editing?'Bewerken':'Nieuw'}</div><div class="panel-klant-name">${editing ? (auto.kenteken||auto.merk||'Auto bewerken') : 'Auto toevoegen'}</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -3830,7 +3974,7 @@ async function handleAutoImport(e){
     const rows = await readAutoExcelRowsPromise(file);
     if(!rows.length){
       const boxEmpty = getResultBox();
-      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;">⚠️ Er zijn geen auto's herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is (tabblad "Checklist", koppen op rij 5).</div>`;
+      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Er zijn geen auto's herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is (tabblad "Checklist", koppen op rij 5).</div>`;
       return;
     }
     // Opnieuw hetzelfde bestand importeren mag nooit dubbele auto's opleveren, en moet foutieve
@@ -3855,15 +3999,15 @@ async function handleAutoImport(e){
     const box = getResultBox();
     if(box){
       const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      box.innerHTML = `<div class="banner">✅ <b>${toegevoegd}</b> nieuwe auto('s) toegevoegd, <b>${bijgewerkt}</b> bestaande auto('s) bijgewerkt (op klant + kenteken) uit "${escaped(file.name)}".`
-        + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> klant(en) niet gevonden op naam — voeg deze klant(en) eerst toe: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
+      box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> <b>${toegevoegd}</b> nieuwe auto('s) toegevoegd, <b>${bijgewerkt}</b> bestaande auto('s) bijgewerkt (op klant + kenteken) uit "${escaped(file.name)}".`
+        + (nietGevonden.length ? `<br><i class="ti ti-alert-triangle" aria-hidden="true"></i> <b>${nietGevonden.length}</b> klant(en) niet gevonden op naam — voeg deze klant(en) eerst toe: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
         + `</div>`;
     }
     render();
   }catch(err){
     console.error('Autolijst-import mislukt:', err);
     const boxErr = getResultBox();
-    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);">❌ Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
+    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);"><i class="ti ti-alert-circle" aria-hidden="true"></i> Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
     if(boxErr) boxErr.innerHTML = msg; else alert('Fout bij inlezen van het Excel-bestand: '+((err&&err.message)||err));
   }
 }
@@ -3878,7 +4022,7 @@ function activiteitenlogboekHTML(){
       <h3>Activiteitenlogboek</h3>
       <div style="display:flex; gap:8px; align-items:center;">
         <span class="hint">Alleen zichtbaar voor beheerders · ${ACTIVITEITENLOG.length} gebeurtenis(sen)</span>
-        ${ACTIVITEITENLOG.length ? `<button class="btn sm ghost" data-clear-log title="Logboek wissen" style="color:var(--red);">🗑 Wissen</button>` : ''}
+        ${ACTIVITEITENLOG.length ? `<button class="btn sm ghost" data-clear-log title="Logboek wissen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Wissen</button>` : ''}
       </div>
     </div>
     <div class="section-body">
@@ -3901,14 +4045,14 @@ function instellingenHTML(){
   const runningLocally = window.location.protocol === 'file:';
   return `
   <div class="banner">
-    ☁️ <b>Live delen met collega's:</b> dit dashboard werkt standaard lokaal in deze browser. Om ervoor te zorgen
+    <i class="ti ti-cloud" aria-hidden="true"></i> <b>Live delen met collega's:</b> dit dashboard werkt standaard lokaal in deze browser. Om ervoor te zorgen
     dat alle boekhouders dezelfde, actuele data zien, koppel je hieronder aan een gedeelde SharePoint-lijst via
     je eigen Microsoft-account — gratis, geen Power Automate nodig. Zie de handleidingen "Dashboard hosten op
     GitHub Pages" en "Azure AD app-registratie" voor het volledige stappenplan.
   </div>
 
   ${runningLocally ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">
-    ⚠️ Je opent dit bestand nu lokaal (dubbelgeklikt). Microsoft-login werkt alleen als het dashboard vanaf een
+    <i class="ti ti-alert-triangle" aria-hidden="true"></i> Je opent dit bestand nu lokaal (dubbelgeklikt). Microsoft-login werkt alleen als het dashboard vanaf een
     echte https-link wordt geopend. Volg eerst de handleiding "Dashboard hosten op GitHub Pages" en open het
     dashboard daarna via die link.
   </div>` : ''}
@@ -3928,8 +4072,8 @@ function instellingenHTML(){
         <button class="btn primary sm" data-save-sync>Instellingen opslaan</button>
         ${SYNC.account
           ? `<button class="btn sm" data-sign-out>Uitloggen (${SYNC.account.username})</button>`
-          : `<button class="btn sm" data-sign-in>🔑 Inloggen met Microsoft</button>`}
-        <button class="btn sm" data-sync-now>🔄 Nu synchroniseren</button>
+          : `<button class="btn sm" data-sign-in><i class="ti ti-key" aria-hidden="true"></i> Inloggen met Microsoft</button>`}
+        <button class="btn sm" data-sync-now><i class="ti ti-refresh" aria-hidden="true"></i> Nu synchroniseren</button>
       </div>
       <div style="margin-top:14px; font-size:12px; color:var(--muted);">
         Status: <b style="color:${SYNC.lastError?'var(--red)':'var(--green)'}">${!SYNC.enabled ? 'Uitgeschakeld' : (SYNC.lastError ? 'Fout — '+SYNC.lastError : (SYNC.account ? 'Ingelogd als '+SYNC.account.username : 'Nog niet ingelogd'))}</b>
@@ -4774,11 +4918,11 @@ function documentKaartHTML(opts){
     <div style="font-size:11.5px; color:var(--muted); margin:4px 0 10px;">${opts.uitleg}</div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn sm" ${opts.previewAttr}>⬇ Voorbeeld downloaden</button>
-      <button class="btn sm primary" ${opts.sendAttr} ${opts.actief?'':'disabled title="Staat op hold — zie Instellingen"'}>✉ Versturen</button>
+      <button class="btn sm primary" ${opts.sendAttr} ${opts.actief?'':'disabled title="Staat op hold — zie Instellingen"'}><i class="ti ti-send" aria-hidden="true"></i> Versturen</button>
     </div>
     <div class="rem-log" style="margin-top:10px;">
       <b style="font-size:12px;">Verzendgeschiedenis</b>
-      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${logRegel(l)} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
+      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item"><i class="ti ti-mail" aria-hidden="true"></i> ${logRegel(l)} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen documenten verstuurd.</div>'}
     </div>
   </div>`;
 }
@@ -4839,7 +4983,7 @@ function emailKaartHTML(opts){
     </div>
     <div class="rem-log" style="margin-top:10px;">
       <b style="font-size:12px;">Downloadgeschiedenis</b>
-      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item">📄 ${opts.logLabel} gedownload — ${l.omschrijving} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog niet gedownload.</div>'}
+      ${opts.log.length ? opts.log.slice().reverse().map(l=>`<div class="rem-log-item"><i class="ti ti-file-text" aria-hidden="true"></i> ${opts.logLabel} gedownload — ${l.omschrijving} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog niet gedownload.</div>'}
     </div>
   </div>`;
 }
@@ -4877,14 +5021,14 @@ function panelHTML(klant){
         <div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}</div>
         <div class="panel-klant-name">${klant.naam}</div>
         <div class="panel-klant-meta">
-          <span>👤 ${klant.contact}</span>
-          <span>🧾 ${bh(klant.bh).naam}</span>
+          <span><i class="ti ti-user" aria-hidden="true"></i> ${klant.contact}</span>
+          <span><i class="ti ti-receipt" aria-hidden="true"></i> ${bh(klant.bh).naam}</span>
         </div>
       </div>
       <div style="display:flex; gap:6px; flex:none;">
-        <button class="btn sm" data-edit-klant="${klant.id}" style="background:rgba(255,255,255,.12); border:none; color:#fff;">✎ Bewerken</button>
+        <button class="btn sm" data-edit-klant="${klant.id}" style="background:rgba(255,255,255,.12); border:none; color:#fff;"><i class="ti ti-pencil" aria-hidden="true"></i> Bewerken</button>
         <button class="panel-close" data-panel-focus title="Focus-modus (Shift+F)" aria-label="Focus-modus" style="margin-right:4px;"><i class="ti ti-arrows-diagonal" aria-hidden="true"></i></button>
-        <button class="panel-close" data-close-panel>✕</button>
+        <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>
@@ -4897,16 +5041,16 @@ function panelHTML(klant){
       </div>
     </div>` : ''}
     <div class="panel-section">
-      <h4>Contact</h4>
+      <div class="panel-section-head"><i class="ti ti-address-book" aria-hidden="true"></i><span class="t">Contact</span></div>
       <div class="inner" style="display:flex; gap:8px; flex-wrap:wrap;">
         <a class="btn sm" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
         <a class="btn sm" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
-        <span class="btn sm ghost" style="cursor:default;">☎ ${klant.tel}</span>
+        <span class="btn sm ghost" style="cursor:default;"><i class="ti ti-phone" aria-hidden="true"></i> ${klant.tel}</span>
       </div>
     </div>
 
     <div class="panel-section">
-      <h4>Loonaangifte</h4>
+      <div class="panel-section-head"><i class="ti ti-file-invoice" aria-hidden="true"></i><span class="t">Loonaangifte</span></div>
       <div class="inner">
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
           <input type="checkbox" id="loonaangifteToggle" ${klant.doetLoonaangifte?'checked':''}> Wij doen de loonaangifte voor deze klant
@@ -4929,14 +5073,14 @@ function panelHTML(klant){
     </div>
 
     <div class="panel-section">
-      <h4>Deadlines</h4>
+      <div class="panel-section-head"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="t">Deadlines</span></div>
       <div class="deadline-grid">
         ${deadlineCard('OB', effDL(klant,'OB'))}
         ${deadlineCard('VPB', effDL(klant,'VPB'))}
         ${deadlineCard('LH', effDL(klant,'LH'))}
         ${deadlineCard('JR', effDL(klant,'JR'))}
       </div>
-      <h4 style="border-top:1px solid var(--border);">Overige deadlines</h4>
+      <h4 style="border-top:1px solid var(--border); padding-top:12px;">Overige deadlines</h4>
       ${(STORE[klant.id].dl.overige||[]).map((o,idx)=>`
         <div class="overige-row">
           <div class="overige-left"><b>${o.naam}</b><div>Deadline: ${fmtDate(o.datum)}</div></div>
@@ -4955,7 +5099,7 @@ function panelHTML(klant){
     </div>
 
     <div class="panel-section">
-      <h4>Banksaldo & aan te leveren stukken</h4>
+      <div class="panel-section-head"><i class="ti ti-building-bank" aria-hidden="true"></i><span class="t">Banksaldo &amp; aan te leveren stukken</span></div>
       <div class="inner">
         <div class="field-row">
           <label>Openstaand saldo</label>
@@ -4982,7 +5126,7 @@ function panelHTML(klant){
             <div class="checklist-item ${i.done?'done':''}">
               <input type="checkbox" data-toggle-item="${idx}" ${i.done?'checked':''}>
               <label>${i.naam}</label>
-              <button class="btn sm ghost" style="margin-left:auto; padding:3px 7px;" data-remove-item="${idx}">✕</button>
+              <button class="btn sm ghost" style="margin-left:auto; padding:3px 7px;" data-remove-item="${idx}"><i class="ti ti-x" aria-hidden="true"></i></button>
             </div>`).join('') || '<div style="font-size:12px; color:var(--muted2); padding:6px 0;">Geen items.</div>'}
           <div class="add-item-row">
             <input type="text" id="newItemNaam" placeholder="Nieuw item toevoegen…">
@@ -4993,7 +5137,7 @@ function panelHTML(klant){
     </div>
 
     <div class="panel-section">
-      <h4>Automatische herinneringen</h4>
+      <div class="panel-section-head"><i class="ti ti-bell-ringing" aria-hidden="true"></i><span class="t">Automatische herinneringen</span></div>
       <div class="inner">
         <div class="chan-row">
           <label><input type="checkbox" data-chan="email" ${f.kanalen.includes('email')?'checked':''}> E-mail</label>
@@ -5011,7 +5155,7 @@ function panelHTML(klant){
 
         <div class="rem-log">
           <b style="font-size:12px;">Verzendgeschiedenis</b>
-          ${f.log.length ? f.log.slice().reverse().map(l=>`<div class="rem-log-item">📨 ${l.ronde}e herinnering via ${l.kanaal} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen herinneringen verstuurd.</div>'}
+          ${f.log.length ? f.log.slice().reverse().map(l=>`<div class="rem-log-item"><i class="ti ti-mail" aria-hidden="true"></i> ${l.ronde}e herinnering via ${l.kanaal} — ${fmtDate(l.ts)}</div>`).join('') : '<div class="rem-log-empty">Nog geen herinneringen verstuurd.</div>'}
         </div>
       </div>
     </div>
@@ -5020,7 +5164,7 @@ function panelHTML(klant){
     ${emailsSectieHTML(klant)}
 
     <div class="panel-section">
-      <h4>Notities</h4>
+      <div class="panel-section-head"><i class="ti ti-notes" aria-hidden="true"></i><span class="t">Notities</span></div>
       <div class="inner">
         <textarea id="notitiesInput" placeholder="Interne notities over deze klant…">${f.notities||''}</textarea>
         <div style="margin-top:8px;"><button class="btn sm" data-save-notities>Opslaan</button></div>
@@ -5028,9 +5172,9 @@ function panelHTML(klant){
     </div>
 
     ${isAdmin() ? `<div class="panel-section">
-      <h4>Gevarenzone</h4>
+      <div class="panel-section-head"><i class="ti ti-alert-octagon" aria-hidden="true"></i><span class="t">Gevarenzone</span></div>
       <div class="inner">
-        <button class="btn danger sm" data-delete-klant-panel="${klant.id}">🗑 Klant verwijderen</button>
+        <button class="btn danger sm" data-delete-klant-panel="${klant.id}"><i class="ti ti-trash" aria-hidden="true"></i> Klant verwijderen</button>
         <div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Verwijdert deze klant en alle bijbehorende gegevens definitief. Dit kan niet ongedaan worden gemaakt.</div>
       </div>
     </div>` : ''}
@@ -5058,7 +5202,7 @@ function persoonIbFormHTML(persoon, suffix){
    hergebruikt kan worden zodra er meer geautomatiseerde documenten bijkomen die dezelfde
    persoons-/adresgegevens nodig hebben. */
 function ibFormSectionHTML(ib){
-  return `<div class="panel-section"><h4>IB-akkoordverklaring</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-file-check" aria-hidden="true"></i><span class="t">IB-akkoordverklaring</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het automatisch invullen en versturen van de akkoordverklaring aangifte inkomstenbelasting (zie "Documenten" op de klantkaart). Datum van verzending wordt altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Boekjaar</label><input type="text" id="editIbBoekjaar" value="${(ib.boekjaar||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2025" style="max-width:110px;"></div>
     <div class="field-row"><label>Straat + huisnummer</label><input type="text" id="editIbStraat" value="${(ib.straat||'').replace(/"/g,'&quot;')}"></div>
@@ -5099,7 +5243,7 @@ function ibFormSectionHTML(ib){
    van de B.V. plus wie er tekent namens de klant (meestal de directeur). */
 function vpbFormSectionHTML(vpb){
   const vt = vpb.vertegenwoordiger;
-  return `<div class="panel-section"><h4>VPB-akkoordverklaring</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-file-check" aria-hidden="true"></i><span class="t">VPB-akkoordverklaring</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het automatisch invullen en versturen van de akkoordverklaring aangifte vennootschapsbelasting (zie "Documenten" op de klantkaart). Datum van verzending wordt altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Boekjaar</label><input type="text" id="editVpbBoekjaar" value="${(vpb.boekjaar||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2025" style="max-width:110px;"></div>
     <div class="field-row"><label>Fiscaalnummer</label><input type="text" id="editVpbFiscaal" value="${(vpb.fiscaalnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. 1234.56.789"></div>
@@ -5126,7 +5270,7 @@ function fiscaleEenheidFormSectionHTML(fe, klant){
   const dochterOpties = RAW_KLANTEN.filter(k=>k.id!==klant.id).slice().sort((a,b)=>a.naam.localeCompare(b.naam))
     .map(k=>`<option value="${k.id}" ${k.id===fe.dochterKlantId?'selected':''}>${k.naam}</option>`).join('');
   const kantoorOpties = BELASTINGKANTOREN.map(k=>`<option value="${k.id}" ${k.id===fe.kantoorId?'selected':''}>${k.naam}</option>`).join('');
-  return `<div class="panel-section"><h4>Fiscale eenheid BTW-subnummers</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-file-invoice" aria-hidden="true"></i><span class="t">Fiscale eenheid BTW-subnummers</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor het verzoek aan de Belastingdienst om een fiscale eenheid omzetbelasting met subnummers (zie "E-mails" op de klantkaart). Dit document wordt alleen gedownload, niet automatisch verstuurd — de datum wordt wel altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Dochteronderneming</label><select id="editFeDochter" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
       <option value="">— kies een klant —</option>${dochterOpties}
@@ -5144,7 +5288,7 @@ function fiscaleEenheidFormSectionHTML(fe, klant){
    suppletieaangifte die een eerdere aangifte corrigeert. */
 function betalingsuitstelFormSectionHTML(bu){
   const kantoorOpties = BELASTINGKANTOREN.map(k=>`<option value="${k.id}" ${k.id===bu.kantoorId?'selected':''}>${k.naam}</option>`).join('');
-  return `<div class="panel-section"><h4>Verzoek betalingsuitstel</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-clock-pause" aria-hidden="true"></i><span class="t">Verzoek betalingsuitstel</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor een verzoek om betalingsuitstel aan de Belastingdienst, bijv. na een suppletieaangifte (zie "E-mails" op de klantkaart). Dit document wordt alleen gedownload, niet automatisch verstuurd — de brief-datum wordt wel altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Soort aangifte</label><input type="text" id="editBuSoort" value="${(bu.soortAangifte||'').replace(/"/g,'&quot;')}" placeholder="bijv. omzetbelasting"></div>
     <div class="field-row"><label>Periode</label><input type="text" id="editBuPeriode" value="${(bu.periode||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2e kwartaal 2025"></div>
@@ -5165,7 +5309,7 @@ function betalingsuitstelFormSectionHTML(bu){
 /* Gegevens voor de arbeidsovereenkomst DGA (zie "Documenten" op de klantkaart) — overeenkomst tussen
    deze klant (werkgever) en de DGA zelf (werknemer). */
 function arbeidsovereenkomstDgaFormSectionHTML(ao){
-  return `<div class="panel-section"><h4>Arbeidsovereenkomst DGA</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-file-signature" aria-hidden="true"></i><span class="t">Arbeidsovereenkomst DGA</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor de arbeidsovereenkomst tussen deze klant (werkgever) en de DGA (werknemer). Datum van ondertekening wordt altijd automatisch ingevuld.</div>
     <div style="margin-top:4px; font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.02em;">Bestuurder (namens werkgever)</div>
     <div class="field-row"><label>Naam bestuurder</label><input type="text" id="editAoBestuurderNaam" value="${(ao.bestuurderNaam||'').replace(/"/g,'&quot;')}" placeholder="Voorletters + achternaam"></div>
@@ -5201,7 +5345,7 @@ function arbeidsovereenkomstDgaFormSectionHTML(ao){
 function managementovereenkomstDgaFormSectionHTML(mo, klant){
   const holdingOpties = RAW_KLANTEN.filter(k=>k.id!==klant.id).slice().sort((a,b)=>a.naam.localeCompare(b.naam))
     .map(k=>`<option value="${k.id}" ${k.id===mo.holdingKlantId?'selected':''}>${k.naam}</option>`).join('');
-  return `<div class="panel-section"><h4>Managementovereenkomst DGA</h4><div class="inner">
+  return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-file-signature" aria-hidden="true"></i><span class="t">Managementovereenkomst DGA</span></div><div class="inner">
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Gegevens voor de managementovereenkomst tussen deze klant ("de vennootschap") en een gekoppelde Holding B.V. ("Management B.V."). "Gevestigd te" van beide vennootschappen wordt hergebruikt uit hun VPB-gegevens. Datum van ondertekening wordt altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Holding B.V.</label><select id="editMoHolding" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
       <option value="">— kies een klant —</option>${holdingOpties}
@@ -5236,7 +5380,7 @@ function editKlantFormHTML(klant){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Bewerken</div><div class="panel-klant-name">${klant.naam}</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -5250,7 +5394,7 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
     </div></div>
-    <div class="panel-section"><h4>Deadlines</h4><div class="inner">
+    <div class="panel-section"><div class="panel-section-head"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="t">Deadlines</span></div><div class="inner">
       <div class="field-row"><label>OB</label><input type="text" id="editKlantOBDatum" value="${dateVal('OB')}" placeholder="DD-MM-JJJJ">
         <select id="editKlantOBHerh" style="width:132px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${herhOptsHTML('OB')}</select>
       </div>
@@ -5284,7 +5428,7 @@ function addKlantFormHTML(){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Klant toevoegen</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -5351,7 +5495,7 @@ function addBhFormHTML(){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Boekhouder toevoegen</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -5372,7 +5516,7 @@ function editBhFormHTML(b){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Bewerken</div><div class="panel-klant-name">${b.naam}</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -5392,7 +5536,7 @@ function addTeamFormHTML(){
   <div class="panel-head">
     <div class="panel-head-top">
       <div><div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">Nieuw</div><div class="panel-klant-name">Team toevoegen</div></div>
-      <button class="panel-close" data-close-panel>✕</button>
+      <button class="panel-close" data-close-panel><i class="ti ti-x" aria-hidden="true"></i></button>
     </div>
   </div>
   <div class="panel-body">
@@ -5860,6 +6004,30 @@ function attachHandlers(){
   }));
   const filterTeamDashboard = document.getElementById('filterTeamDashboard');
   if(filterTeamDashboard) filterTeamDashboard.addEventListener('change', e=>{ STATE.dashboardTeamFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  const heroBulkBtn = document.querySelector('[data-hero-bulk-herinnering]');
+  if(heroBulkBtn) heroBulkBtn.addEventListener('click', async ()=>{
+    const teamFilter = STATE.dashboardTeamFilter;
+    const klantInTeam = (k)=>{ if(!teamFilter) return true; const b = bh(k.bh); return !!(b && b.team===teamFilter); };
+    const klantenGefilterd = teamFilter ? RAW_KLANTEN.filter(klantInTeam) : RAW_KLANTEN;
+    const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
+    if(!flagged.length) return;
+    if(!confirm(`Herinneringsmail versturen naar ${flagged.length} klant(en)?`)) return;
+    heroBulkBtn.disabled = true; heroBulkBtn.textContent = 'Versturen…';
+    await verstuurHerinneringenBulk(flagged);
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  });
+  const heroWeekBtn = document.querySelector('[data-hero-weekoverzicht]');
+  if(heroWeekBtn) heroWeekBtn.addEventListener('click', async ()=>{
+    const teamFilter = STATE.dashboardTeamFilter;
+    const klantInTeam = (k)=>{ if(!teamFilter) return true; const b = bh(k.bh); return !!(b && b.team===teamFilter); };
+    const klantenGefilterd = teamFilter ? RAW_KLANTEN.filter(klantInTeam) : RAW_KLANTEN;
+    const rows = allDeadlineRows().filter(r=>klantInTeam(r.klant));
+    const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
+    rows.forEach(r=>cnt[r.st.key]++);
+    heroWeekBtn.disabled = true;
+    await verstuurWeekoverzicht(rows, klantenGefilterd, cnt);
+    heroWeekBtn.disabled = false;
+  });
   const overlay = document.getElementById('overlay');
   bindOnce(overlay, 'click', closePanel);
 
@@ -6534,7 +6702,7 @@ async function handleLhKlantenImport(e){
     const rawNames = await readLhExcelNamesPromise(file);
     if(!rawNames.length){
       const boxEmpty = getResultBox();
-      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;">⚠️ Er zijn geen werkgevers herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is en of de structuur (naam, daaronder "Email:", daaronder "Verwerker") ongewijzigd is.</div>`;
+      if(boxEmpty) boxEmpty.innerHTML = `<div class="banner" style="border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Er zijn geen werkgevers herkend in "${String(file.name).replace(/</g,'&lt;')}". Controleer of dit het juiste bestand is en of de structuur (naam, daaronder "Email:", daaronder "Verwerker") ongewijzigd is.</div>`;
       return;
     }
     let nieuwGemarkeerd = 0, algeactiveerd = 0;
@@ -6551,16 +6719,16 @@ async function handleLhKlantenImport(e){
     const box = getResultBox();
     if(box){
       const escaped = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      box.innerHTML = `<div class="banner">✅ <b>${rawNames.length}</b> werkgevers gevonden in "${escaped(file.name)}". `
+      box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> <b>${rawNames.length}</b> werkgevers gevonden in "${escaped(file.name)}". `
         + `<b>${nieuwGemarkeerd}</b> klant(en) nieuw gemarkeerd met loonaangifte, <b>${algeactiveerd}</b> stonden al aan.`
-        + (nietGevonden.length ? `<br>⚠️ <b>${nietGevonden.length}</b> niet gevonden op naam — voeg deze klant(en) toe of vink handmatig aan: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
+        + (nietGevonden.length ? `<br><i class="ti ti-alert-triangle" aria-hidden="true"></i> <b>${nietGevonden.length}</b> niet gevonden op naam — voeg deze klant(en) toe of vink handmatig aan: ${nietGevonden.slice(0,30).map(escaped).join(', ')}${nietGevonden.length>30?', …':''}` : '')
         + `</div>`;
     }
     render();
   }catch(err){
     console.error('Loonheffing-klantenimport mislukt:', err);
     const boxErr = getResultBox();
-    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);">❌ Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
+    const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);"><i class="ti ti-alert-circle" aria-hidden="true"></i> Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
     if(boxErr) boxErr.innerHTML = msg; else alert('Fout bij inlezen van het Excel-bestand: '+((err&&err.message)||err));
   }
 }
@@ -6660,7 +6828,7 @@ function handleKlantenCSVUpload(e){
     const box = document.getElementById('klantImportResult');
     if(box){
       box.innerHTML = `<div class="banner">
-        ✅ Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
+        <i class="ti ti-circle-check" aria-hidden="true"></i> Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
         ${bhList.length ? `Nieuwe boekhouders aangemaakt: ${bhList.join(', ')}.<br>` : ''}
         ${teamList.length ? `Nieuwe teams aangemaakt: ${teamList.join(', ')}.<br>` : ''}
         Let op: deadlinedata (OB/VPB/LH/JR) zaten niet in dit bestand en zijn dus niet ingevuld — die stel je per klant handmatig in (met eventueel een herhaling).
@@ -7239,13 +7407,28 @@ function renderBulkBar(){
   }
   bar.innerHTML = `
     <div class="bulk-count"><span class="bulk-num">${n}</span> geselecteerd</div>
-    <button class="bulk-act" data-bulk-remove title="Selectie leegmaken"><i class="ti ti-trash" aria-hidden="true"></i>Verwijderen</button>
+    <button class="bulk-act" data-bulk-mail title="Herinneringsmail sturen naar selectie"><i class="ti ti-mail" aria-hidden="true"></i>Mail sturen</button>
+    <select class="bulk-act" data-bulk-status-type title="Markeer selectie als ingediend" style="padding:6px 8px;">
+      <option value="">Markeer ingediend…</option>
+      <option value="OB">OB</option>
+      <option value="VPB">VPB</option>
+      <option value="LH">LH</option>
+      <option value="JR">JR</option>
+    </select>
     <button class="bulk-act" data-bulk-export title="Selectie exporteren"><i class="ti ti-download" aria-hidden="true"></i>Exporteren</button>
+    <button class="bulk-act" data-bulk-remove title="Selectie leegmaken"><i class="ti ti-trash" aria-hidden="true"></i>Verwijderen</button>
     <button class="bulk-close" data-bulk-close title="Selectie leegmaken" aria-label="Sluiten"><i class="ti ti-x" aria-hidden="true"></i></button>
   `;
   bar.querySelector('[data-bulk-close]').addEventListener('click', ()=>{ STATE.selectedKlanten.clear(); document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   bar.querySelector('[data-bulk-remove]').addEventListener('click', bulkVerwijderen);
   bar.querySelector('[data-bulk-export]').addEventListener('click', bulkExporteren);
+  bar.querySelector('[data-bulk-mail]').addEventListener('click', bulkHerinneringSelectie);
+  bar.querySelector('[data-bulk-status-type]').addEventListener('change', (e)=>{
+    const type = e.target.value;
+    if(!type) return;
+    if(!confirm(`${STATE.selectedKlanten.size} klant(en) markeren als ingediend voor ${type}?`)) { e.target.value=''; return; }
+    bulkMarkeerIngediend(type);
+  });
 }
 function bulkVerwijderen(){
   const ids = Array.from(STATE.selectedKlanten);
@@ -7271,6 +7454,38 @@ function bulkVerwijderen(){
     document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
     toast(`${snapshots.length} klant(en) hersteld`);
   }});
+}
+function bulkMarkeerIngediend(type){
+  const ids = Array.from(STATE.selectedKlanten);
+  if(!ids.length) return;
+  let n = 0;
+  ids.forEach(id=>{
+    const klant = RAW_KLANTEN.find(x=>x.id===id);
+    const f = STORE[id];
+    if(!klant || !f || !f.dl || !f.dl[type] || f.dl[type].na) return;
+    if(type==='LH'){ completeLhPeriode(klant, huidigeGebruiker()); }
+    else {
+      const entry = f.dl[type];
+      const herh = entry.herhaling || 'geen';
+      if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
+      else { entry.status = 'ingediend'; }
+    }
+    n++;
+  });
+  persist();
+  logActiviteit(`${n} klant(en) in bulk gemarkeerd als ingediend (${TYPE_LABEL[type]||type})`);
+  STATE.selectedKlanten.clear();
+  document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  toast(`${n} klant(en) gemarkeerd als ingediend`);
+}
+async function bulkHerinneringSelectie(){
+  const ids = Array.from(STATE.selectedKlanten);
+  const klanten = ids.map(id=>RAW_KLANTEN.find(x=>x.id===id)).filter(Boolean);
+  if(!klanten.length) return;
+  if(!confirm(`Herinneringsmail versturen naar ${klanten.length} geselecteerde klant(en)?`)) return;
+  await verstuurHerinneringenBulk(klanten);
+  STATE.selectedKlanten.clear();
+  document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
 }
 function bulkExporteren(){
   const ids = Array.from(STATE.selectedKlanten);
