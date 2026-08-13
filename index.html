@@ -492,7 +492,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.10';
+const APP_VERSION = '2026.08.13.11';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1967,6 +1967,7 @@ function render(){
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         <div class="nav-group-label">Apps &amp; settings</div>
+        ${navItem('archief','upload','Archief-uploader')}
         ${navItem('notion','notion','Notion','later')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
@@ -2007,7 +2008,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2019,7 +2020,8 @@ function pageSub(){
     loonheffing:`Maandelijkse loonaangifte-taken en voortgang per collega · ${RAW_KLANTEN.filter(k=>k.doetLoonaangifte).length} klant(en) totaal`,
     autolijst:`Auto's per klant met automatische bijtelling- en btw-correctieberekening · ${AUTOS.length} auto('s)`,
     instellingen:'Live synchronisatie tussen collega\'s',
-    notion:'Gedeelde pagina\'s en data-sync uit Notion'
+    notion:'Gedeelde pagina\'s en data-sync uit Notion',
+    archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant'
   }[STATE.view];
 }
 
@@ -2034,6 +2036,7 @@ function viewHTML(){
   if(STATE.view==='autolijst') return autolijstHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
   if(STATE.view==='notion') return notionHTML();
+  if(STATE.view==='archief') return archiefHTML();
   return '';
 }
 /* ============================= NOTION APP-SECTIE (PLACEHOLDER) =============================
@@ -2043,6 +2046,305 @@ function viewHTML(){
    CORS) en een Notion-integratie met gedeelde pagina's — allebei nog niet ingericht. Deze pagina is
    bewust een eerlijke "binnenkort"-pagina i.p.v. een kapotte link, zodat de navigatie al klopt en het
    straks alleen nog een kwestie is van embedHTML hier invullen. */
+/* ============================= ARCHIEF-UPLOADER =============================
+   Drag & drop bestanden naar SharePoint: "AdministratieBox - General" > AB- ZAKELIJKE KLANTEN >
+   [klantmap met klantnummer tussen haakjes] > [jaarmap of ALGEMEEN]. Gebruikt de bestaande
+   Microsoft-login (Sites.ReadWrite.All dekt ook bestandsuploads — geen extra Azure-machtiging
+   nodig). De drive + hoofdmap worden eenmalig via Graph opgezocht en daarna gecachet. */
+const ARCHIEF_HOOFDMAP = 'AB- ZAKELIJKE KLANTEN';
+const ARCHIEF = {
+  cfg: (function(){ try{ return JSON.parse(localStorage.getItem('cd_archief_cfg')||'null'); }catch(e){ return null; } })(),
+  klantmappen: null,      // [{id, naam, nummer}]
+  submappen: {},          // klantmapId -> [{id, naam}]
+  wachtrij: [],           // [{file, klantmapId, submapId, status:'wachten'|'bezig'|'klaar'|'fout', fout}]
+  laden: false,
+  fout: null,
+  log: (function(){ try{ return JSON.parse(localStorage.getItem('cd_archief_log')||'[]'); }catch(e){ return []; } })(),
+};
+function archiefBewaarCfg(){ try{ localStorage.setItem('cd_archief_cfg', JSON.stringify(ARCHIEF.cfg)); }catch(e){} }
+function archiefBewaarLog(){ try{ localStorage.setItem('cd_archief_log', JSON.stringify(ARCHIEF.log.slice(-20))); }catch(e){} }
+async function archiefVindRoot(allowInteractive){
+  if(ARCHIEF.cfg && ARCHIEF.cfg.driveId && ARCHIEF.cfg.rootId) return ARCHIEF.cfg;
+  const sitesRes = await graphFetch('https://graph.microsoft.com/v1.0/sites?search=AdministratieBox', {}, allowInteractive);
+  const sites = (sitesRes.value||[]);
+  for(const site of sites){
+    let drivesRes;
+    try{ drivesRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${site.id}/drives`, {}, allowInteractive); }catch(e){ continue; }
+    for(const drive of (drivesRes.value||[])){
+      // Probeer de hoofdmap direct in de bibliotheekroot, en ook één niveau dieper (General/),
+      // want Teams-gekoppelde bibliotheken nestelen kanaalmappen soms onder "General".
+      for(const pad of [ARCHIEF_HOOFDMAP, `General/${ARCHIEF_HOOFDMAP}`]){
+        try{
+          const item = await graphFetch(`https://graph.microsoft.com/v1.0/drives/${drive.id}/root:/${encodeURIComponent(pad).replace(/%2F/g,'/')}`, {}, false);
+          if(item && item.id && item.folder){
+            ARCHIEF.cfg = { driveId: drive.id, rootId: item.id, siteNaam: site.displayName||site.name||'', driveNaam: drive.name||'', pad };
+            archiefBewaarCfg();
+            return ARCHIEF.cfg;
+          }
+        }catch(e){ /* map bestaat niet in deze drive — volgende proberen */ }
+      }
+    }
+  }
+  throw new Error(`Map "${ARCHIEF_HOOFDMAP}" niet gevonden in de SharePoint-bibliotheken waar je toegang toe hebt.`);
+}
+async function archiefLaadKlantmappen(allowInteractive){
+  const cfg = await archiefVindRoot(allowInteractive);
+  const mappen = [];
+  let url = `https://graph.microsoft.com/v1.0/drives/${cfg.driveId}/items/${cfg.rootId}/children?$top=999&$select=id,name,folder`;
+  while(url){
+    const res = await graphFetch(url, {}, allowInteractive);
+    (res.value||[]).forEach(it=>{
+      if(!it.folder) return;
+      const m = it.name.match(/\((\d+)\)\s*$/);
+      mappen.push({ id: it.id, naam: it.name, nummer: m ? m[1] : null });
+    });
+    url = res['@odata.nextLink'] || null;
+  }
+  mappen.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  ARCHIEF.klantmappen = mappen;
+  return mappen;
+}
+async function archiefLaadSubmappen(klantmapId){
+  if(ARCHIEF.submappen[klantmapId]) return ARCHIEF.submappen[klantmapId];
+  const cfg = ARCHIEF.cfg;
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/drives/${cfg.driveId}/items/${klantmapId}/children?$top=200&$select=id,name,folder`, {}, false);
+  const subs = (res.value||[]).filter(it=>it.folder).map(it=>({id:it.id, naam:it.name}));
+  subs.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  ARCHIEF.submappen[klantmapId] = subs;
+  return subs;
+}
+// Raad de klantmap op basis van de bestandsnaam: eerst klantnummer-match (betrouwbaarst),
+// daarna naam-match op de mapnaam zonder het (nummer)-deel.
+function archiefRaadKlantmap(bestandsnaam){
+  if(!ARCHIEF.klantmappen) return null;
+  const naamLower = bestandsnaam.toLowerCase();
+  const nummers = bestandsnaam.match(/\d{2,}/g) || [];
+  for(const map of ARCHIEF.klantmappen){
+    if(map.nummer && nummers.includes(map.nummer)) return map;
+  }
+  // extId van dashboardklanten wiens naam in het bestand voorkomt → map met dat nummer
+  for(const k of RAW_KLANTEN){
+    if(k.extId && k.naam && k.naam.length>3 && naamLower.includes(k.naam.toLowerCase().replace(/\s*(b\.?v\.?|holding)\s*$/i,'').trim())){
+      const map = ARCHIEF.klantmappen.find(m=>m.nummer===String(k.extId).trim());
+      if(map) return map;
+    }
+  }
+  for(const map of ARCHIEF.klantmappen){
+    const kaal = map.naam.replace(/\s*\(\d+\)\s*$/,'').trim().toLowerCase();
+    if(kaal.length>3 && naamLower.includes(kaal)) return map;
+  }
+  return null;
+}
+async function archiefUploadBestand(item){
+  const cfg = ARCHIEF.cfg;
+  const parentId = item.submapId || item.klantmapId;
+  const bestandsnaam = item.file.name.replace(/[\\/:*?"<>|#%]/g,'_');
+  const token = await getGraphToken(true);
+  if(item.file.size < 3800000){
+    const res = await fetch(`https://graph.microsoft.com/v1.0/drives/${cfg.driveId}/items/${parentId}:/${encodeURIComponent(bestandsnaam)}:/content?@microsoft.graph.conflictBehavior=rename`, {
+      method:'PUT', headers:{ 'Authorization':'Bearer '+token }, body: item.file
+    });
+    if(!res.ok){ const t = await res.text().catch(()=> ''); throw new Error(`Upload mislukt (${res.status})${t?': '+t.slice(0,150):''}`); }
+    return await res.json();
+  }
+  // Grote bestanden: upload-sessie in delen van 3,2 MB (Graph vereist veelvouden van 320 KiB).
+  const sesRes = await fetch(`https://graph.microsoft.com/v1.0/drives/${cfg.driveId}/items/${parentId}:/${encodeURIComponent(bestandsnaam)}:/createUploadSession`, {
+    method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+    body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior':'rename', name: bestandsnaam } })
+  });
+  if(!sesRes.ok) throw new Error(`Upload-sessie starten mislukt (${sesRes.status})`);
+  const ses = await sesRes.json();
+  const CHUNK = 3276800;
+  let start = 0, laatste = null;
+  while(start < item.file.size){
+    const end = Math.min(start+CHUNK, item.file.size);
+    const blob = item.file.slice(start, end);
+    const up = await fetch(ses.uploadUrl, {
+      method:'PUT',
+      headers:{ 'Content-Range':`bytes ${start}-${end-1}/${item.file.size}`, 'Content-Length': String(end-start) },
+      body: blob
+    });
+    if(!up.ok && up.status!==202){ throw new Error(`Upload afgebroken bij ${Math.round(start/item.file.size*100)}% (${up.status})`); }
+    laatste = up.status===202 ? null : await up.json().catch(()=>null);
+    start = end;
+  }
+  return laatste;
+}
+function archiefStatusTekst(item){
+  if(item.status==='bezig') return 'Bezig met uploaden…';
+  if(item.status==='klaar') return 'Gearchiveerd ✓';
+  if(item.status==='fout') return 'Mislukt: ' + (item.fout||'onbekende fout');
+  return '';
+}
+function archiefHTML(){
+  if(!SYNC.account){
+    return `<div class="section"><div class="empty-state">
+      <i class="ti ti-cloud-lock" style="font-size:26px; display:block; margin-bottom:10px;" aria-hidden="true"></i>
+      Log eerst in met Microsoft bij <b>Instellingen</b> om bestanden te kunnen archiveren in SharePoint.
+    </div></div>`;
+  }
+  if(ARCHIEF.fout){
+    return `<div class="section"><div class="empty-state">
+      <i class="ti ti-alert-triangle" style="font-size:26px; display:block; margin-bottom:10px; color:var(--amber);" aria-hidden="true"></i>
+      ${String(ARCHIEF.fout).replace(/</g,'&lt;')}
+      <div style="margin-top:14px;"><button class="btn sm" data-archief-retry>Opnieuw proberen</button></div>
+    </div></div>`;
+  }
+  if(!ARCHIEF.klantmappen){
+    return `<div class="section"><div class="empty-state" id="archiefLaadState">
+      <i class="ti ti-loader-2" style="font-size:26px; display:block; margin-bottom:10px;" aria-hidden="true"></i>
+      Klantmappen ophalen uit SharePoint…
+    </div></div>`;
+  }
+  const jaarNu = String(TODAY.getFullYear());
+  const mapOpties = ARCHIEF.klantmappen.map(m=>`<option value="${m.id}">${m.naam.replace(/</g,'&lt;')}</option>`).join('');
+  const rijen = ARCHIEF.wachtrij.map((item, idx)=>{
+    const subs = item.klantmapId ? (ARCHIEF.submappen[item.klantmapId]||null) : null;
+    const subOpties = subs
+      ? subs.map(sm=>`<option value="${sm.id}" ${item.submapId===sm.id?'selected':''}>${sm.naam.replace(/</g,'&lt;')}</option>`).join('')
+      : '';
+    const grootte = item.file.size<1024*1024 ? (item.file.size/1024).toFixed(0)+' KB' : (item.file.size/1024/1024).toFixed(1)+' MB';
+    return `<div class="section" style="margin-bottom:12px;"><div class="section-body pad" style="padding:14px 18px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:${item.status==='klaar'?'0':'12px'};">
+        <i class="ti ti-file" style="font-size:20px; color:var(--muted);" aria-hidden="true"></i>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; font-size:12.5px; word-break:break-all;">${item.file.name.replace(/</g,'&lt;')}</div>
+          <div style="font-size:11px; color:var(--muted2);">${grootte}${item.geraden?' · klant automatisch herkend':''}</div>
+        </div>
+        ${item.status==='klaar' ? '<i class="ti ti-circle-check" style="font-size:20px; color:var(--primary-dark);" aria-hidden="true"></i>' : `<button class="btn sm ghost" data-archief-verwijder="${idx}" title="Uit wachtrij halen"><i class="ti ti-x" aria-hidden="true"></i></button>`}
+      </div>
+      ${item.status!=='klaar' ? `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+        <div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Klantmap</div>
+          <select data-archief-klant="${idx}" style="width:100%; padding:8px 10px; border:1px solid ${item.klantmapId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; background:${item.klantmapId?'var(--primary-bg)':'#fff'};">
+            <option value="">— kies klant —</option>${mapOpties}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Map</div>
+          <select data-archief-submap="${idx}" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;" ${!subs?'disabled':''}>
+            ${subs ? `<option value="">(direct in klantmap)</option>${subOpties}` : '<option value="">— eerst klant kiezen —</option>'}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="btn sm primary" data-archief-upload="${idx}" ${!item.klantmapId || item.status==='bezig' ? 'disabled':''}>${item.status==='bezig' ? 'Bezig…' : 'Archiveren in SharePoint'}</button>
+        <span style="font-size:11.5px; color:${item.status==='fout'?'var(--red)':'var(--muted)'};">${archiefStatusTekst(item)}</span>
+      </div>` : ''}
+    </div></div>`;
+  }).join('');
+  const logHtml = ARCHIEF.log.length ? `<div class="section"><div class="section-head"><h3>Zojuist gearchiveerd</h3><span class="hint">laatste ${ARCHIEF.log.length}</span></div><div class="section-body pad" style="padding:12px 18px;">
+    ${ARCHIEF.log.slice().reverse().map(l=>`<div style="display:flex; align-items:center; gap:8px; font-size:12px; padding:4px 0;">
+      <i class="ti ti-circle-check" style="font-size:15px; color:var(--primary-dark); flex-shrink:0;" aria-hidden="true"></i>
+      <span style="min-width:0; word-break:break-all;">${String(l.bestand).replace(/</g,'&lt;')} → <b>${String(l.doel).replace(/</g,'&lt;')}</b></span>
+      <span style="margin-left:auto; color:var(--muted2); font-size:11px; flex-shrink:0;">${l.ts ? new Date(l.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</span>
+    </div>`).join('')}
+  </div></div>` : '';
+  return `
+  <div class="banner"><i class="ti ti-folder-check" aria-hidden="true"></i> Verbonden met <b>${(ARCHIEF.cfg&&ARCHIEF.cfg.siteNaam||'SharePoint').replace(/</g,'&lt;')}</b> → ${ARCHIEF_HOOFDMAP} · ${ARCHIEF.klantmappen.length} klantmappen. Herkenning gaat op klantnummer in de bestandsnaam; map staat standaard op ${jaarNu}.</div>
+  <div id="archiefDropzone" style="border:2px dashed var(--primary); background:var(--primary-bg); border-radius:14px; padding:38px 24px; text-align:center; cursor:pointer; margin-bottom:16px; transition:filter .12s;">
+    <i class="ti ti-cloud-upload" style="font-size:30px; color:var(--primary-dark);" aria-hidden="true"></i>
+    <div style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-top:8px;">Sleep bestanden hierheen</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">bijv. rechtstreeks vanuit je mail — of klik om te bladeren</div>
+    <input type="file" id="archiefFileInput" multiple style="display:none;">
+  </div>
+  ${rijen}
+  ${logHtml}`;
+}
+async function archiefInit(){
+  if(ARCHIEF.klantmappen || ARCHIEF.laden || !SYNC.account) return;
+  ARCHIEF.laden = true; ARCHIEF.fout = null;
+  try{
+    await archiefLaadKlantmappen(true);
+  }catch(e){
+    ARCHIEF.fout = e.message || 'Kon SharePoint niet bereiken.';
+  }
+  ARCHIEF.laden = false;
+  if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+async function archiefVoegBestandenToe(fileList){
+  const jaarNu = String(TODAY.getFullYear());
+  for(const file of Array.from(fileList)){
+    const geraden = archiefRaadKlantmap(file.name);
+    const item = { file, klantmapId: geraden?geraden.id:null, submapId: null, status:'wachten', fout:null, geraden: !!geraden };
+    ARCHIEF.wachtrij.push(item);
+    if(item.klantmapId){
+      try{
+        const subs = await archiefLaadSubmappen(item.klantmapId);
+        const jaarmap = subs.find(sm=>sm.naam===jaarNu);
+        if(jaarmap) item.submapId = jaarmap.id;
+      }catch(e){}
+    }
+  }
+  if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function archiefBindHandlers(){
+  if(STATE.view!=='archief') return;
+  if(!ARCHIEF.klantmappen && !ARCHIEF.fout){ archiefInit(); }
+  const dz = document.getElementById('archiefDropzone');
+  const fi = document.getElementById('archiefFileInput');
+  if(dz && fi){
+    dz.addEventListener('click', ()=>fi.click());
+    dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.filter='brightness(0.95)'; });
+    dz.addEventListener('dragleave', ()=>{ dz.style.filter=''; });
+    dz.addEventListener('drop', (e)=>{
+      e.preventDefault(); dz.style.filter='';
+      if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) archiefVoegBestandenToe(e.dataTransfer.files);
+    });
+    fi.addEventListener('change', ()=>{ if(fi.files.length) archiefVoegBestandenToe(fi.files); fi.value=''; });
+  }
+  const retry = document.querySelector('[data-archief-retry]');
+  if(retry) retry.addEventListener('click', ()=>{ ARCHIEF.fout=null; ARCHIEF.cfg=null; try{localStorage.removeItem('cd_archief_cfg');}catch(e){} archiefInit(); document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); });
+  document.querySelectorAll('[data-archief-klant]').forEach(el=>el.addEventListener('change', async ()=>{
+    const idx = Number(el.getAttribute('data-archief-klant'));
+    const item = ARCHIEF.wachtrij[idx]; if(!item) return;
+    item.klantmapId = el.value || null; item.submapId = null; item.geraden = false;
+    if(item.klantmapId){
+      try{
+        const subs = await archiefLaadSubmappen(item.klantmapId);
+        const jaarmap = subs.find(sm=>sm.naam===String(TODAY.getFullYear()));
+        if(jaarmap) item.submapId = jaarmap.id;
+      }catch(e){}
+    }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-archief-submap]').forEach(el=>el.addEventListener('change', ()=>{
+    const idx = Number(el.getAttribute('data-archief-submap'));
+    const item = ARCHIEF.wachtrij[idx]; if(!item) return;
+    item.submapId = el.value || null;
+  }));
+  document.querySelectorAll('[data-archief-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
+    const idx = Number(el.getAttribute('data-archief-verwijder'));
+    ARCHIEF.wachtrij.splice(idx, 1);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-archief-upload]').forEach(el=>el.addEventListener('click', async ()=>{
+    const idx = Number(el.getAttribute('data-archief-upload'));
+    const item = ARCHIEF.wachtrij[idx];
+    if(!item || !item.klantmapId || item.status==='bezig') return;
+    item.status = 'bezig'; item.fout = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    try{
+      await archiefUploadBestand(item);
+      item.status = 'klaar';
+      const klantmap = ARCHIEF.klantmappen.find(m=>m.id===item.klantmapId);
+      const submap = item.submapId && ARCHIEF.submappen[item.klantmapId] ? ARCHIEF.submappen[item.klantmapId].find(sm=>sm.id===item.submapId) : null;
+      const doel = (klantmap?klantmap.naam:'?') + (submap?` (${submap.naam})`:'');
+      ARCHIEF.log.push({ bestand: item.file.name, doel, ts: new Date().toISOString() });
+      archiefBewaarLog();
+      logActiviteit(`Archief: "${item.file.name}" gearchiveerd bij ${doel}`);
+      toast('Bestand gearchiveerd in SharePoint.');
+      setTimeout(()=>{
+        const i = ARCHIEF.wachtrij.indexOf(item);
+        if(i>-1){ ARCHIEF.wachtrij.splice(i,1); if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); } }
+      }, 2500);
+    }catch(e){
+      item.status = 'fout'; item.fout = e.message || 'onbekende fout';
+    }
+    if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+  }));
+}
 function notionHTML(){
   return `
   <div class="section">
@@ -6735,6 +7037,7 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   if(STATE.view==='dashboard') renderKpiCharts();
+  archiefBindHandlers();
 }
 
 function handleCSVUpload(e){
