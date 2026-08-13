@@ -483,7 +483,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.1';
+const APP_VERSION = '2026.08.13.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1907,7 +1907,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'' };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -3693,11 +3693,14 @@ function loonheffingHTML(){
   <div class="banner"><i class="ti ti-bulb" aria-hidden="true"></i> Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
   ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-lock" aria-hidden="true"></i> Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
   ${bewerkbaar ? `<div class="section" style="margin-bottom:18px;">
-    <div class="section-head">
-      <h3>Klanten loonheffingen importeren</h3>
-      <span class="hint">Uit het salarisadministratie-Excel-bestand</span>
-    </div>
-    <div class="section-body pad">
+    <button data-lh-import-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.lhImportExpanded?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">Klanten loonheffingen importeren</h3>
+        <span class="hint">Uit het salarisadministratie-Excel-bestand</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.lhImportExpanded?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.lhImportExpanded ? `<div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px;">Upload het "verwerken salarisadministratie"-bestand (Excel). Werkgevers die daarin voorkomen worden gematcht op naam met bestaande klanten en krijgen automatisch het vinkje "Wij doen de loonaangifte" aan. Er worden geen nieuwe klanten aangemaakt — namen die niet gevonden worden, komen in een lijst te staan.</p>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Excel-bestand kiezen<input type="file" id="lhKlantenImportFile" accept=".xlsx,.xls" style="display:none;"></label>
       <div id="lhKlantenImportResult" style="margin-top:12px;"></div>
@@ -3705,7 +3708,7 @@ function loonheffingHTML(){
         <button class="btn sm" data-lh-bulk-deadline><i class="ti ti-calendar" aria-hidden="true"></i> LH-deadline bulk bijwerken (2e week volgende maand)</button>
         <span class="hint" style="margin-left:8px;">Zet de deadline van alle ${list.length} loonheffing-klant(en) in één keer op ${fmtDate(volgendeMaandTweedeWeek())}</span>
       </div>
-    </div>
+    </div>` : ''}
   </div>` : ''}
   ${legend}
   ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga), true, 'DGA-klanten')}
@@ -6635,6 +6638,10 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-kpi-toggle]').forEach(el=>el.addEventListener('click',()=>{
     STATE.kpiExpanded = !STATE.kpiExpanded;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-import-toggle]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhImportExpanded = !STATE.lhImportExpanded;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   if(STATE.view==='dashboard') renderKpiCharts();
