@@ -309,6 +309,8 @@
   .btn.ghost{border-color:transparent; background:transparent;}
   .btn.ghost:hover{background:var(--bg);}
   .btn.sm{padding:6px 10px; font-size:11.5px;}
+  .btn.dark{background:#131417; border-color:#131417; color:#fff;}
+  .btn.dark:hover{background:#2a2c31; border-color:#2a2c31;}
   .btn.danger{color:var(--red); border-color:var(--red-brd); background:var(--red-bg);}
   .btn:disabled{opacity:.5; cursor:not-allowed;}
 
@@ -353,7 +355,7 @@
   .panel.is-focus .panel-body{max-width:960px; margin:0 auto; padding:24px 32px 80px;}
   .panel.is-focus .panel-head{padding:24px 32px;}
   .panel.is-focus .panel-head-top{max-width:960px; margin:0 auto; width:100%;}
-  .panel-head{background:linear-gradient(180deg,var(--primary),var(--primary-dark)); color:#fff; padding:22px 24px; flex:none;}
+  .panel-head{background:#131417; color:#fff; padding:22px 24px; flex:none;}
   .panel-head-top{display:flex; justify-content:space-between; align-items:flex-start;}
   a.btn{text-decoration:none;}
   .panel-close{background:rgba(255,255,255,.1); border:none; color:#fff; width:32px; height:32px; border-radius:9px; cursor:pointer; font-size:15px; transition:background .12s ease;}
@@ -493,7 +495,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.20';
+const APP_VERSION = '2026.08.13.21';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5979,8 +5981,8 @@ function panelHTML(klant){
     <div class="panel-section">
       <div class="panel-section-head"><i class="ti ti-address-book" aria-hidden="true"></i><span class="t">Contact</span></div>
       <div class="inner" style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a class="btn sm primary" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
-        <a class="btn sm primary" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
+        <a class="btn sm dark" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
+        <a class="btn sm dark" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
         <span class="btn sm ghost" style="cursor:default;"><i class="ti ti-phone" aria-hidden="true"></i> ${klant.tel}</span>
       </div>
     </div>
