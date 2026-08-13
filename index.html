@@ -111,6 +111,8 @@
   #aiHost .ai-msg.user{justify-content:flex-end;}
   #aiHost .ai-msg-avatar{width:24px; height:24px; border-radius:50%; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:12px;}
   #aiHost .ai-msg-bubble{font-size:12.5px; line-height:1.5; padding:8px 11px; border-radius:12px; max-width:78%; background:var(--bg);}
+  #aiHost .ai-msg-bubble{white-space:pre-wrap; word-break:break-word;}
+  #aiHost .ai-msg-bubble a{color:inherit; text-decoration:underline;}
   #aiHost .ai-msg.user .ai-msg-bubble{background:var(--primary); color:#fff; border-radius:12px 12px 2px 12px;}
   #aiHost .ai-msg.assistant .ai-msg-bubble{border-radius:12px 12px 12px 2px;}
   #aiHost .ai-foot{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border);}
@@ -483,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.2';
+const APP_VERSION = '2026.08.13.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -7741,19 +7743,58 @@ const AI_STATE = { open:false, loading:false, messages: (function(){ try{ return
 function _aiBewaarBerichten(){
   try{ localStorage.setItem('cd_ai_messages', JSON.stringify(AI_STATE.messages.slice(-30))); }catch(e){}
 }
+/* Bouwt een volledige samenvatting van ALLE dashboarddata (niet meer alleen een top-15) voor de
+   AI-assistent: per klant boekhouder, rechtsvorm, banksaldo, OB/VPB/LH/JR-status, loonheffing-
+   voortgang + vaste notitie, en aantal auto's. Bij ~300-400 klanten blijft dit ruim binnen het
+   context-venster van het model (128k tokens) en de kosten zijn verwaarloosbaar (~$0,01 per vraag). */
 function aiContextSamenvatting(){
   try{
+    const klantregels = RAW_KLANTEN.map(k=>{
+      const f = STORE[k.id];
+      if(!f) return `- ${k.naam}: (geen data)`;
+      const boekhouderNaam = bh(k.bh) ? bh(k.bh).naam : 'onbekend';
+      const statussen = ['OB','VPB','LH','JR'].map(t=>{
+        const e = effDL(k,t);
+        if(!e || e.na) return null;
+        const s = statusOf(e);
+        return `${t} ${fmtDate(e.datum)} (${s.key})`;
+      }).filter(Boolean).join(', ');
+      (f.dl.overige||[]).forEach(o=>{
+        // overige deadlines apart meenemen, want die zitten niet in de OB/VPB/LH/JR-lijst hierboven
+      });
+      let lhInfo = '';
+      if(k.doetLoonaangifte && f.lh){
+        const gedaan = (f.lh.taken||[]).filter(t=>t.done).length;
+        const totaal = (f.lh.taken||[]).length;
+        lhInfo = ` | LH-taken ${gedaan}/${totaal}`;
+        if(f.lh.overigeNotitie) lhInfo += ` | LH-vaste notitie: "${String(f.lh.overigeNotitie).slice(0,100)}"`;
+      }
+      const autoCount = AUTOS.filter(a=>a.klant===k.id).length;
+      const notitie = f.notities ? ` | notitie: "${String(f.notities).slice(0,100)}"` : '';
+      return `- ${k.naam} | vorm ${k.vorm||'onbekend'} | boekhouder ${boekhouderNaam} | saldo ${fmtEUR(f.saldo)} | ${statussen || 'geen lopende deadlines'}${lhInfo}${autoCount?` | ${autoCount} auto('s)`:''}${notitie}`;
+    }).join('\n');
+
     const rows = allDeadlineRows();
     const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
     rows.forEach(r=>cnt[r.st.key]++);
-    const urgent = rows.filter(r=>r.st.key==='actie' || r.st.key==='nadert')
-      .sort((a,b)=> daysDiff(a.entry.datum) - daysDiff(b.entry.datum))
-      .slice(0,15)
-      .map(r=>`- ${r.klant.naam} (${bh(r.klant.bh).naam}): ${typeof r.type==='string' && TYPE_LABEL[r.type] ? TYPE_LABEL[r.type] : r.type}, deadline ${fmtDate(r.entry.datum)}, status ${r.st.key}`)
-      .join('\n');
     const totalSaldo = RAW_KLANTEN.reduce((s,k)=>s+STORE[k.id].saldo,0);
-    return `Vandaag: ${TODAY.toLocaleDateString('nl-NL')}. Totaal ${RAW_KLANTEN.length} klanten. Deadlinestatus: ${cnt.actie} actie vereist, ${cnt.nadert} nadert, ${cnt.schema} op schema. Totaal openstaand banksaldo: ${fmtEUR(totalSaldo)}.\nMeest urgente deadlines:\n${urgent || '(geen)'}`;
+    const teamsInfo = TEAMS.map(t=>t.naam).join(', ') || '(geen teams)';
+    const bhInfo = BOEKHOUDERS.map(b=>b.naam).join(', ') || '(geen boekhouders)';
+
+    return `Vandaag: ${TODAY.toLocaleDateString('nl-NL')}.
+Totaal ${RAW_KLANTEN.length} klanten, ${BOEKHOUDERS.length} boekhouders (${bhInfo}), ${TEAMS.length} teams (${teamsInfo}), ${AUTOS.length} auto('s) in de autolijst.
+Deadlinestatus over alle klanten: ${cnt.actie} actie vereist, ${cnt.nadert} nadert, ${cnt.schema} op schema, ${cnt.ingediend} ingediend.
+Totaal openstaand banksaldo over alle klanten: ${fmtEUR(totalSaldo)}.
+
+Volledige klantenlijst met actuele status per klant:
+${klantregels || '(geen klanten)'}`;
   }catch(e){ return 'Geen dashboarddata beschikbaar.'; }
+}
+// Escaped HTML-tekst, met URLs omgezet naar aanklikbare links (voor bronvermeldingen bij
+// internetzoekopdrachten) en newlines behouden via CSS white-space:pre-wrap op de bubbel.
+function aiLinkify(tekst){
+  const escaped = String(tekst).replace(/</g,'&lt;');
+  return escaped.replace(/(https?:\/\/[^\s]+)/g, url=>`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
 }
 function renderAiPanel(){
   let host = document.getElementById('aiHost');
@@ -7762,7 +7803,7 @@ function renderAiPanel(){
   const berichtenHtml = AI_STATE.messages.length ? AI_STATE.messages.map(m=>`
     <div class="ai-msg ${m.role}">
       ${m.role==='assistant' ? '<div class="ai-msg-avatar"><i class="ti ti-sparkles" aria-hidden="true"></i></div>' : ''}
-      <div class="ai-msg-bubble">${String(m.text).replace(/</g,'&lt;')}</div>
+      <div class="ai-msg-bubble">${aiLinkify(m.text)}</div>
     </div>`).join('') : `
     <div class="ai-empty">
       <i class="ti ti-sparkles" style="font-size:22px; color:var(--muted2);" aria-hidden="true"></i>
