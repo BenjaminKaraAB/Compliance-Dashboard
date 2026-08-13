@@ -353,12 +353,13 @@
   .panel.is-focus .panel-body{max-width:960px; margin:0 auto; padding:24px 32px 80px;}
   .panel.is-focus .panel-head{padding:24px 32px;}
   .panel.is-focus .panel-head-top{max-width:960px; margin:0 auto; width:100%;}
-  .panel-head{background:linear-gradient(180deg,#0f172a,#1e293b); color:#fff; padding:22px 24px; flex:none;}
+  .panel-head{background:linear-gradient(180deg,var(--primary),var(--primary-dark)); color:#fff; padding:22px 24px; flex:none;}
   .panel-head-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  a.btn{text-decoration:none;}
   .panel-close{background:rgba(255,255,255,.1); border:none; color:#fff; width:32px; height:32px; border-radius:9px; cursor:pointer; font-size:15px; transition:background .12s ease;}
   .panel-close:hover{background:rgba(255,255,255,.2);}
   .panel-klant-name{font-size:19px; font-weight:800; margin-top:2px;}
-  .panel-klant-meta{font-size:12px; color:#a9b4d4; margin-top:5px; display:flex; gap:14px; flex-wrap:wrap;}
+  .panel-klant-meta{font-size:12px; color:rgba(255,255,255,.85); margin-top:5px; display:flex; gap:14px; flex-wrap:wrap;}
   .panel-body{flex:1; overflow-y:auto; padding:20px 24px 80px;}
   .panel-section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden;}
   .panel-section h4{margin:0; padding:13px 16px; border-bottom:1px solid var(--border); font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; background:#fafbfd;}
@@ -492,7 +493,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.17';
+const APP_VERSION = '2026.08.13.19';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1925,7 +1926,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'' };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2666,6 +2667,11 @@ function volgendeMaandKeyDefault(){
   const d = new Date(TODAY.getFullYear(), TODAY.getMonth()+1, 1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
 }
+function maandKeyPlus(maandKey, delta){
+  const delen = String(maandKey).split('-');
+  const d = new Date(Number(delen[0]), Number(delen[1])-1+delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
 function syncLhTaken(klant){
   const f = STORE[klant.id];
   if(!f) return null;
@@ -2683,6 +2689,21 @@ function syncLhTaken(klant){
     }
   }
   if(!f.lh.log) f.lh.log = [];
+  if(!Array.isArray(f.lh.periodes)) f.lh.periodes = [];
+  // Oudere snapshots (van voor de maandnavigatie) hebben nog geen .maand — leid die af uit de
+  // afrond-datum, zodat ze bij het terugbladeren in de juiste maand verschijnen.
+  f.lh.periodes.forEach(p=>{
+    if(!p.maand && p.afgerondOp){
+      const d = new Date(p.afgerondOp);
+      if(!isNaN(d.getTime())) p.maand = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+  });
+  // periodeMaand = de maand waar de OPEN periode van deze klant bij hoort. Init: huidige maand,
+  // tenzij deze maand al is afgerond (dan is de klant al met de volgende maand bezig).
+  if(!f.lh.periodeMaand){
+    const nu = huidigeMaandKey();
+    f.lh.periodeMaand = f.lh.periodes.some(p=>p.maand===nu) ? maandKeyPlus(nu, 1) : nu;
+  }
   const definitie = lhTakenDefinitie(klant.heeftDga);
   const bestaand = f.lh.taken || [];
   f.lh.taken = definitie.map(t => bestaand.find(x=>x.naam===t.naam) || {naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]});
@@ -2777,9 +2798,11 @@ function completeLhPeriode(klant, door){
   // Snapshot van de afgeronde periode bewaren met alle aantekeningen, zodat je later kunt
   // terugbladeren naar wat er per taak is genoteerd in eerdere maanden.
   if(!Array.isArray(f.lh.periodes)) f.lh.periodes = [];
+  const snapMaand = f.lh.periodeMaand || huidigeMaandKey();
   const snap = {
     id: 'per'+Date.now()+Math.floor(Math.random()*1000),
     afgerondOp: new Date().toISOString(),
+    maand: snapMaand, // de maand waar deze periode bij hoort (voor de maandnavigatie)
     door,
     periodeDatum: logEntry.voorgaandeDatum || null, // de LH-deadline die deze periode vertegenwoordigde
     taken: f.lh.taken.map(t=>({
@@ -2794,7 +2817,43 @@ function completeLhPeriode(klant, door){
   f.lh.periodes.push(snap);
   if(f.lh.periodes.length > 60) f.lh.periodes = f.lh.periodes.slice(-60); // max 5 jaar bij maandelijks
   f.lh.taken.forEach(t=>{ t.done=false; t.door=null; t.ts=null; }); // aantekeningen blijven bewaard over periodes heen
+  // De klant is klaar met deze maand: zijn open periode schuift door naar de maand erna. Vaste
+  // notities, maandnotities en aantekeningen worden hierboven bewust NIET gewist — die gaan mee.
+  f.lh.periodeMaand = maandKeyPlus(snapMaand, 1);
   persist();
+}
+/* Draait een afgeronde periode terug: de klant komt terug in de maand van de snapshot, met de
+   vinkjes (done/door/ts) zoals ze waren op het moment van afronden. De doorgeschoven LH-deadline
+   springt ook terug (via de bijbehorende log-entry). Notities zijn nooit gewist, dus die staan er
+   sowieso nog. */
+function terugdraaiLhPeriode(klant, snapId){
+  const f = syncLhTaken(klant);
+  if(!f) return false;
+  const idx = (f.lh.periodes||[]).findIndex(p=>p.id===snapId);
+  if(idx===-1) return false;
+  const snap = f.lh.periodes[idx];
+  // Vinkjes herstellen uit de snapshot (op taaknaam, zodat DGA-wissels niet mis-mappen)
+  (snap.taken||[]).forEach(st=>{
+    const t = f.lh.taken.find(x=>x.naam===st.naam);
+    if(t){ t.done = !!st.done; t.door = st.door||null; t.ts = st.ts||null; }
+  });
+  // Bijbehorende log-entry (zelfde moment als de snapshot) zoeken en de deadline terugzetten
+  const snapTijd = snap.afgerondOp ? new Date(snap.afgerondOp).getTime() : null;
+  if(snapTijd){
+    const logIdx = (f.lh.log||[]).findIndex(l=>l.actie==='periode-afgerond' && l.ts && Math.abs(new Date(l.ts).getTime()-snapTijd) < 10000);
+    if(logIdx>-1){
+      const entry = f.lh.log[logIdx];
+      if(entry.voorgaandeDatum!==undefined){
+        const dl = f.dl.LH;
+        if(dl && !dl.na){ dl.datum = entry.voorgaandeDatum; dl.status = entry.voorgaandeStatus!==undefined ? entry.voorgaandeStatus : null; }
+      }
+      f.lh.log.splice(logIdx,1);
+    }
+  }
+  f.lh.periodes.splice(idx,1);
+  f.lh.periodeMaand = snap.maand || huidigeMaandKey();
+  persist();
+  return true;
 }
 function verwijderLhLogEntry(klant, logId){
   const f = STORE[klant.id];
@@ -4139,26 +4198,51 @@ function loonheffingKlantDetailHTML(k){
       </div>`).join('') : '<div class="rem-log-empty">Nog geen activiteit.</div>') : ''}
     </div>`;
 }
+function lhBekekenMaand(){ return STATE.lhMaand || huidigeMaandKey(); }
 function loonheffingOverzichtHTML(list, heeftDga, titel){
   if(!list.length) return '';
   const jaarNu = TODAY.getFullYear();
+  const bekeken = lhBekekenMaand();
+  const isHuidigeMaand = bekeken === huidigeMaandKey();
+  const bewerkbaar = magLhBewerken();
   const takenDef = lhTakenDefinitie(heeftDga);
   const kolomAantal = 4 + takenDef.length; // Nr. + Werkgever + taken + Periodes + Volgende deadline
-  const gesorteerd = list.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
-  const rijen = gesorteerd.map((k,i)=>{
+
+  // Open klanten in deze maand: periodeMaand == bekeken maand. In de huidige maand tellen ook
+  // achterlopers mee (periodeMaand in het verleden) — open werk verdwijnt nooit uit "nu".
+  const open = [];
+  const afgerond = [];
+  list.forEach(k=>{
+    const f = syncLhTaken(k);
+    if(f.lh.periodeMaand === bekeken || (isHuidigeMaand && f.lh.periodeMaand < bekeken)) open.push(k);
+    const snap = (f.lh.periodes||[]).find(p=>p.maand===bekeken);
+    if(snap) afgerond.push({k, snap});
+  });
+  if(!open.length && !afgerond.length){
+    return `<div class="section" style="margin-bottom:18px;">
+      <div class="section-head"><h3>${titel} — ${maandLabelVanKey(bekeken)}</h3><span class="hint">0 klant(en)</span></div>
+      <div class="section-body pad"><div class="empty-state" style="padding:20px; font-size:12.5px;">Geen klanten in deze maand.</div></div>
+    </div>`;
+  }
+  open.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  afgerond.sort((a,b)=>a.k.naam.localeCompare(b.k.naam,'nl'));
+
+  const openRijen = open.map((k,i)=>{
     const f = syncLhTaken(k);
     const lhEntry = effDL(k,'LH');
     const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
     const expanded = STATE.lhExpandedKlant === k.id;
-    const heeftVolgendeMaandNotitie = !!(f.lh.maandNotities && f.lh.maandNotities.length);
+    const notitieDezeMaand = !!(f.lh.maandNotities||[]).find(n=>n.maand===bekeken);
+    const anderMaandNotities = !!(f.lh.maandNotities||[]).length && !notitieDezeMaand;
     const taakCellen = f.lh.taken.map(t=>{
       const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
       const titelTxt = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
       return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
     }).join('');
+    const ster = notitieDezeMaand ? `<span title="Notitie voor ${maandLabelVanKey(bekeken)}" style='margin-right:4px;'>⭐</span>` : (anderMaandNotities ? `<span title="Notitie klaargezet voor een andere maand" style='margin-right:4px; opacity:.45;'>⭐</span>` : '');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:#f7f9fd;':''}">
       <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
-      <td><div class="klant-name">${heeftVolgendeMaandNotitie ? '<span title="Notitie klaargezet voor volgende maand" style=\'margin-right:4px;\'>⭐</span>' : ''}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
@@ -4166,18 +4250,44 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const detailRij = expanded ? `<tr><td colspan="${kolomAantal}" style="background:#fbfcfe; padding:16px 20px; border-bottom:1px solid var(--border);">${loonheffingKlantDetailHTML(k)}</td></tr>` : '';
     return hoofdRij + detailRij;
   }).join('');
+
+  // Afgeronde klanten van deze maand: read-only rij uit de snapshot, met terugdraai-knop.
+  const afgerondRijen = afgerond.map(({k, snap}, i)=>{
+    const taakCellen = takenDef.map(def=>{
+      const st = (snap.taken||[]).find(x=>x.naam===def.naam);
+      const kleur = st && st.done ? boekhouderKleurVoorNaam(st.door) : null;
+      const titelTxt = def.naam + (st && st.done ? ` — ✓ ${st.door}` : ' — niet afgevinkt bij afronden');
+      return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
+    }).join('');
+    const afgerondDatum = snap.afgerondOp ? new Date(snap.afgerondOp).toLocaleDateString('nl-NL',{day:'numeric', month:'short'}) : '';
+    return `<tr style="opacity:.75;">
+      <td style="color:var(--muted);">${open.length + i + 1}</td>
+      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      ${taakCellen}
+      <td colspan="2">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:11px; color:var(--green); background:var(--green-bg); padding:3px 10px; border-radius:20px; white-space:nowrap;">afgerond ${afgerondDatum}${snap.door?' · '+String(snap.door).split(' ')[0]:''}</span>
+          ${bewerkbaar ? `<button class="btn sm ghost" data-lh-terugdraai="${k.id}|${snap.id}" title="Periode terugdraaien — klant komt terug in deze maand met de vinkjes zoals ze waren" style="padding:3px 9px; font-size:11px; color:var(--amber);">↺ Terugdraaien</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
   const taakHeaders = takenDef.map((t,idx)=>`<th style="text-align:center;" title="${t.naam.replace(/"/g,'&quot;')}">${idx+1}</th>`).join('');
   const taakLegenda = takenDef.map((t,idx)=>`<span style="margin-right:14px;"><b>${idx+1}.</b> ${t.naam}</span>`).join('');
+  const hintDelen = [];
+  if(open.length) hintDelen.push(`${open.length} open`);
+  if(afgerond.length) hintDelen.push(`${afgerond.length} afgerond`);
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
-      <h3>${titel} — ${TODAY.toLocaleDateString('nl-NL',{month:'long', year:'numeric'})}</h3>
-      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken · ${gesorteerd.length} klant(en)</span>
+      <h3>${titel} — ${maandLabelVanKey(bekeken)}</h3>
+      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken · ${hintDelen.join(' · ')}</span>
     </div>
     <div style="padding:12px 20px 0; font-size:11px; color:var(--muted); line-height:1.8;">${taakLegenda}</div>
     <div class="section-body" style="overflow-x:auto;">
       <table>
         <thead><tr><th>Nr.</th><th>Werkgever</th>${taakHeaders}<th style="text-align:center;">Periodes ${jaarNu}</th><th>Volgende deadline</th></tr></thead>
-        <tbody>${rijen}</tbody>
+        <tbody>${openRijen}${afgerondRijen}</tbody>
       </table>
     </div>
   </div>`;
@@ -4383,6 +4493,18 @@ function loonheffingHTML(){
     </div>` : ''}
   </div>` : ''}
   ${legend}
+  ${(function(){
+    const bekeken = lhBekekenMaand();
+    const isNu = bekeken === huidigeMaandKey();
+    return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+      <button class="btn sm ghost" data-lh-maand-nav="-1" title="Vorige maand" aria-label="Vorige maand" style="padding:5px 11px;">‹</button>
+      <span style="font-size:14.5px; font-weight:700; min-width:150px; text-align:center;">${maandLabelVanKey(bekeken)}</span>
+      <button class="btn sm ghost" data-lh-maand-nav="1" title="Volgende maand" aria-label="Volgende maand" style="padding:5px 11px;">›</button>
+      ${isNu
+        ? `<span style="font-size:11px; background:var(--primary-bg); color:var(--primary-dark); padding:3px 10px; border-radius:20px; font-weight:600;">huidige maand</span>`
+        : `<button class="btn sm ghost" data-lh-maand-nav="0" style="font-size:11px; padding:3px 10px;">vandaag</button>`}
+    </div>`;
+  })()}
   ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga), true, 'DGA-klanten')}
   ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga), false, 'Geen-DGA-klanten')}
   ${loonheffingOpHoldHTML()}
@@ -5819,7 +5941,7 @@ function panelHTML(klant){
   <div class="panel-head">
     <div class="panel-head-top">
       <div>
-        <div class="panel-klant-meta" style="margin-top:0; color:#8f9bc4;">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}</div>
+        <div class="panel-klant-meta" style="margin-top:0; color:rgba(255,255,255,.8);">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}</div>
         <div class="panel-klant-name">${klant.naam}</div>
         <div class="panel-klant-meta">
           <span><i class="ti ti-user" aria-hidden="true"></i> ${klant.contact}</span>
@@ -5844,8 +5966,8 @@ function panelHTML(klant){
     <div class="panel-section">
       <div class="panel-section-head"><i class="ti ti-address-book" aria-hidden="true"></i><span class="t">Contact</span></div>
       <div class="inner" style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a class="btn sm" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
-        <a class="btn sm" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
+        <a class="btn sm primary" href="mailto:${klant.email}">${ICONS.mail} E-mail</a>
+        <a class="btn sm primary" href="https://wa.me/${klant.tel.replace(/[^\d]/g,'')}" target="_blank" rel="noopener">${ICONS.whats} WhatsApp</a>
         <span class="btn sm ghost" style="cursor:default;"><i class="ti ti-phone" aria-hidden="true"></i> ${klant.tel}</span>
       </div>
     </div>
@@ -7111,6 +7233,27 @@ function attachHandlers(){
     persistMeta();
     toast(nieuweWaarde ? 'Ingeschakeld — klanten kunnen nu een akkoordverklaring per e-mail ontvangen.' : 'Op hold gezet — er wordt geen mail verstuurd.');
     render();
+  }));
+  document.querySelectorAll('[data-lh-maand-nav]').forEach(el=>el.addEventListener('click', ()=>{
+    const delta = Number(el.getAttribute('data-lh-maand-nav'));
+    STATE.lhMaand = delta === 0 ? null : maandKeyPlus(lhBekekenMaand(), delta);
+    if(STATE.lhMaand === huidigeMaandKey()) STATE.lhMaand = null;
+    STATE.lhExpandedKlant = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-terugdraai]').forEach(el=>el.addEventListener('click', ()=>{
+    if(!magLhBewerken()) return;
+    const [klantId, snapId] = el.getAttribute('data-lh-terugdraai').split('|');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm(`Periode terugdraaien voor "${klant.naam}"? De klant komt terug in deze maand met de vinkjes zoals ze waren bij het afronden; de doorgeschoven deadline springt ook terug.`)) return;
+    if(terugdraaiLhPeriode(klant, snapId)){
+      logActiviteit(`Loonheffingen: periode teruggedraaid voor "${klant.naam}"`);
+      toast('Periode teruggedraaid voor '+klant.naam);
+    } else {
+      toast('Terugdraaien mislukt — periode niet gevonden.');
+    }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-complete]').forEach(el=>el.addEventListener('click', ()=>{
     if(!magLhBewerken()) return;
