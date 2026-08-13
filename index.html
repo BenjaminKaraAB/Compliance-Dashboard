@@ -493,7 +493,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.19';
+const APP_VERSION = '2026.08.13.20';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -865,6 +865,7 @@ function addKlant(data){
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
+    salarisdossierWerknemer: data.salarisdossierWerknemer !== false,
     staatOpHold: !!data.staatOpHold,
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
@@ -2647,6 +2648,14 @@ function allDeadlineRows(){
 const TYPE_LABEL = {OB:'Omzetbelasting (OB)', VPB:'Vennootschapsbelasting (VPB)', LH:'Loonheffing (LH)', JR:'Jaarrekening (JR/JA)', Overige:'Overige'};
 const GEEN_VPB_VORMEN = ['Eenmanszaak','V.O.F.','VOF','Maatschap'];
 function lhTakenDefinitie(heeftDga){ return heeftDga ? LH_TAKEN_DGA : LH_TAKEN_GEEN_DGA; }
+// Takenlijst voor een specifieke klant: geen-DGA klanten hebben taak 5 ("Salarisdossier werknemer")
+// alleen als het vinkje 'salarisdossierWerknemer' bij de klant aanstaat (staat standaard aan).
+function lhTakenVoorKlant(klant){
+  const def = lhTakenDefinitie(klant.heeftDga);
+  if(klant.heeftDga) return def;
+  if(klant.salarisdossierWerknemer === false) return def.filter(t=>t.naam !== 'Salarisdossier werknemer');
+  return def;
+}
 function nieuwLhTaken(heeftDga){ return lhTakenDefinitie(heeftDga).map(t=>({naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]})); }
 /* Zorgt dat f.lh.taken altijd exact overeenkomt met de takenlijst die bij klant.heeftDga hoort (zowel
    qua aantal als volgorde), zodat de rij-index die in de checkbox/aantekening-handlers wordt gebruikt
@@ -2704,7 +2713,7 @@ function syncLhTaken(klant){
     const nu = huidigeMaandKey();
     f.lh.periodeMaand = f.lh.periodes.some(p=>p.maand===nu) ? maandKeyPlus(nu, 1) : nu;
   }
-  const definitie = lhTakenDefinitie(klant.heeftDga);
+  const definitie = lhTakenVoorKlant(klant);
   const bestaand = f.lh.taken || [];
   f.lh.taken = definitie.map(t => bestaand.find(x=>x.naam===t.naam) || {naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]});
   return f;
@@ -2881,6 +2890,7 @@ function migrateData(){
       if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
+      if(k.salarisdossierWerknemer===undefined) k.salarisdossierWerknemer=true;
       if(k.opHoldReden===undefined) k.opHoldReden='';
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
@@ -4234,7 +4244,9 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const expanded = STATE.lhExpandedKlant === k.id;
     const notitieDezeMaand = !!(f.lh.maandNotities||[]).find(n=>n.maand===bekeken);
     const anderMaandNotities = !!(f.lh.maandNotities||[]).length && !notitieDezeMaand;
-    const taakCellen = f.lh.taken.map(t=>{
+    const taakCellen = takenDef.map(def=>{
+      const t = f.lh.taken.find(x=>x.naam===def.naam);
+      if(!t) return `<td style="text-align:center; color:var(--muted2);" title="${def.naam.replace(/"/g,'&quot;')} — niet van toepassing voor deze klant">—</td>`;
       const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
       const titelTxt = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
       return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
@@ -4255,8 +4267,9 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
   const afgerondRijen = afgerond.map(({k, snap}, i)=>{
     const taakCellen = takenDef.map(def=>{
       const st = (snap.taken||[]).find(x=>x.naam===def.naam);
-      const kleur = st && st.done ? boekhouderKleurVoorNaam(st.door) : null;
-      const titelTxt = def.naam + (st && st.done ? ` — ✓ ${st.door}` : ' — niet afgevinkt bij afronden');
+      if(!st) return `<td style="text-align:center; color:var(--muted2);" title="${def.naam.replace(/"/g,'&quot;')} — niet van toepassing voor deze klant">—</td>`;
+      const kleur = st.done ? boekhouderKleurVoorNaam(st.door) : null;
+      const titelTxt = def.naam + (st.done ? ` — ✓ ${st.door}` : ' — niet afgevinkt bij afronden');
       return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
     }).join('');
     const afgerondDatum = snap.afgerondOp ? new Date(snap.afgerondOp).toLocaleDateString('nl-NL',{day:'numeric', month:'short'}) : '';
@@ -5984,6 +5997,10 @@ function panelHTML(klant){
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+          <input type="checkbox" id="salarisdossierToggle" ${klant.salarisdossierWerknemer!==false?'checked':''}> Salarisdossier werknemer
+        </label>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Alleen relevant voor geen-DGA klanten: bepaalt of taak 5 ("Salarisdossier werknemer") in de takenlijst staat. Uitvinken = geen 5e bolletje bij deze klant.</div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
           <input type="checkbox" id="opHoldToggle" ${klant.staatOpHold?'checked':''}> Inactief
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. Verschijnt dan onderaan de Loonheffingen-pagina, onder de geen-DGA-lijst.</div>
@@ -6413,6 +6430,10 @@ function addKlantFormHTML(){
       </label>
       <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen.</div>
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+        <input type="checkbox" id="newKlantSalarisdossier" checked> Salarisdossier werknemer
+      </label>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Alleen relevant voor geen-DGA klanten: bepaalt of taak 5 in de takenlijst staat.</div>
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
         <input type="checkbox" id="newKlantOpHold"> Inactief
       </label>
       <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. De reden kun je later toevoegen via het klantdossier.</div>
@@ -6505,6 +6526,7 @@ function openAddKlantPanel(silent){
       jr:dateOrEmpty(document.getElementById('newKlantJr').value), jrHerh:document.getElementById('newKlantJrHerh').value,
       doetLoonaangifte:document.getElementById('newKlantLoonaangifte').checked,
       heeftDga:document.getElementById('newKlantDga').checked,
+      salarisdossierWerknemer:document.getElementById('newKlantSalarisdossier').checked,
       staatOpHold:document.getElementById('newKlantOpHold').checked,
     });
     STATE.showAddKlant=false;
@@ -7952,6 +7974,13 @@ function attachPanelHandlers(klant){
     klant.heeftDga = e.target.checked;
     persistMeta();
     toast(e.target.checked ? 'Gemarkeerd als DGA-klant.' : 'Gemarkeerd als geen-DGA-klant.');
+  });
+  const salarisdossierToggle = document.getElementById('salarisdossierToggle');
+  if(salarisdossierToggle) salarisdossierToggle.addEventListener('change', (e)=>{
+    klant.salarisdossierWerknemer = e.target.checked;
+    syncLhTaken(klant); // takenlijst direct bijwerken (taak 5 erbij of eruit)
+    persistMeta(); persist();
+    toast(e.target.checked ? 'Taak "Salarisdossier werknemer" toegevoegd.' : 'Taak "Salarisdossier werknemer" weggehaald voor deze klant.');
   });
   const opHoldToggle = document.getElementById('opHoldToggle');
   if(opHoldToggle) opHoldToggle.addEventListener('change', (e)=>{
