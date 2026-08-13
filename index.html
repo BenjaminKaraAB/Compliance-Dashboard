@@ -485,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.4';
+const APP_VERSION = '2026.08.13.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2300,6 +2300,7 @@ function migrateData(){
         if(f.dagen2===undefined) f.dagen2 = 14;
         if(!Array.isArray(f.log)) f.log = [];
         if(f.notities===undefined) f.notities = '';
+        if(f.afspraken===undefined) f.afspraken = '';
         if(!Array.isArray(f.akkoordLog)) f.akkoordLog = [];
         if(!Array.isArray(f.vpbAkkoordLog)) f.vpbAkkoordLog = [];
         if(!Array.isArray(f.fiscaleEenheidLog)) f.fiscaleEenheidLog = [];
@@ -5343,6 +5344,14 @@ function panelHTML(klant){
       </div>
     </div>
 
+    <div class="panel-section">
+      <div class="panel-section-head"><i class="ti ti-handshake" aria-hidden="true"></i><span class="t">Gemaakte afspraken</span></div>
+      <div class="inner">
+        <textarea id="afsprakenInput" placeholder="Afspraken die met deze klant gemaakt zijn — bijv. over aanlevering, prijzen of communicatie…">${f.afspraken||''}</textarea>
+        <div style="margin-top:8px;"><button class="btn sm" data-save-afspraken>Opslaan</button></div>
+      </div>
+    </div>
+
     ${isAdmin() ? `<div class="panel-section">
       <div class="panel-section-head"><i class="ti ti-alert-octagon" aria-hidden="true"></i><span class="t">Gevarenzone</span></div>
       <div class="inner">
@@ -7426,6 +7435,14 @@ function attachPanelHandlers(klant){
     STORE[klant.id].notities = document.getElementById('notitiesInput').value; persist(); toast('Notitie opgeslagen.');
   });
 
+  const saveAfspraken = document.querySelector('[data-save-afspraken]');
+  if(saveAfspraken) saveAfspraken.addEventListener('click', ()=>{
+    STORE[klant.id].afspraken = document.getElementById('afsprakenInput').value;
+    logActiviteit(`Gemaakte afspraken bijgewerkt bij "${klant.naam}"`);
+    persist();
+    toast('Afspraken opgeslagen.');
+  });
+
   const delKlantPanelBtn = document.querySelector('[data-delete-klant-panel]');
   if(delKlantPanelBtn) delKlantPanelBtn.addEventListener('click', ()=>{
     confirmDeleteKlant(klant.id);
@@ -7843,7 +7860,8 @@ function aiContextSamenvatting(){
       }
       const autoCount = AUTOS.filter(a=>a.klant===k.id).length;
       const notitie = f.notities ? ` | notitie: "${String(f.notities).slice(0,100)}"` : '';
-      return `- ${k.naam} | vorm ${k.vorm||'onbekend'} | boekhouder ${boekhouderNaam} | saldo ${fmtEUR(f.saldo)} | ${statussen || 'geen lopende deadlines'}${lhInfo}${autoCount?` | ${autoCount} auto('s)`:''}${notitie}`;
+      const afspraken = f.afspraken ? ` | afspraken: "${String(f.afspraken).slice(0,150)}"` : '';
+      return `- ${k.naam} | vorm ${k.vorm||'onbekend'} | boekhouder ${boekhouderNaam} | saldo ${fmtEUR(f.saldo)} | ${statussen || 'geen lopende deadlines'}${lhInfo}${autoCount?` | ${autoCount} auto('s)`:''}${notitie}${afspraken}`;
     }).join('\n');
 
     const rows = allDeadlineRows();
