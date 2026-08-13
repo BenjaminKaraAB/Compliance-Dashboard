@@ -492,7 +492,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.11';
+const APP_VERSION = '2026.08.13.14';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1967,7 +1967,7 @@ function render(){
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         <div class="nav-group-label">Apps &amp; settings</div>
-        ${navItem('archief','upload','Archief-uploader')}
+        ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
@@ -2135,9 +2135,42 @@ function archiefRaadKlantmap(bestandsnaam){
   }
   return null;
 }
+function archiefDoelmapId(item){
+  return (item.pad && item.pad.length) ? item.pad[item.pad.length-1].id : item.klantmapId;
+}
+function archiefDoelmapPad(item){
+  const klantmap = item.klantmapId ? (ARCHIEF.klantmappen||[]).find(m=>m.id===item.klantmapId) : null;
+  const namen = [];
+  if(klantmap) namen.push(klantmap.naam);
+  (item.pad||[]).forEach(p=>namen.push(p.naam));
+  return namen;
+}
+// Bouwt per genest mapniveau een dropdown (klant kan meerdere niveaus diep archiveren, bijv.
+// ALGEMEEN > VAST DOSSIER VOF > AUTO). Elk niveau verschijnt pas zodra het bovenliggende niveau
+// gekozen is én diens submappen geladen zijn; stopt zodra een niveau geen submappen (meer) heeft.
+function archiefMapSelectsHTML(item, idx){
+  if(!item.klantmapId) return '';
+  const blokken = [];
+  let parentId = item.klantmapId;
+  for(let level=0; ; level++){
+    const subs = ARCHIEF.submappen[parentId];
+    if(!subs || !subs.length) break;
+    const gekozenId = (item.pad[level] || {}).id || '';
+    const opties = subs.map(sm=>`<option value="${sm.id}" ${gekozenId===sm.id?'selected':''}>${sm.naam.replace(/</g,'&lt;')}</option>`).join('');
+    blokken.push(`<div style="margin-bottom:10px;">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">${level===0?'Map':'Submap'}</div>
+      <select data-archief-map="${idx}|${level}" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+        <option value="">(direct in ${level===0?'klantmap':'deze map'})</option>${opties}
+      </select>
+    </div>`);
+    if(!gekozenId) break;
+    parentId = gekozenId;
+  }
+  return blokken.join('');
+}
 async function archiefUploadBestand(item){
   const cfg = ARCHIEF.cfg;
-  const parentId = item.submapId || item.klantmapId;
+  const parentId = archiefDoelmapId(item);
   const bestandsnaam = item.file.name.replace(/[\\/:*?"<>|#%]/g,'_');
   const token = await getGraphToken(true);
   if(item.file.size < 3800000){
@@ -2197,37 +2230,28 @@ function archiefHTML(){
     </div></div>`;
   }
   const jaarNu = String(TODAY.getFullYear());
-  const mapOpties = ARCHIEF.klantmappen.map(m=>`<option value="${m.id}">${m.naam.replace(/</g,'&lt;')}</option>`).join('');
   const rijen = ARCHIEF.wachtrij.map((item, idx)=>{
-    const subs = item.klantmapId ? (ARCHIEF.submappen[item.klantmapId]||null) : null;
-    const subOpties = subs
-      ? subs.map(sm=>`<option value="${sm.id}" ${item.submapId===sm.id?'selected':''}>${sm.naam.replace(/</g,'&lt;')}</option>`).join('')
-      : '';
+    const mapOpties = ARCHIEF.klantmappen.map(m=>`<option value="${m.id}" ${item.klantmapId===m.id?'selected':''}>${m.naam.replace(/</g,'&lt;')}</option>`).join('');
+    const geraadeKlant = item.klantmapId ? (ARCHIEF.klantmappen.find(m=>m.id===item.klantmapId)||null) : null;
     const grootte = item.file.size<1024*1024 ? (item.file.size/1024).toFixed(0)+' KB' : (item.file.size/1024/1024).toFixed(1)+' MB';
     return `<div class="section" style="margin-bottom:12px;"><div class="section-body pad" style="padding:14px 18px;">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:${item.status==='klaar'?'0':'12px'};">
         <i class="ti ti-file" style="font-size:20px; color:var(--muted);" aria-hidden="true"></i>
         <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:12.5px; word-break:break-all;">${item.file.name.replace(/</g,'&lt;')}</div>
-          <div style="font-size:11px; color:var(--muted2);">${grootte}${item.geraden?' · klant automatisch herkend':''}</div>
+          <div style="font-size:11px; color:var(--muted2);">${grootte}${item.geraden && geraadeKlant?` · automatisch herkend: <b>${geraadeKlant.naam.replace(/</g,'&lt;')}</b>`:''}</div>
         </div>
         ${item.status==='klaar' ? '<i class="ti ti-circle-check" style="font-size:20px; color:var(--primary-dark);" aria-hidden="true"></i>' : `<button class="btn sm ghost" data-archief-verwijder="${idx}" title="Uit wachtrij halen"><i class="ti ti-x" aria-hidden="true"></i></button>`}
       </div>
       ${item.status!=='klaar' ? `
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
-        <div>
-          <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Klantmap</div>
-          <select data-archief-klant="${idx}" style="width:100%; padding:8px 10px; border:1px solid ${item.klantmapId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; background:${item.klantmapId?'var(--primary-bg)':'#fff'};">
-            <option value="">— kies klant —</option>${mapOpties}
-          </select>
-        </div>
-        <div>
-          <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Map</div>
-          <select data-archief-submap="${idx}" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;" ${!subs?'disabled':''}>
-            ${subs ? `<option value="">(direct in klantmap)</option>${subOpties}` : '<option value="">— eerst klant kiezen —</option>'}
-          </select>
-        </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Klantmap</div>
+        <select data-archief-klant="${idx}" style="width:100%; padding:8px 10px; border:1px solid ${item.klantmapId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; background:${item.klantmapId?'var(--primary-bg)':'#fff'};">
+          <option value="" ${!item.klantmapId?'selected':''}>— kies klant —</option>${mapOpties}
+        </select>
       </div>
+      ${archiefMapSelectsHTML(item, idx)}
+      ${item.klantmapId ? `<div style="font-size:11px; color:var(--muted2); margin-bottom:12px;">Wordt geplaatst in: <b>${archiefDoelmapPad(item).map(n=>n.replace(/</g,'&lt;')).join(' › ')}</b></div>` : ''}
       <div style="display:flex; align-items:center; gap:10px;">
         <button class="btn sm primary" data-archief-upload="${idx}" ${!item.klantmapId || item.status==='bezig' ? 'disabled':''}>${item.status==='bezig' ? 'Bezig…' : 'Archiveren in SharePoint'}</button>
         <span style="font-size:11.5px; color:${item.status==='fout'?'var(--red)':'var(--muted)'};">${archiefStatusTekst(item)}</span>
@@ -2246,7 +2270,7 @@ function archiefHTML(){
   <div id="archiefDropzone" style="border:2px dashed var(--primary); background:var(--primary-bg); border-radius:14px; padding:38px 24px; text-align:center; cursor:pointer; margin-bottom:16px; transition:filter .12s;">
     <i class="ti ti-cloud-upload" style="font-size:30px; color:var(--primary-dark);" aria-hidden="true"></i>
     <div style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-top:8px;">Sleep bestanden hierheen</div>
-    <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">bijv. rechtstreeks vanuit je mail — of klik om te bladeren</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">vanuit Finder — of klik om te bladeren. (Rechtstreeks slepen vanuit Gmail/Google Drive werkt niet altijd; download dan eerst.)</div>
     <input type="file" id="archiefFileInput" multiple style="display:none;">
   </div>
   ${rijen}
@@ -2267,13 +2291,16 @@ async function archiefVoegBestandenToe(fileList){
   const jaarNu = String(TODAY.getFullYear());
   for(const file of Array.from(fileList)){
     const geraden = archiefRaadKlantmap(file.name);
-    const item = { file, klantmapId: geraden?geraden.id:null, submapId: null, status:'wachten', fout:null, geraden: !!geraden };
+    const item = { file, klantmapId: geraden?geraden.id:null, pad: [], status:'wachten', fout:null, geraden: !!geraden };
     ARCHIEF.wachtrij.push(item);
     if(item.klantmapId){
       try{
         const subs = await archiefLaadSubmappen(item.klantmapId);
         const jaarmap = subs.find(sm=>sm.naam===jaarNu);
-        if(jaarmap) item.submapId = jaarmap.id;
+        if(jaarmap){
+          item.pad = [{id:jaarmap.id, naam:jaarmap.naam}];
+          try{ await archiefLaadSubmappen(jaarmap.id); }catch(e){}
+        }
       }catch(e){}
     }
   }
@@ -2286,11 +2313,17 @@ function archiefBindHandlers(){
   const fi = document.getElementById('archiefFileInput');
   if(dz && fi){
     dz.addEventListener('click', ()=>fi.click());
-    dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.filter='brightness(0.95)'; });
+    dz.addEventListener('dragenter', (e)=>{ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; dz.style.filter='brightness(0.95)'; });
+    dz.addEventListener('dragover', (e)=>{ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; dz.style.filter='brightness(0.95)'; });
     dz.addEventListener('dragleave', ()=>{ dz.style.filter=''; });
     dz.addEventListener('drop', (e)=>{
       e.preventDefault(); dz.style.filter='';
-      if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) archiefVoegBestandenToe(e.dataTransfer.files);
+      const dt = e.dataTransfer;
+      if(dt && dt.files && dt.files.length){ archiefVoegBestandenToe(dt.files); return; }
+      // Sommige bronnen (bijv. een bestand rechtstreeks uit Gmail of Google Drive slepen, in
+      // plaats van uit Finder) leveren geen direct bestand aan het droppunt — de browser moet
+      // het dan eerst zelf downloaden en dat lukt niet altijd in een andere tab.
+      toast('Kon dit bestand niet direct verwerken. Download het eerst (bijv. naar Finder) en sleep het dan opnieuw, of klik om te bladeren.');
     });
     fi.addEventListener('change', ()=>{ if(fi.files.length) archiefVoegBestandenToe(fi.files); fi.value=''; });
   }
@@ -2299,20 +2332,32 @@ function archiefBindHandlers(){
   document.querySelectorAll('[data-archief-klant]').forEach(el=>el.addEventListener('change', async ()=>{
     const idx = Number(el.getAttribute('data-archief-klant'));
     const item = ARCHIEF.wachtrij[idx]; if(!item) return;
-    item.klantmapId = el.value || null; item.submapId = null; item.geraden = false;
+    item.klantmapId = el.value || null; item.pad = []; item.geraden = false;
     if(item.klantmapId){
       try{
         const subs = await archiefLaadSubmappen(item.klantmapId);
         const jaarmap = subs.find(sm=>sm.naam===String(TODAY.getFullYear()));
-        if(jaarmap) item.submapId = jaarmap.id;
+        if(jaarmap){
+          item.pad = [{id:jaarmap.id, naam:jaarmap.naam}];
+          try{ await archiefLaadSubmappen(jaarmap.id); }catch(e){}
+        }
       }catch(e){}
     }
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-archief-submap]').forEach(el=>el.addEventListener('change', ()=>{
-    const idx = Number(el.getAttribute('data-archief-submap'));
+  document.querySelectorAll('[data-archief-map]').forEach(el=>el.addEventListener('change', async ()=>{
+    const [idxStr, levelStr] = el.getAttribute('data-archief-map').split('|');
+    const idx = Number(idxStr), level = Number(levelStr);
     const item = ARCHIEF.wachtrij[idx]; if(!item) return;
-    item.submapId = el.value || null;
+    item.pad = item.pad.slice(0, level);
+    if(el.value){
+      const parentId = level===0 ? item.klantmapId : item.pad[level-1].id;
+      const subs = ARCHIEF.submappen[parentId] || [];
+      const gekozen = subs.find(s=>s.id===el.value);
+      item.pad.push({ id: el.value, naam: gekozen ? gekozen.naam : '' });
+      try{ await archiefLaadSubmappen(el.value); }catch(e){}
+    }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-archief-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
     const idx = Number(el.getAttribute('data-archief-verwijder'));
@@ -2328,9 +2373,7 @@ function archiefBindHandlers(){
     try{
       await archiefUploadBestand(item);
       item.status = 'klaar';
-      const klantmap = ARCHIEF.klantmappen.find(m=>m.id===item.klantmapId);
-      const submap = item.submapId && ARCHIEF.submappen[item.klantmapId] ? ARCHIEF.submappen[item.klantmapId].find(sm=>sm.id===item.submapId) : null;
-      const doel = (klantmap?klantmap.naam:'?') + (submap?` (${submap.naam})`:'');
+      const doel = archiefDoelmapPad(item).join(' › ') || '?';
       ARCHIEF.log.push({ bestand: item.file.name, doel, ts: new Date().toISOString() });
       archiefBewaarLog();
       logActiviteit(`Archief: "${item.file.name}" gearchiveerd bij ${doel}`);
