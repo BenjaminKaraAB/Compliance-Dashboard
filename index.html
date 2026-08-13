@@ -3347,7 +3347,7 @@ function lhVorigePeriodesHTML(k, f){
         ${anten}
       </div>`;
     }).join('');
-    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
     return `<div style="padding:10px 12px; background:#fbfcfe;">${taakBlokken}${overige}</div>`;
   };
   const periodeRijen = periodes.map(p=>{
@@ -3406,7 +3406,7 @@ function loonheffingKlantDetailHTML(k){
     const editKey = `klantnotitie|${k.id}`;
     if(bewerkbaar && STATE.lhEditNote === editKey){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige notities</b>
+        <b style="font-size:12px;">Overige vaste notities</b>
         <div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
           <textarea data-lh-klantnotitie-input="${k.id}" rows="3" placeholder="Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
           <div style="display:flex; flex-direction:column; gap:4px;">
@@ -3418,7 +3418,7 @@ function loonheffingKlantDetailHTML(k){
     }
     if(huidigeTekst){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige notities</b>
+        <b style="font-size:12px;">Overige vaste notities</b>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:520px;">
           <div style="font-size:12.5px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
           ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
@@ -3428,7 +3428,7 @@ function loonheffingKlantDetailHTML(k){
         </div>
       </div>`;
     }
-    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige notitie</button></div>` : '';
+    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige vaste notitie</button></div>` : '';
   })();
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
@@ -3816,6 +3816,39 @@ function bijtellingBeheerHTML(){
     </div>` : ''}
   </div>`;
 }
+/* RDW-koppeling: haalt actuele voertuiggegevens op bij de open data van de RDW
+   (opendata.rdw.nl), gratis en publiek toegankelijk, geen API-key nodig. Wordt aangeroepen
+   zodra het kenteken-veld bij "Auto toevoegen/bewerken" het focus verliest. */
+async function rdwOphalenKenteken(kentekenRuw){
+  const kenteken = String(kentekenRuw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(kenteken.length < 5) return null;
+  try{
+    const [vRes, bRes] = await Promise.all([
+      fetch(`https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${kenteken}`),
+      fetch(`https://opendata.rdw.nl/resource/8ys7-d773.json?kenteken=${kenteken}`).catch(()=>null)
+    ]);
+    if(!vRes || !vRes.ok) return null;
+    const vData = await vRes.json();
+    if(!vData || !vData.length) return null;
+    const v = vData[0];
+    let bData = [];
+    try{ if(bRes && bRes.ok) bData = await bRes.json(); }catch(e){}
+    const brandstoffen = (bData||[]).map(b=>String(b.brandstof_omschrijving||'').toLowerCase());
+    const elektrisch = brandstoffen.some(b=>b.includes('elektriciteit')) ? 'ja' : 'nee';
+    const typeMap = { 'personenauto':'personenauto', 'bedrijfsauto':'bestelauto', 'motorfiets':'motor', 'bromfiets':'motor' };
+    const type = typeMap[String(v.voertuigsoort||'').toLowerCase()] || '';
+    let datumEersteInschrijving = '';
+    if(v.datum_eerste_toelating_dt){
+      datumEersteInschrijving = String(v.datum_eerste_toelating_dt).slice(0,10);
+    } else if(v.datum_eerste_toelating){
+      const sD = String(v.datum_eerste_toelating);
+      if(sD.length===8) datumEersteInschrijving = `${sD.slice(0,4)}-${sD.slice(4,6)}-${sD.slice(6,8)}`;
+    }
+    return { merk: v.merk||'', type, elektrisch, datumEersteInschrijving };
+  }catch(e){
+    return null;
+  }
+}
 function autoFormHTML(auto){
   const editing = !!auto;
   const klantOptions = RAW_KLANTEN.slice().sort((a,b)=>a.naam.localeCompare(b.naam)).map(k=>`<option value="${k.id}" ${auto && auto.klant===k.id?'selected':''}>${k.naam}</option>`).join('');
@@ -3832,7 +3865,7 @@ function autoFormHTML(auto){
     <div class="panel-section"><h4>Gegevens</h4><div class="inner">
       <div class="field-row"><label>Klant*</label><select id="autoKlant" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${klantOptions || '<option value="">Voeg eerst een klant toe</option>'}</select></div>
       <div class="field-row"><label>Merk</label><input type="text" id="autoMerk" value="${v('merk')}"></div>
-      <div class="field-row"><label>Kenteken</label><input type="text" id="autoKenteken" value="${v('kenteken')}" placeholder="AB-123-C"></div>
+      <div class="field-row"><label>Kenteken</label><div style="flex:1;"><input type="text" id="autoKenteken" value="${v('kenteken')}" placeholder="AB-123-C" style="width:100%;"><div id="autoKentekenStatus" style="font-size:11px; color:var(--muted); margin-top:4px;"></div></div></div>
       <div class="field-row"><label>Type</label><select id="autoType" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
         <option value="personenauto" ${sel('type','personenauto')}>Personenauto</option>
         <option value="bestelauto" ${sel('type','bestelauto')}>Bestelauto</option>
@@ -3888,6 +3921,32 @@ function openAddAutoPanel(silent){
     if(panel){ panel.classList.toggle('is-focus'); }
   }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
+  const kentekenInput = document.getElementById('autoKenteken');
+  const kentekenStatusEl = document.getElementById('autoKentekenStatus');
+  let rdwOpvraagBezig = false;
+  async function probeerRdwOphalen(){
+    if(!kentekenInput) return;
+    const raw = kentekenInput.value;
+    const kentekenNorm = raw.toUpperCase().replace(/[^A-Z0-9]/g,'');
+    if(kentekenNorm.length < 5){ if(kentekenStatusEl) kentekenStatusEl.textContent=''; return; }
+    if(rdwOpvraagBezig) return;
+    rdwOpvraagBezig = true;
+    if(kentekenStatusEl) kentekenStatusEl.textContent = 'RDW-gegevens ophalen…';
+    const info = await rdwOphalenKenteken(raw);
+    rdwOpvraagBezig = false;
+    if(!kentekenInput.isConnected) return;
+    if(!info){ if(kentekenStatusEl) kentekenStatusEl.textContent = 'Geen RDW-gegevens gevonden voor dit kenteken.'; return; }
+    const merkEl = document.getElementById('autoMerk');
+    const typeEl = document.getElementById('autoType');
+    const elektrischEl = document.getElementById('autoElektrisch');
+    const inschrijvingEl = document.getElementById('autoDatumEersteInschrijving');
+    if(info.merk && merkEl) merkEl.value = info.merk;
+    if(info.type && typeEl) typeEl.value = info.type;
+    if(info.elektrisch && elektrischEl) elektrischEl.value = info.elektrisch;
+    if(info.datumEersteInschrijving && inschrijvingEl) inschrijvingEl.value = datumNaarInvoer(info.datumEersteInschrijving);
+    if(kentekenStatusEl) kentekenStatusEl.textContent = 'RDW-gegevens opgehaald ✓ (controleer en pas zo nodig aan)';
+  }
+  if(kentekenInput) kentekenInput.addEventListener('blur', probeerRdwOphalen);
   document.querySelector('[data-save-auto]').addEventListener('click', ()=>{
     const klantId = document.getElementById('autoKlant').value;
     if(!klantId){ toast('Kies een klant.'); return; }
