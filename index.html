@@ -191,6 +191,7 @@
   .nav-foot .user{min-width:0;}
   .nav-foot .user-name{font-size:12.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .nav-foot .user-mail{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .nav-foot .app-version{font-size:9.5px; color:var(--muted); opacity:.6; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.02em;}
 
   /* MAIN */
   .main{flex:1; min-width:0; display:flex; flex-direction:column;}
@@ -480,6 +481,9 @@
 
 /* ============================= DATA ============================= */
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+// Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
+// zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
+const APP_VERSION = '2026.08.13.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2113,6 +2117,7 @@ function sidebarFootHTML(){
     <div class="user">
       <div class="user-name">${naam}</div>
       <div class="user-mail">${mail}</div>
+      <div class="app-version" title="Versie van het dashboard dat nu open staat">v${APP_VERSION}</div>
     </div>
   </div>`;
 }
