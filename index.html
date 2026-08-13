@@ -485,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.3';
+const APP_VERSION = '2026.08.13.4';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2077,12 +2077,37 @@ function nieuwLhTaken(heeftDga){ return lhTakenDefinitie(heeftDga).map(t=>({naam
    qua aantal als volgorde), zodat de rij-index die in de checkbox/aantekening-handlers wordt gebruikt
    (data-lh-toggle="klantId|idx") altijd naar de juiste taak wijst. Bestaande voortgang/aantekeningen
    worden op naam gematcht en dus behouden; alleen echt ontbrekende taken worden nieuw aangemaakt. */
+const NL_MAANDNAMEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+function maandLabelVanKey(maandKey){
+  if(!maandKey) return '';
+  const delen = String(maandKey).split('-');
+  const j = Number(delen[0]), m = Number(delen[1]);
+  if(!j || !m || m<1 || m>12) return maandKey;
+  return `${NL_MAANDNAMEN[m-1]} ${j}`;
+}
+function huidigeMaandKey(){
+  return `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}`;
+}
+function volgendeMaandKeyDefault(){
+  const d = new Date(TODAY.getFullYear(), TODAY.getMonth()+1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
 function syncLhTaken(klant){
   const f = STORE[klant.id];
   if(!f) return null;
   if(!f.lh) f.lh = { taken: nieuwLhTaken(klant.heeftDga), log:[], volgendeMaandNotitie:'', overigeNotitie:'' };
   if(f.lh.volgendeMaandNotitie===undefined) f.lh.volgendeMaandNotitie = '';
   if(f.lh.overigeNotitie===undefined) f.lh.overigeNotitie = '';
+  if(!Array.isArray(f.lh.maandNotities)){
+    f.lh.maandNotities = [];
+    // Migratie van de oude "notitie voor volgende maand" (één vrij tekstveld, altijd "volgende
+    // maand") naar de nieuwe maand-specifieke lijst: bestaande tekst krijgt "volgende maand"
+    // (vanaf vandaag gerekend) als doelmaand, zodat niemand een bestaande notitie kwijtraakt.
+    if(f.lh.volgendeMaandNotitie && f.lh.volgendeMaandNotitie.trim()){
+      f.lh.maandNotities.push({ id:'mn'+Date.now()+Math.floor(Math.random()*1000), maand: volgendeMaandKeyDefault(), tekst: f.lh.volgendeMaandNotitie.trim() });
+      f.lh.volgendeMaandNotitie = '';
+    }
+  }
   if(!f.lh.log) f.lh.log = [];
   const definitie = lhTakenDefinitie(klant.heeftDga);
   const bestaand = f.lh.taken || [];
@@ -3386,27 +3411,43 @@ function loonheffingKlantDetailHTML(k){
   const bewerkbaar = magLhBewerken();
   const doneCount = f.lh.taken.filter(t=>t.done).length;
   const lhEntry = effDL(k,'LH');
-  const volgendeMaandNotitieHTML = (()=>{
-    const huidigeTekst = f.lh.volgendeMaandNotitie || '';
-    if(STATE.lhEditNote === `volgendemaand|${k.id}`){
-      return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
-        <textarea data-lh-volgendemaand-input="${k.id}" rows="2" placeholder="Notitie voor volgende maand…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
-        <div style="display:flex; flex-direction:column; gap:4px;">
-          <button class="btn sm primary" data-lh-volgendemaand-save="${k.id}">Opslaan</button>
-          <button class="btn sm ghost" data-lh-volgendemaand-cancel="${k.id}">Annuleren</button>
+  const maandNotitiesHTML = (()=>{
+    const notities = (f.lh.maandNotities || []).slice().sort((a,b)=> String(a.maand).localeCompare(String(b.maand)));
+    const huidigeMaand = huidigeMaandKey();
+    const items = notities.map(n=>{
+      const editKey = `maandnotitie|${k.id}|${n.id}`;
+      const isHuidig = n.maand === huidigeMaand;
+      if(bewerkbaar && STATE.lhEditNote === editKey){
+        return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
+          <input type="month" data-lh-maandnotitie-maand="${n.id}" value="${n.maand}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+          <textarea data-lh-maandnotitie-input="${n.id}" rows="2" placeholder="Notitie…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;">${(n.tekst||'').replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <button class="btn sm primary" data-lh-maandnotitie-save="${k.id}|${n.id}">Opslaan</button>
+            <button class="btn sm ghost" data-lh-maandnotitie-cancel="${k.id}|${n.id}">Annuleren</button>
+          </div>
+        </div>`;
+      }
+      return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:${isHuidig?'#fff8e1':'var(--bg)'}; border:1px solid ${isHuidig?'#f0d98c':'var(--border)'}; border-radius:6px; max-width:420px;">
+        <div style="font-size:11.5px; min-width:0;">
+          <div style="font-weight:700; margin-bottom:2px;">${isHuidig?'⭐':'📅'} ${maandLabelVanKey(n.maand)}${isHuidig?' (deze maand)':''}</div>
+          <div>${(n.tekst||'').replace(/</g,'&lt;')}</div>
         </div>
-      </div>`;
-    }
-    if(huidigeTekst){
-      return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:#fff8e1; border:1px solid #f0d98c; border-radius:6px; max-width:420px;">
-        <div style="font-size:11.5px; min-width:0;"><span style="margin-right:4px;">⭐</span>${huidigeTekst.replace(/</g,'&lt;')}</div>
         ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
-          <button class="btn sm ghost" title="Bewerken" data-lh-volgendemaand-edit="${k.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
-          <button class="btn sm ghost" title="Verwijderen" data-lh-volgendemaand-delete="${k.id}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" title="Bewerken" data-lh-maandnotitie-edit="${k.id}|${n.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" title="Verwijderen" data-lh-maandnotitie-delete="${k.id}|${n.id}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
         </div>` : ''}
       </div>`;
-    }
-    return bewerkbaar ? `<button class="btn sm ghost" data-lh-volgendemaand-edit="${k.id}" style="margin-top:6px;">+ Notitie voor volgende maand</button>` : '';
+    }).join('');
+    const nieuwKey = `maandnotitie-nieuw|${k.id}`;
+    const nieuwForm = (bewerkbaar && STATE.lhEditNote === nieuwKey) ? `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
+      <input type="month" data-lh-maandnotitie-nieuw-maand="${k.id}" value="${volgendeMaandKeyDefault()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">
+      <textarea data-lh-maandnotitie-nieuw-input="${k.id}" rows="2" placeholder="Notitie voor die maand…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;"></textarea>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <button class="btn sm primary" data-lh-maandnotitie-nieuw-save="${k.id}">Opslaan</button>
+        <button class="btn sm ghost" data-lh-maandnotitie-nieuw-cancel="${k.id}">Annuleren</button>
+      </div>
+    </div>` : (bewerkbaar ? `<button class="btn sm ghost" data-lh-maandnotitie-nieuw-open="${k.id}" style="margin-top:6px;">+ Notitie voor een maand</button>` : '');
+    return `${items}${nieuwForm}`;
   })();
   const overigeNotitieHTML = (()=>{
     const huidigeTekst = f.lh.overigeNotitie || '';
@@ -3495,7 +3536,7 @@ function loonheffingKlantDetailHTML(k){
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
         <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
-        ${volgendeMaandNotitieHTML}
+        ${maandNotitiesHTML}
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap;">
         <button class="btn sm ghost" data-open-klant="${k.id}">Volledig klantdossier →</button>
@@ -3504,8 +3545,8 @@ function loonheffingKlantDetailHTML(k){
       </div>
     </div>
     <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Let op! Loon vandaag openen!</div>
-    ${taakRows}
     ${overigeNotitieHTML}
+    ${taakRows}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
     ${lhVorigePeriodesHTML(k, f)}
     <div class="rem-log" style="margin-top:14px;">
@@ -3531,7 +3572,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const lhEntry = effDL(k,'LH');
     const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
     const expanded = STATE.lhExpandedKlant === k.id;
-    const heeftVolgendeMaandNotitie = !!(f.lh.volgendeMaandNotitie && f.lh.volgendeMaandNotitie.trim());
+    const heeftVolgendeMaandNotitie = !!(f.lh.maandNotities && f.lh.maandNotities.length);
     const taakCellen = f.lh.taken.map(t=>{
       const kleur = t.done ? boekhouderKleurVoorNaam(t.door) : null;
       const titelTxt = t.naam + (t.done ? ` — ✓ ${t.door}` : ' — nog niet afgerond deze periode');
@@ -6275,40 +6316,71 @@ function attachHandlers(){
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-volgendemaand-edit]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-maandnotitie-nieuw-open]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
-    const klantId = el.getAttribute('data-lh-volgendemaand-edit');
-    STATE.lhEditNote = `volgendemaand|${klantId}`;
+    const klantId = el.getAttribute('data-lh-maandnotitie-nieuw-open');
+    STATE.lhEditNote = `maandnotitie-nieuw|${klantId}`;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-volgendemaand-cancel]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-maandnotitie-nieuw-cancel]').forEach(el=>el.addEventListener('click',()=>{
     STATE.lhEditNote = null;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-volgendemaand-save]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-maandnotitie-nieuw-save]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
-    const klantId = el.getAttribute('data-lh-volgendemaand-save');
+    const klantId = el.getAttribute('data-lh-maandnotitie-nieuw-save');
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     if(!klant) return;
-    const input = document.querySelector(`[data-lh-volgendemaand-input="${klantId}"]`);
-    const tekst = input ? input.value.trim() : '';
+    const maandInput = document.querySelector(`[data-lh-maandnotitie-nieuw-maand="${klantId}"]`);
+    const tekstInput = document.querySelector(`[data-lh-maandnotitie-nieuw-input="${klantId}"]`);
+    const maand = maandInput ? maandInput.value : '';
+    const tekst = tekstInput ? tekstInput.value.trim() : '';
+    if(!maand || !tekst){ toast('Kies een maand en vul een notitie in.'); return; }
     const f = syncLhTaken(klant);
-    f.lh.volgendeMaandNotitie = tekst;
+    if(!Array.isArray(f.lh.maandNotities)) f.lh.maandNotities = [];
+    f.lh.maandNotities.push({ id:'mn'+Date.now()+Math.floor(Math.random()*1000), maand, tekst });
     STATE.lhEditNote = null;
-    logActiviteit(`Loonheffingen: notitie voor volgende maand ${tekst?'bijgewerkt':'geleegd'} bij "${klant.naam}"`);
+    logActiviteit(`Loonheffingen: notitie toegevoegd voor ${maandLabelVanKey(maand)} bij "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-lh-volgendemaand-delete]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-lh-maandnotitie-edit]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
-    const klantId = el.getAttribute('data-lh-volgendemaand-delete');
+    const [klantId, notitieId] = el.getAttribute('data-lh-maandnotitie-edit').split('|');
+    STATE.lhEditNote = `maandnotitie|${klantId}|${notitieId}`;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-maandnotitie-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-maandnotitie-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const [klantId, notitieId] = el.getAttribute('data-lh-maandnotitie-save').split('|');
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     if(!klant) return;
-    if(!confirm('Deze notitie voor volgende maand verwijderen?')) return;
     const f = syncLhTaken(klant);
-    f.lh.volgendeMaandNotitie = '';
-    logActiviteit(`Loonheffingen: notitie voor volgende maand verwijderd bij "${klant.naam}"`);
-    if(STATE.lhEditNote===`volgendemaand|${klantId}`) STATE.lhEditNote = null;
+    const notitie = (f.lh.maandNotities||[]).find(n=>n.id===notitieId);
+    if(!notitie) return;
+    const maandInput = document.querySelector(`[data-lh-maandnotitie-maand="${notitieId}"]`);
+    const tekstInput = document.querySelector(`[data-lh-maandnotitie-input="${notitieId}"]`);
+    if(maandInput && maandInput.value) notitie.maand = maandInput.value;
+    if(tekstInput) notitie.tekst = tekstInput.value.trim();
+    STATE.lhEditNote = null;
+    logActiviteit(`Loonheffingen: notitie voor ${maandLabelVanKey(notitie.maand)} bijgewerkt bij "${klant.naam}"`);
+    persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-maandnotitie-delete]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const [klantId, notitieId] = el.getAttribute('data-lh-maandnotitie-delete').split('|');
+    const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+    if(!klant) return;
+    if(!confirm('Deze notitie verwijderen?')) return;
+    const f = syncLhTaken(klant);
+    f.lh.maandNotities = (f.lh.maandNotities||[]).filter(n=>n.id!==notitieId);
+    if(STATE.lhEditNote===`maandnotitie|${klantId}|${notitieId}`) STATE.lhEditNote = null;
+    logActiviteit(`Loonheffingen: notitie verwijderd bij "${klant.naam}"`);
     persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
