@@ -485,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.7';
+const APP_VERSION = '2026.08.13.9';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -3380,7 +3380,7 @@ function lhVorigePeriodesHTML(k, f){
         ${anten}
       </div>`;
     }).join('');
-    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
     return `<div style="padding:10px 12px; background:#fbfcfe;">${taakBlokken}${overige}</div>`;
   };
   const periodeRijen = periodes.map(p=>{
@@ -3455,7 +3455,7 @@ function loonheffingKlantDetailHTML(k){
     const editKey = `klantnotitie|${k.id}`;
     if(bewerkbaar && STATE.lhEditNote === editKey){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige notities</b>
+        <b style="font-size:12px;">Vaste notities</b>
         <div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
           <textarea data-lh-klantnotitie-input="${k.id}" rows="3" placeholder="Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
           <div style="display:flex; flex-direction:column; gap:4px;">
@@ -3467,7 +3467,7 @@ function loonheffingKlantDetailHTML(k){
     }
     if(huidigeTekst){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige notities</b>
+        <b style="font-size:12px;">Vaste notities</b>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:520px;">
           <div style="font-size:12.5px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
           ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
@@ -3477,7 +3477,7 @@ function loonheffingKlantDetailHTML(k){
         </div>
       </div>`;
     }
-    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige notitie</button></div>` : '';
+    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Vaste notitie</button></div>` : '';
   })();
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
@@ -3735,7 +3735,6 @@ function loonheffingHTML(){
 
   return `
   ${list.length ? lhKalenderHTML(list) : ''}
-  <div class="banner"><i class="ti ti-bulb" aria-hidden="true"></i> Hier staan alleen klanten waarvoor het vinkje "Wij doen de loonaangifte" is aangezet bij de klantgegevens. Klik op een werkgever in het overzicht om taken af te vinken en aantekeningen toe te voegen. Elke actie wordt gelogd met naam en tijdstip, met de kleur van diegene als visuele markering (zoals in het spreadsheet). Naam komt van de Microsoft-login bij Instellingen; zonder inloggen wordt "Onbekende gebruiker" gelogd.</div>
   ${!bewerkbaar ? `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-lock" aria-hidden="true"></i> Je hebt momenteel geen bewerkrechten voor Loonheffingen (alleen inzage). Vraag een beheerder om je toe te voegen bij Instellingen.</div>` : ''}
   ${bewerkbaar ? `<div class="section" style="margin-bottom:18px;">
     <button data-lh-import-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.lhImportExpanded?'1px solid var(--border)':'none'};">
