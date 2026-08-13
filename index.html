@@ -492,7 +492,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.15';
+const APP_VERSION = '2026.08.13.17';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1978,7 +1978,7 @@ function render(){
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         <div class="nav-group-label">Apps &amp; settings</div>
-        ${navItem('kennisbank','book','Opleiding')}
+        ${navItem('kennisbank','book','Opleiding','later')}
         ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
         ${navItem('instellingen','gear','Instellingen')}
@@ -4223,21 +4223,39 @@ function loonheffingOpHoldHTML(){
     </div>
   </div>`;
 }
+// Zoekt de taken-status van een klant voor een specifieke maand: als die periode al is afgerond
+// (via "Periode afronden"), de bewaarde snapshot van dat moment; als het de LOPENDE (nog niet
+// afgeronde) maand is, de actuele/live taken. Voor overige maanden (nog niet begonnen, of een
+// afgeronde periode die niet in deze maand viel) is er geen zinvolle data → null.
+function lhTakenVoorMaand(f, jaar, maand, huidigJaar, huidigMaand){
+  const periodes = (f.lh && Array.isArray(f.lh.periodes)) ? f.lh.periodes : [];
+  const snap = periodes.find(p=>{
+    if(!p.afgerondOp) return false;
+    const d = new Date(p.afgerondOp);
+    return !isNaN(d.getTime()) && d.getFullYear()===jaar && d.getMonth()===maand;
+  });
+  if(snap) return snap.taken;
+  if(jaar===huidigJaar && maand===huidigMaand && f.lh && Array.isArray(f.lh.taken)) return f.lh.taken;
+  return null;
+}
 function lhKalenderHTML(list){
-  // Compact maandoverzicht bovenaan Loonheffingen (2 maanden terug t/m 3 maanden vooruit). Toont per
-  // maand hoeveel van de LH-klanten hun periode voor die maand daadwerkelijk hebben afgerond (via
-  // "Periode afronden"), niet alleen wat de deadline-datum toevallig is — dat geeft een eerlijker
-  // beeld van hoeveel loonheffingen er echt gedaan zijn.
+  // Compact maandoverzicht bovenaan Loonheffingen (2 maanden terug t/m 3 maanden vooruit). Drie
+  // rijen: (1) daadwerkelijk afgeronde periodes (via "Periode afronden"), (2) klanten waarbij taak 1
+  // en 2 ("Salarissen verwerken" + "Salaris- en betaallijst dossier werkgever") zijn afgevinkt, (3)
+  // klanten waarbij taak 3 en 4 ("Aangifte in dossier" + "LJP dossier") zijn afgevinkt — voor
+  // afgeronde (verleden) maanden staat dat vrijwel altijd op (bijna) 100%, voor de lopende maand
+  // geeft het echte tussentijdse voortgang.
   const NL_MAAND_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
   const huidigJaar = TODAY.getFullYear(), huidigMaand = TODAY.getMonth();
   const maanden = [];
   for(let i=-2; i<=3; i++){
     const d = new Date(huidigJaar, huidigMaand + i, 1);
-    maanden.push({ jaar:d.getFullYear(), maand:d.getMonth(), afgerond:0, klanten:[] });
+    maanden.push({ jaar:d.getFullYear(), maand:d.getMonth(), afgerond:0, klanten:[], salaris:0, lhVerwerkt:0 });
   }
   list.forEach(k=>{
     const f = STORE[k.id];
-    const periodes = (f && f.lh && Array.isArray(f.lh.periodes)) ? f.lh.periodes : [];
+    if(!f) return;
+    const periodes = (f.lh && Array.isArray(f.lh.periodes)) ? f.lh.periodes : [];
     periodes.forEach(p=>{
       if(!p.afgerondOp) return;
       const d = new Date(p.afgerondOp);
@@ -4245,10 +4263,21 @@ function lhKalenderHTML(list){
       const m = maanden.find(mm=>mm.jaar===d.getFullYear() && mm.maand===d.getMonth());
       if(m){ m.afgerond++; m.klanten.push(k.naam); }
     });
+    maanden.forEach(m=>{
+      const taken = lhTakenVoorMaand(f, m.jaar, m.maand, huidigJaar, huidigMaand);
+      if(!taken) return;
+      if(taken[0] && taken[0].done && taken[1] && taken[1].done) m.salaris++;
+      if(taken[2] && taken[2].done && taken[3] && taken[3].done) m.lhVerwerkt++;
+    });
   });
   const totaalKlanten = list.length;
   const maxAfgerond = Math.max(1, totaalKlanten, ...maanden.map(m=>m.afgerond));
-  const maandenHtml = maanden.map(m=>{
+  const maxSalaris = Math.max(1, ...maanden.map(m=>m.salaris));
+  const maxLh = Math.max(1, ...maanden.map(m=>m.lhVerwerkt));
+
+  const maandLabel = m => `${m.jaar===huidigJaar && m.maand===huidigMaand ? 'nu' : NL_MAAND_KORT[m.maand]}`;
+
+  const afgerondHtml = maanden.map(m=>{
     const isNu = m.jaar===huidigJaar && m.maand===huidigMaand;
     const pct = totaalKlanten ? Math.round((m.afgerond / totaalKlanten) * 100) : 0;
     const kleur = m.afgerond===0 ? '#eef0f4' : (pct>=100 ? '#22c58a' : (isNu ? '#c9770a' : '#94a0bb'));
@@ -4256,14 +4285,30 @@ function lhKalenderHTML(list){
     const hoogte = Math.max(10, (m.afgerond / maxAfgerond) * 42);
     const label = `${NL_MAAND_KORT[m.maand]} ${m.jaar}`;
     return `<div class="lh-week ${isNu?'is-nu':''}" title="${label}: ${m.afgerond} van ${totaalKlanten} loonheffingen afgerond${m.klanten.length?' — '+m.klanten.slice(0,5).join(', ')+(m.klanten.length>5?'…':''):''}">
-      <div class="lh-week-nr">${isNu?'nu':NL_MAAND_KORT[m.maand]}</div>
+      <div class="lh-week-nr">${maandLabel(m)}</div>
       <div class="lh-week-bar-wrap">
         <div class="lh-week-bar" style="height:${hoogte}px; background:${kleur};">
           ${totaalKlanten ? `<span style="color:${kleurText};">${m.afgerond}/${totaalKlanten}</span>` : ''}
         </div>
       </div>
-      <div class="lh-week-datum">${label}</div>
     </div>`;
+  }).join('');
+
+  const miniRijHtml = (waarde, kleur, kleurText, max)=>{
+    const hoogte = waarde ? Math.max(8, (waarde / max) * 26) : 2;
+    return `<div class="lh-week" style="flex:1;">
+      <div class="lh-week-bar-wrap" style="height:30px;">
+        <div class="lh-week-bar" style="height:${hoogte}px; background:${waarde?kleur:'#eef0f4'}; min-width:100%;">
+          <span style="color:${waarde?kleurText:'var(--muted2)'}; font-size:11px;">${waarde}</span>
+        </div>
+      </div>
+    </div>`;
+  };
+  const salarisHtml = maanden.map(m=>miniRijHtml(m.salaris, '#bfe4ee', '#0c447c', maxSalaris)).join('');
+  const lhVerwerktHtml = maanden.map(m=>miniRijHtml(m.lhVerwerkt, '#bfe6d2', '#085041', maxLh)).join('');
+  const maandLabelsHtml = maanden.map(m=>{
+    const isNu = m.jaar===huidigJaar && m.maand===huidigMaand;
+    return `<div class="lh-week" style="flex:1;"><div class="lh-week-datum" style="${isNu?'color:var(--amber); font-weight:600;':''}">${maandLabel(m)}</div></div>`;
   }).join('');
 
   const huidigeMaandData = maanden.find(m=>m.jaar===huidigJaar && m.maand===huidigMaand);
@@ -4275,8 +4320,14 @@ function lhKalenderHTML(list){
       <span class="hint">${huidigAfgerond} van ${totaalKlanten} afgerond deze maand</span>
     </div>
     <div class="section-body pad" style="padding:18px 20px 14px;">
-      <div class="lh-kalender">${maandenHtml}</div>
-      <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
+      <div style="font-size:11px; font-weight:600; color:var(--muted2); margin-bottom:6px;">Afgerond (periode afgesloten)</div>
+      <div class="lh-kalender" style="margin-bottom:14px;">${afgerondHtml}</div>
+      <div style="font-size:11px; font-weight:600; color:var(--muted2); margin-bottom:6px;">Salarissen verwerkt (taak 1 en 2)</div>
+      <div class="lh-kalender" style="margin-bottom:14px;">${salarisHtml}</div>
+      <div style="font-size:11px; font-weight:600; color:var(--muted2); margin-bottom:6px;">Loonheffingen verwerkt (taak 3 en 4)</div>
+      <div class="lh-kalender" style="margin-bottom:6px;">${lhVerwerktHtml}</div>
+      <div class="lh-kalender" style="margin-bottom:10px;">${maandLabelsHtml}</div>
+      <div style="display:flex; gap:14px; margin-top:4px; font-size:11px; color:var(--muted);">
         <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#c9770a; display:inline-block;"></span>Deze maand</span>
         <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#94a0bb; display:inline-block;"></span>Nog niet volledig</span>
         <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#22c58a; display:inline-block;"></span>Volledig afgerond</span>
