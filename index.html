@@ -485,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.5';
+const APP_VERSION = '2026.08.13.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -3380,7 +3380,7 @@ function lhVorigePeriodesHTML(k, f){
         ${anten}
       </div>`;
     }).join('');
-    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Overige notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
     return `<div style="padding:10px 12px; background:#fbfcfe;">${taakBlokken}${overige}</div>`;
   };
   const periodeRijen = periodes.map(p=>{
@@ -3455,7 +3455,7 @@ function loonheffingKlantDetailHTML(k){
     const editKey = `klantnotitie|${k.id}`;
     if(bewerkbaar && STATE.lhEditNote === editKey){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige vaste notities</b>
+        <b style="font-size:12px;">Overige notities</b>
         <div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
           <textarea data-lh-klantnotitie-input="${k.id}" rows="3" placeholder="Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
           <div style="display:flex; flex-direction:column; gap:4px;">
@@ -3467,7 +3467,7 @@ function loonheffingKlantDetailHTML(k){
     }
     if(huidigeTekst){
       return `<div style="padding:12px 0 0;">
-        <b style="font-size:12px;">Overige vaste notities</b>
+        <b style="font-size:12px;">Overige notities</b>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; max-width:520px;">
           <div style="font-size:12.5px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
           ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
@@ -3477,7 +3477,7 @@ function loonheffingKlantDetailHTML(k){
         </div>
       </div>`;
     }
-    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige vaste notitie</button></div>` : '';
+    return bewerkbaar ? `<div style="padding:12px 0 0;"><button class="btn sm ghost" data-lh-klantnotitie-edit="${k.id}">+ Overige notitie</button></div>` : '';
   })();
   const aantekeningenHTML = (t, idx)=>{
     const notes = t.aantekeningen || [];
@@ -3647,80 +3647,78 @@ function loonheffingOpHoldHTML(){
   </div>`;
 }
 function lhKalenderHTML(list){
-  // Compact 8-weken overzicht bovenaan Loonheffingen. Toont per week hoeveel LH-deadlines er zijn,
-  // en hoeveel daarvan al zijn ingediend. Weeknummers volgens ISO 8601 (maandag als eerste dag).
-  function isoWeek(d){
-    const target = new Date(d.getTime());
-    target.setHours(0,0,0,0);
-    // Donderdag in huidige week bepaalt jaar
-    target.setDate(target.getDate() + 3 - ((target.getDay() + 6) % 7));
-    const firstThursday = new Date(target.getFullYear(), 0, 4);
-    firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7));
-    return 1 + Math.round(((target - firstThursday) / 86400000 - 3) / 7);
-  }
-  function startVanWeek(d){
-    const dt = new Date(d.getTime()); dt.setHours(0,0,0,0);
-    const dag = (dt.getDay() + 6) % 7; // 0=maandag
-    dt.setDate(dt.getDate() - dag);
-    return dt;
-  }
-  const start = startVanWeek(TODAY);
-  const weken = [];
-  for(let i=0; i<8; i++){
-    const wstart = new Date(start.getTime()); wstart.setDate(wstart.getDate() + i*7);
-    const wend = new Date(wstart.getTime()); wend.setDate(wend.getDate() + 6);
-    weken.push({ start:wstart, end:wend, nr:isoWeek(wstart), deadlines:0, ingediend:0, klanten:[] });
+  // Compact maandoverzicht bovenaan Loonheffingen (2 maanden terug t/m 3 maanden vooruit). Toont per
+  // maand hoeveel van de LH-klanten hun periode voor die maand daadwerkelijk hebben afgerond (via
+  // "Periode afronden"), niet alleen wat de deadline-datum toevallig is — dat geeft een eerlijker
+  // beeld van hoeveel loonheffingen er echt gedaan zijn.
+  const NL_MAAND_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
+  const huidigJaar = TODAY.getFullYear(), huidigMaand = TODAY.getMonth();
+  const maanden = [];
+  for(let i=-2; i<=3; i++){
+    const d = new Date(huidigJaar, huidigMaand + i, 1);
+    maanden.push({ jaar:d.getFullYear(), maand:d.getMonth(), afgerond:0, klanten:[] });
   }
   list.forEach(k=>{
-    const dl = STORE[k.id] && STORE[k.id].dl && STORE[k.id].dl.LH;
-    if(!dl || dl.na || !dl.datum) return;
-    const dt = new Date(dl.datum); dt.setHours(0,0,0,0);
-    weken.forEach(w=>{
-      if(dt >= w.start && dt <= w.end){
-        w.deadlines++;
-        if(dl.status==='ingediend') w.ingediend++;
-        w.klanten.push(k.naam);
-      }
+    const f = STORE[k.id];
+    const periodes = (f && f.lh && Array.isArray(f.lh.periodes)) ? f.lh.periodes : [];
+    periodes.forEach(p=>{
+      if(!p.afgerondOp) return;
+      const d = new Date(p.afgerondOp);
+      if(isNaN(d.getTime())) return;
+      const m = maanden.find(mm=>mm.jaar===d.getFullYear() && mm.maand===d.getMonth());
+      if(m){ m.afgerond++; m.klanten.push(k.naam); }
     });
   });
-  const maxDeadlines = Math.max(1, ...weken.map(w=>w.deadlines));
-  const NL_MAAND_KORT = ['jan','feb','mrt','apr','mei','jun','jul','aug','sep','okt','nov','dec'];
-  const wekenHtml = weken.map((w,idx)=>{
-    const pct = w.deadlines ? Math.round((w.ingediend / w.deadlines) * 100) : 0;
-    const kleur = w.deadlines===0 ? '#eef0f4' : (pct===100 ? '#22c58a' : (idx===0 ? '#c9770a' : '#94a0bb'));
-    const kleurText = w.deadlines===0 ? 'var(--muted2)' : (pct===100 ? '#fff' : 'var(--text)');
-    const hoogte = Math.max(10, (w.deadlines / maxDeadlines) * 42);
-    const isNu = idx===0;
-    const isHuidigeMaand = w.start.getMonth() === TODAY.getMonth();
-    const label = w.start.getDate() + ' ' + NL_MAAND_KORT[w.start.getMonth()];
-    return `<div class="lh-week ${isNu?'is-nu':''}" title="Week ${w.nr}: ${w.ingediend} van ${w.deadlines} ingediend${w.klanten.length?' — '+w.klanten.slice(0,5).join(', ')+(w.klanten.length>5?'…':''):''}">
-      <div class="lh-week-nr">wk ${w.nr}</div>
+  const totaalKlanten = list.length;
+  const maxAfgerond = Math.max(1, totaalKlanten, ...maanden.map(m=>m.afgerond));
+  const maandenHtml = maanden.map(m=>{
+    const isNu = m.jaar===huidigJaar && m.maand===huidigMaand;
+    const pct = totaalKlanten ? Math.round((m.afgerond / totaalKlanten) * 100) : 0;
+    const kleur = m.afgerond===0 ? '#eef0f4' : (pct>=100 ? '#22c58a' : (isNu ? '#c9770a' : '#94a0bb'));
+    const kleurText = m.afgerond===0 ? 'var(--muted2)' : (pct>=100 ? '#fff' : 'var(--text)');
+    const hoogte = Math.max(10, (m.afgerond / maxAfgerond) * 42);
+    const label = `${NL_MAAND_KORT[m.maand]} ${m.jaar}`;
+    return `<div class="lh-week ${isNu?'is-nu':''}" title="${label}: ${m.afgerond} van ${totaalKlanten} loonheffingen afgerond${m.klanten.length?' — '+m.klanten.slice(0,5).join(', ')+(m.klanten.length>5?'…':''):''}">
+      <div class="lh-week-nr">${isNu?'nu':NL_MAAND_KORT[m.maand]}</div>
       <div class="lh-week-bar-wrap">
         <div class="lh-week-bar" style="height:${hoogte}px; background:${kleur};">
-          ${w.deadlines ? `<span style="color:${kleurText};">${w.ingediend}/${w.deadlines}</span>` : ''}
+          ${totaalKlanten ? `<span style="color:${kleurText};">${m.afgerond}/${totaalKlanten}</span>` : ''}
         </div>
       </div>
       <div class="lh-week-datum">${label}</div>
     </div>`;
   }).join('');
 
-  const totDeadlines = weken.reduce((s,w)=>s+w.deadlines, 0);
-  const totIngediend = weken.reduce((s,w)=>s+w.ingediend, 0);
+  const huidigeMaandData = maanden.find(m=>m.jaar===huidigJaar && m.maand===huidigMaand);
+  const huidigAfgerond = huidigeMaandData ? huidigeMaandData.afgerond : 0;
 
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
-      <h3>Komende 8 weken</h3>
-      <span class="hint">${totIngediend} van ${totDeadlines} LH-deadlines ingediend</span>
+      <h3>Loonheffingen per maand</h3>
+      <span class="hint">${huidigAfgerond} van ${totaalKlanten} afgerond deze maand</span>
     </div>
     <div class="section-body pad" style="padding:18px 20px 14px;">
-      <div class="lh-kalender">${wekenHtml}</div>
+      <div class="lh-kalender">${maandenHtml}</div>
       <div style="display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--muted);">
-        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#c9770a; display:inline-block;"></span>Deze week</span>
-        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#94a0bb; display:inline-block;"></span>Nog te doen</span>
-        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#22c58a; display:inline-block;"></span>Volledig ingediend</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#c9770a; display:inline-block;"></span>Deze maand</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#94a0bb; display:inline-block;"></span>Nog niet volledig</span>
+        <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:#22c58a; display:inline-block;"></span>Volledig afgerond</span>
       </div>
     </div>
   </div>`;
+}
+// De legenda bovenaan Loonheffingen toont bewust alleen de collega's die daadwerkelijk
+// salarisadministratie verrichten, ook al staan er soms andere boekhouders als "hoofdcontact" op een
+// LH-klant. Soepele naammatch (net als boekhouderKleurVoorNaam) zodat kleine schrijfverschillen
+// (bijv. alleen voornaam) geen probleem zijn.
+const SALARISADMINISTRATIE_NAMEN = ['Gemma Ros', 'Seta Ibrahim', 'Romee Nijland'];
+function isSalarisadministratieBh(naam){
+  if(!naam) return false;
+  const n = naam.trim().toLowerCase();
+  return SALARISADMINISTRATIE_NAMEN.some(sn=>{
+    const s = sn.toLowerCase();
+    return n===s || n.includes(s) || s.includes(n);
+  });
 }
 function loonheffingHTML(){
   let list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
@@ -3729,7 +3727,7 @@ function loonheffingHTML(){
     list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
   }
   const bewerkbaar = magLhBewerken();
-  const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id);
+  const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id && isSalarisadministratieBh(b.naam));
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
 
   return `
