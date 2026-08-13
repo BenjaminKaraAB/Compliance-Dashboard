@@ -485,7 +485,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.6';
+const APP_VERSION = '2026.08.13.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -3727,7 +3727,10 @@ function loonheffingHTML(){
     list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
   }
   const bewerkbaar = magLhBewerken();
-  const legendBhs = [...new Map(list.map(k=>[k.bh, bh(k.bh)])).values()].filter(b=>b && b.id && isSalarisadministratieBh(b.naam));
+  // Let op: dit is bewust NIET afgeleid van "welke boekhouder heeft LH-klanten" (list.map(k=>k.bh)) —
+  // dat zou iemand die salarisadministratie doet maar geen enkele klant als hoofdboekhouder heeft
+  // ten onrechte weglaten. In plaats daarvan direct de 3 namen uit BOEKHOUDERS zelf pakken.
+  const legendBhs = BOEKHOUDERS.filter(b=>b && b.id && isSalarisadministratieBh(b.naam));
   const legend = legendBhs.length ? `<div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px; font-size:12.5px;">${legendBhs.map(b=>`<span style="display:flex; align-items:center; gap:6px;"><span style="width:11px; height:11px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>${b.naam}</span>`).join('')}</div>` : '';
 
   return `
