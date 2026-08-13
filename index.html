@@ -3844,7 +3844,12 @@ async function rdwOphalenKenteken(kentekenRuw){
       const sD = String(v.datum_eerste_toelating);
       if(sD.length===8) datumEersteInschrijving = `${sD.slice(0,4)}-${sD.slice(4,6)}-${sD.slice(6,8)}`;
     }
-    return { merk: v.merk||'', type, elektrisch, datumEersteInschrijving };
+    let catalogusprijs = null;
+    if(v.catalogusprijs !== undefined && v.catalogusprijs !== null && v.catalogusprijs !== ''){
+      const cp = Number(v.catalogusprijs);
+      if(!isNaN(cp)) catalogusprijs = cp;
+    }
+    return { merk: v.merk||'', type, elektrisch, datumEersteInschrijving, catalogusprijs };
   }catch(e){
     return null;
   }
@@ -3944,7 +3949,11 @@ function openAddAutoPanel(silent){
     if(info.type && typeEl) typeEl.value = info.type;
     if(info.elektrisch && elektrischEl) elektrischEl.value = info.elektrisch;
     if(info.datumEersteInschrijving && inschrijvingEl) inschrijvingEl.value = datumNaarInvoer(info.datumEersteInschrijving);
-    if(kentekenStatusEl) kentekenStatusEl.textContent = 'RDW-gegevens opgehaald ✓ (controleer en pas zo nodig aan)';
+    const cataloguswaardeEl = document.getElementById('autoCataloguswaarde');
+    if(info.catalogusprijs !== null && info.catalogusprijs !== undefined && cataloguswaardeEl) cataloguswaardeEl.value = info.catalogusprijs;
+    if(kentekenStatusEl) kentekenStatusEl.textContent = (info.catalogusprijs !== null && info.catalogusprijs !== undefined)
+      ? 'RDW-gegevens opgehaald ✓ incl. cataloguswaarde (controleer en pas zo nodig aan)'
+      : 'RDW-gegevens opgehaald ✓ — geen cataloguswaarde bekend bij RDW voor dit kenteken (zelf invullen)';
   }
   if(kentekenInput) kentekenInput.addEventListener('blur', probeerRdwOphalen);
   document.querySelector('[data-save-auto]').addEventListener('click', ()=>{
