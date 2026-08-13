@@ -492,7 +492,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.14';
+const APP_VERSION = '2026.08.13.15';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -555,6 +555,13 @@ let TEAMS = [];
 let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
 /* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
 let AUTOS = [];
+/* Kennisbank (opleiding voor nieuwe/junior boekhouders): categorieën + artikelen (stappenplannen,
+   uitleg). Hoort, net als klanten/boekhouders, bij de GEDEELDE data zodat collega's dezelfde content
+   zien zodra ze synchroniseren. Alleen beheerders (isAdmin()) kunnen categorieën/artikelen aanmaken,
+   bewerken of verwijderen — iedereen met dashboardtoegang kan ze lezen. De inhoud wordt ook meegegeven
+   aan de AI-assistent (zie aiContextSamenvatting) zodat die vragen over onze eigen werkwijze kan
+   beantwoorden op basis van wat hier is vastgelegd, in plaats van alleen algemene kennis. */
+let KENNISBANK = { categorieen: [], artikelen: [] };
 /* Activiteitenlogboek: een gedeeld, alleen-lezen-voor-niet-beheerders overzicht van wie wat heeft
    gedaan (klanten/boekhouders/teams/auto's toevoegen of verwijderen, imports, wijzigingen aan de
    bijtellingstabel of aan de rechten). Alleen zichtbaar bij Instellingen voor beheerders. Wordt begrensd
@@ -653,13 +660,14 @@ function loadMeta(){
       if(parsed.kpiOperationeel) KPI_OPERATIONEEL = parsed.kpiOperationeel;
       if(parsed.kpiTactisch) KPI_TACTISCH = parsed.kpiTactisch;
       if(parsed.kpiCommercieel) KPI_COMMERCIEEL = parsed.kpiCommercieel;
+      if(parsed.kennisbank) KENNISBANK = Object.assign({categorieen:[], artikelen:[]}, parsed.kennisbank);
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1466,7 +1474,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1556,8 +1564,9 @@ async function fetchRemoteAndMerge(showFeedback){
         KPI_OPERATIONEEL = json.kpiOperationeel || KPI_OPERATIONEEL;
         KPI_TACTISCH = json.kpiTactisch || KPI_TACTISCH;
         KPI_COMMERCIEEL = json.kpiCommercieel || KPI_COMMERCIEEL;
+        KENNISBANK = json.kennisbank ? Object.assign({categorieen:[], artikelen:[]}, json.kennisbank) : KENNISBANK;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1916,7 +1925,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1935,6 +1944,8 @@ const ICONS = {
   loon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 12l2 2 4-4"/></svg>',
   auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l1.5-5.5A2 2 0 0 1 7.4 9h9.2a2 2 0 0 1 1.9 1.5L20 16"/><rect x="2.5" y="16" width="19" height="4.5" rx="1.5"/><circle cx="7" cy="20.5" r="1.6"/><circle cx="17" cy="20.5" r="1.6"/><path d="M4 13h16"/></svg>',
   notion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 7v10M7.5 7l9 10M16.5 7v10"/></svg>',
+  book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5.5c2.2-1.1 5.2-1.5 8 0v13.3c-2.8-1.5-5.8-1.1-8 0z"/><path d="M21 5.5c-2.2-1.1-5.2-1.5-8 0v13.3c2.8-1.5 5.8-1.1 8 0z"/></svg>',
+  sparkle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
@@ -1967,6 +1978,7 @@ function render(){
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         <div class="nav-group-label">Apps &amp; settings</div>
+        ${navItem('kennisbank','book','Opleiding')}
         ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
         ${navItem('instellingen','gear','Instellingen')}
@@ -2008,7 +2020,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2021,6 +2033,7 @@ function pageSub(){
     autolijst:`Auto's per klant met automatische bijtelling- en btw-correctieberekening · ${AUTOS.length} auto('s)`,
     instellingen:'Live synchronisatie tussen collega\'s',
     notion:'Gedeelde pagina\'s en data-sync uit Notion',
+    kennisbank:'Stappenplannen en uitleg voor (nieuwe) collega\'s, met de AI-assistent voor vragen',
     archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant'
   }[STATE.view];
 }
@@ -2036,6 +2049,7 @@ function viewHTML(){
   if(STATE.view==='autolijst') return autolijstHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
   if(STATE.view==='notion') return notionHTML();
+  if(STATE.view==='kennisbank') return kennisbankHTML();
   if(STATE.view==='archief') return archiefHTML();
   return '';
 }
@@ -2388,6 +2402,214 @@ function archiefBindHandlers(){
     if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
   }));
 }
+/* ============================= KENNISBANK / OPLEIDING =============================
+   Interne opleidingssectie voor (nieuwe/junior) boekhouders: categorieën met artikelen
+   (stappenplannen, uitleg). Alleen beheerders kunnen content aanmaken/bewerken/verwijderen — de
+   bestaande AI-assistent (topbar) dient als het "vragen stellen"-kanaal; er is bewust geen aparte
+   vraag-functie gebouwd. De kennisbank-inhoud wordt daarnaast meegegeven aan de AI-context (zie
+   aiContextSamenvatting) zodat de assistent ook onze eigen werkwijze kent, niet alleen dashboarddata. */
+function kbCategorieNaam(id){
+  const c = KENNISBANK.categorieen.find(c=>c.id===id);
+  return c ? c.naam : 'Algemeen';
+}
+function kbArtikelenVoorCategorie(catId){
+  return KENNISBANK.artikelen.filter(a=>(a.categorieId||null)===(catId||null)).sort((a,b)=>(a.titel||'').localeCompare(b.titel||'','nl'));
+}
+function kennisbankHTML(){
+  const admin = isAdmin();
+  const catOpties = KENNISBANK.categorieen.map(c=>`<option value="${c.id}">${c.naam.replace(/</g,'&lt;')}</option>`).join('');
+
+  const aiBanner = `<div class="banner" style="display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap;">
+    <span><i class="ti ti-sparkles" aria-hidden="true"></i> Snap je iets niet? Stel je vraag direct aan de AI-assistent — die kent de dashboarddata én (als het hier is vastgelegd) onze werkwijze.</span>
+    <button class="btn sm primary" data-kb-open-ai><i class="ti ti-sparkles" aria-hidden="true"></i> Vraag het de AI-assistent</button>
+  </div>`;
+
+  const formHtml = admin && STATE.kbArtikelForm ? (()=>{
+    const f = STATE.kbArtikelForm;
+    const bestaand = f.id ? KENNISBANK.artikelen.find(a=>a.id===f.id) : null;
+    return `<div class="section" style="margin-bottom:16px;"><div class="section-body pad">
+      <h3 style="margin:0 0 12px;">${bestaand ? 'Artikel bewerken' : 'Nieuw artikel'}</h3>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Titel</div>
+        <input type="text" id="kbArtikelTitel" value="${(bestaand?bestaand.titel:'').replace(/"/g,'&quot;')}" placeholder="Bijv. Hoe verwerk je een loonaangifte" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      </div>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Categorie</div>
+        <select id="kbArtikelCategorie" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+          <option value="">— geen categorie (algemeen) —</option>${KENNISBANK.categorieen.map(c=>`<option value="${c.id}" ${(f.categorieId||'')===c.id?'selected':''}>${c.naam.replace(/</g,'&lt;')}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Inhoud (stappenplan/uitleg — gewone tekst, regels blijven behouden)</div>
+        <textarea id="kbArtikelInhoud" rows="10" placeholder="1. Eerste stap...&#10;2. Tweede stap..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; resize:vertical;">${(bestaand?bestaand.inhoud:'').replace(/</g,'&lt;')}</textarea>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn sm primary" data-kb-artikel-opslaan="${f.id||''}">Opslaan</button>
+        <button class="btn sm ghost" data-kb-artikel-annuleer>Annuleren</button>
+      </div>
+    </div></div>`;
+  })() : '';
+
+  const catNieuwHtml = admin && STATE.kbCatNieuwOpen ? `<div class="section" style="margin-bottom:16px;"><div class="section-body pad" style="display:flex; gap:8px; align-items:center;">
+    <input type="text" id="kbCatNaam" placeholder="Naam van de categorie, bijv. Loonheffingen" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+    <button class="btn sm primary" data-kb-cat-opslaan>Opslaan</button>
+    <button class="btn sm ghost" data-kb-cat-annuleer>Annuleren</button>
+  </div></div>` : '';
+
+  const algemeneArtikelen = kbArtikelenVoorCategorie(null);
+  const groepenHtml = KENNISBANK.categorieen.map(cat=>{
+    const artikelen = kbArtikelenVoorCategorie(cat.id);
+    return `<div class="section" style="margin-bottom:14px;">
+      <div class="section-head">
+        <h3>${cat.naam.replace(/</g,'&lt;')}</h3>
+        ${admin ? `<div style="display:flex; gap:6px;">
+          <button class="btn sm ghost" data-kb-artikel-nieuw="${cat.id}" title="Artikel toevoegen aan deze categorie"><i class="ti ti-plus" aria-hidden="true"></i> Artikel</button>
+          <button class="btn sm ghost" data-kb-cat-verwijder="${cat.id}" title="Categorie verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
+        </div>` : ''}
+      </div>
+      <div class="section-body pad" style="padding:8px 0;">
+        ${artikelen.length ? artikelen.map(a=>kbArtikelRijHTML(a, admin)).join('') : `<div class="empty-state" style="padding:16px 18px; font-size:12.5px;">Nog geen artikelen in deze categorie.</div>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  const algemeenHtml = (algemeneArtikelen.length || admin) ? `<div class="section" style="margin-bottom:14px;">
+    <div class="section-head">
+      <h3>Algemeen</h3>
+      ${admin ? `<button class="btn sm ghost" data-kb-artikel-nieuw="" title="Artikel toevoegen"><i class="ti ti-plus" aria-hidden="true"></i> Artikel</button>` : ''}
+    </div>
+    <div class="section-body pad" style="padding:8px 0;">
+      ${algemeneArtikelen.length ? algemeneArtikelen.map(a=>kbArtikelRijHTML(a, admin)).join('') : `<div class="empty-state" style="padding:16px 18px; font-size:12.5px;">Nog geen artikelen zonder categorie.</div>`}
+    </div>
+  </div>` : '';
+
+  const leegState = (!KENNISBANK.categorieen.length && !KENNISBANK.artikelen.length) ? `<div class="section"><div class="empty-state">
+    <i class="ti ti-book-2" style="font-size:26px; display:block; margin-bottom:10px;" aria-hidden="true"></i>
+    ${admin ? 'Nog geen opleidingscontent. Begin met een categorie of meteen een artikel.' : 'Er staat hier nog geen opleidingscontent. Vraag een beheerder om stappenplannen toe te voegen, of stel je vraag alvast aan de AI-assistent hierboven.'}
+  </div></div>` : '';
+
+  const adminBalkHtml = admin ? `<div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn sm" data-kb-cat-nieuw-open><i class="ti ti-folder-plus" aria-hidden="true"></i> Nieuwe categorie</button>
+    <button class="btn sm" data-kb-artikel-nieuw=""><i class="ti ti-plus" aria-hidden="true"></i> Nieuw artikel</button>
+  </div>` : '';
+
+  return `
+  ${aiBanner}
+  <div style="height:14px;"></div>
+  ${adminBalkHtml}
+  ${catNieuwHtml}
+  ${formHtml}
+  ${leegState}
+  ${groepenHtml}
+  ${algemeenHtml}`;
+}
+function kbArtikelRijHTML(a, admin){
+  const open = STATE.kbOpenArtikel === a.id;
+  return `<div style="border-bottom:1px solid var(--border);">
+    <button data-kb-artikel-toggle="${a.id}" style="width:100%; display:flex; align-items:center; gap:10px; padding:10px 18px; background:none; border:none; cursor:pointer; text-align:left; font:inherit; color:inherit;">
+      <i class="ti ti-chevron-right" style="font-size:15px; color:var(--muted2); transition:transform .15s; transform:rotate(${open?'90deg':'0deg'});" aria-hidden="true"></i>
+      <span style="flex:1; font-weight:600; font-size:13px;">${String(a.titel||'(zonder titel)').replace(/</g,'&lt;')}</span>
+      ${admin ? `<span data-kb-stop-toggle style="display:flex; gap:4px;">
+        <span data-kb-artikel-bewerk="${a.id}" class="btn sm ghost" style="padding:3px 8px;" title="Bewerken"><i class="ti ti-edit" aria-hidden="true"></i></span>
+        <span data-kb-artikel-verwijder="${a.id}" class="btn sm ghost" style="padding:3px 8px; color:var(--red);" title="Verwijderen"><i class="ti ti-trash" aria-hidden="true"></i></span>
+      </span>` : ''}
+    </button>
+    ${open ? `<div style="padding:0 18px 16px 43px; font-size:13px; line-height:1.7; white-space:pre-wrap; word-break:break-word; color:var(--text2);">${String(a.inhoud||'(geen inhoud)').replace(/</g,'&lt;')}</div>` : ''}
+  </div>`;
+}
+function kennisbankBindHandlers(){
+  if(STATE.view!=='kennisbank') return;
+  document.querySelectorAll('[data-kb-open-ai]').forEach(el=>el.addEventListener('click', ()=>{ aiOpen(); }));
+  document.querySelectorAll('[data-kb-artikel-toggle]').forEach(el=>el.addEventListener('click', (e)=>{
+    if(e.target.closest('[data-kb-stop-toggle]')) return;
+    const id = el.getAttribute('data-kb-artikel-toggle');
+    STATE.kbOpenArtikel = STATE.kbOpenArtikel===id ? null : id;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  if(!isAdmin()) return;
+  document.querySelectorAll('[data-kb-cat-nieuw-open]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kbCatNieuwOpen = true;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const inp = document.getElementById('kbCatNaam'); if(inp) inp.focus();
+  }));
+  document.querySelectorAll('[data-kb-cat-annuleer]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kbCatNieuwOpen = false;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kb-cat-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const inp = document.getElementById('kbCatNaam');
+    const naam = inp ? inp.value.trim() : '';
+    if(!naam){ toast('Vul een naam in.'); return; }
+    KENNISBANK.categorieen.push({ id:'cat'+Date.now()+Math.floor(Math.random()*1000), naam });
+    STATE.kbCatNieuwOpen = false;
+    logActiviteit(`Kennisbank: categorie "${naam}" toegevoegd`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast('Categorie toegevoegd.');
+  }));
+  document.querySelectorAll('[data-kb-cat-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.getAttribute('data-kb-cat-verwijder');
+    const cat = KENNISBANK.categorieen.find(c=>c.id===id); if(!cat) return;
+    const aantal = kbArtikelenVoorCategorie(id).length;
+    const melding = aantal ? `Categorie "${cat.naam}" verwijderen? De ${aantal} artikel(en) hierin worden dan ook verwijderd.` : `Categorie "${cat.naam}" verwijderen?`;
+    if(!confirm(melding)) return;
+    KENNISBANK.artikelen = KENNISBANK.artikelen.filter(a=>a.categorieId!==id);
+    KENNISBANK.categorieen = KENNISBANK.categorieen.filter(c=>c.id!==id);
+    logActiviteit(`Kennisbank: categorie "${cat.naam}" verwijderd`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast('Categorie verwijderd.');
+  }));
+  document.querySelectorAll('[data-kb-artikel-nieuw]').forEach(el=>el.addEventListener('click', ()=>{
+    const categorieId = el.getAttribute('data-kb-artikel-nieuw') || null;
+    STATE.kbArtikelForm = { id:null, categorieId };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const inp = document.getElementById('kbArtikelTitel'); if(inp) inp.focus();
+  }));
+  document.querySelectorAll('[data-kb-artikel-bewerk]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-kb-artikel-bewerk');
+    const a = KENNISBANK.artikelen.find(x=>x.id===id); if(!a) return;
+    STATE.kbArtikelForm = { id, categorieId: a.categorieId||null };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kb-artikel-annuleer]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kbArtikelForm = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kb-artikel-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.getAttribute('data-kb-artikel-opslaan') || null;
+    const titel = (document.getElementById('kbArtikelTitel')||{}).value || '';
+    const categorieId = (document.getElementById('kbArtikelCategorie')||{}).value || null;
+    const inhoud = (document.getElementById('kbArtikelInhoud')||{}).value || '';
+    if(!titel.trim()){ toast('Vul een titel in.'); return; }
+    if(id){
+      const a = KENNISBANK.artikelen.find(x=>x.id===id);
+      if(a){ a.titel=titel.trim(); a.categorieId=categorieId||null; a.inhoud=inhoud; a.bijgewerkt=new Date().toISOString(); a.bijgewerktDoor=huidigeGebruiker(); }
+      logActiviteit(`Kennisbank: artikel "${titel.trim()}" bewerkt`);
+    } else {
+      const nieuw = { id:'art'+Date.now()+Math.floor(Math.random()*1000), titel:titel.trim(), categorieId:categorieId||null, inhoud, bijgewerkt:new Date().toISOString(), bijgewerktDoor:huidigeGebruiker() };
+      KENNISBANK.artikelen.push(nieuw);
+      logActiviteit(`Kennisbank: artikel "${titel.trim()}" toegevoegd`);
+    }
+    STATE.kbArtikelForm = null;
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast('Artikel opgeslagen.');
+  }));
+  document.querySelectorAll('[data-kb-artikel-verwijder]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const id = el.getAttribute('data-kb-artikel-verwijder');
+    const a = KENNISBANK.artikelen.find(x=>x.id===id); if(!a) return;
+    if(!confirm(`Artikel "${a.titel}" verwijderen?`)) return;
+    KENNISBANK.artikelen = KENNISBANK.artikelen.filter(x=>x.id!==id);
+    if(STATE.kbOpenArtikel===id) STATE.kbOpenArtikel = null;
+    logActiviteit(`Kennisbank: artikel "${a.titel}" verwijderd`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    toast('Artikel verwijderd.');
+  }));
+}
 function notionHTML(){
   return `
   <div class="section">
@@ -2713,6 +2935,9 @@ function migrateData(){
     ];
   }
   if(!Array.isArray(ACTIVITEITENLOG)) ACTIVITEITENLOG = [];
+  if(!KENNISBANK || typeof KENNISBANK !== 'object') KENNISBANK = { categorieen:[], artikelen:[] };
+  if(!Array.isArray(KENNISBANK.categorieen)) KENNISBANK.categorieen = [];
+  if(!Array.isArray(KENNISBANK.artikelen)) KENNISBANK.artikelen = [];
   if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
   if(!Array.isArray(RECHTEN.adminEmails)) RECHTEN.adminEmails = ['benjamin@administratiebox.nl'];
   if(!Array.isArray(RECHTEN.lhBevoegdeBhIds)) RECHTEN.lhBevoegdeBhIds = [];
@@ -7081,6 +7306,7 @@ function attachHandlers(){
   }));
   if(STATE.view==='dashboard') renderKpiCharts();
   archiefBindHandlers();
+  kennisbankBindHandlers();
 }
 
 function handleCSVUpload(e){
@@ -8224,13 +8450,21 @@ function aiContextSamenvatting(){
     const teamsInfo = TEAMS.map(t=>t.naam).join(', ') || '(geen teams)';
     const bhInfo = BOEKHOUDERS.map(b=>b.naam).join(', ') || '(geen boekhouders)';
 
+    const kennisbankTekst = (KENNISBANK.artikelen||[]).length ? KENNISBANK.artikelen.map(a=>{
+      const cat = a.categorieId ? kbCategorieNaam(a.categorieId) : 'Algemeen';
+      return `## [${cat}] ${a.titel}\n${a.inhoud||''}`;
+    }).join('\n\n') : '(nog niets vastgelegd)';
+
     return `Vandaag: ${TODAY.toLocaleDateString('nl-NL')}.
 Totaal ${RAW_KLANTEN.length} klanten, ${BOEKHOUDERS.length} boekhouders (${bhInfo}), ${TEAMS.length} teams (${teamsInfo}), ${AUTOS.length} auto('s) in de autolijst.
 Deadlinestatus over alle klanten: ${cnt.actie} actie vereist, ${cnt.nadert} nadert, ${cnt.schema} op schema, ${cnt.ingediend} ingediend.
 Totaal openstaand banksaldo over alle klanten: ${fmtEUR(totalSaldo)}.
 
 Volledige klantenlijst met actuele status per klant:
-${klantregels || '(geen klanten)'}`;
+${klantregels || '(geen klanten)'}
+
+Interne kennisbank van AdministratieBox (onze eigen werkwijze/stappenplannen — gebruik dit als bron voor vragen over "hoe doen wij dit", niet alleen algemene kennis):
+${kennisbankTekst}`;
   }catch(e){ return 'Geen dashboarddata beschikbaar.'; }
 }
 // Escaped HTML-tekst, met URLs omgezet naar aanklikbare links (voor bronvermeldingen bij
