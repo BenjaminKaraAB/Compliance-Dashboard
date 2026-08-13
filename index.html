@@ -23,6 +23,7 @@
     --blue:#0e7fa3; --blue-bg:#e5f5fa; --blue-brd:#bfe4ee;
     --gray-bg:#eef0f4; --gray-brd:#dde1ea;
     --radius:12px;
+    --ease:cubic-bezier(.16,1,.3,1);
     --shadow:0 1px 2px rgba(15,23,42,.04), 0 4px 14px rgba(15,23,42,.05);
     --shadow-lg:0 4px 8px rgba(15,23,42,.04), 0 16px 40px rgba(15,23,42,.08);
     color-scheme: light;
@@ -40,7 +41,12 @@
     --shadow-lg:0 4px 8px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.55);
     color-scheme: dark;
   }
-  html[data-theme="dark"] .sidebar{background:#0f172a; border-right-color:#1e293b;}
+  * { scrollbar-width:thin; scrollbar-color: var(--muted2) transparent; }
+  *::-webkit-scrollbar{ width:8px; height:8px; }
+  *::-webkit-scrollbar-track{ background:transparent; }
+  *::-webkit-scrollbar-thumb{ background:var(--border); border-radius:8px; border:2px solid transparent; background-clip:padding-box; }
+  *::-webkit-scrollbar-thumb:hover{ background:var(--muted2); background-clip:padding-box; }
+    html[data-theme="dark"] .sidebar{background:#0f172a; border-right-color:#1e293b;}
   html[data-theme="dark"] .brand-name{color:#f1f5f9;}
   html[data-theme="dark"] .topbar{background:#0f172a; border-bottom-color:#1e293b;}
   html[data-theme="dark"] table thead th{background:#1a2438; color:#94a0bb;}
@@ -240,6 +246,7 @@
   .section-head .hint{font-size:12px; color:var(--muted);}
   .section-body{padding:6px 0;}
   .section-body.pad{padding:18px 20px;}
+  [data-kpi-toggle]:hover, [data-lh-import-toggle]:hover{background:var(--bg) !important; transition:background .14s var(--ease);}
 
   table{width:100%; border-collapse:collapse; font-size:13px;}
   thead th{
@@ -249,14 +256,14 @@
   }
   tbody td{padding:12px 20px; border-bottom:1px solid var(--border); vertical-align:middle;}
   tbody tr:last-child td{border-bottom:none;}
-  tbody tr.row-click{cursor:pointer; transition:background .12s ease;}
+  tbody tr.row-click{cursor:pointer; transition:background .16s var(--ease);}
   tbody tr.row-click:hover{background:#f4faf7;}
   .view-toggle{display:flex; padding:3px; background:var(--bg); border-radius:8px; border:1px solid var(--border);}
   .view-toggle button{padding:5px 8px; background:transparent; border:none; border-radius:6px; cursor:pointer; color:var(--muted); display:flex; align-items:center; justify-content:center; transition:all .12s;}
   .view-toggle button.is-active{background:var(--card); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.05);}
   .view-toggle button i{font-size:15px;}
   .klanten-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px; padding:16px 20px 20px;}
-  .klant-kaart{background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; position:relative;}
+  .klant-kaart{background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:transform .16s var(--ease), box-shadow .16s var(--ease), border-color .16s var(--ease); position:relative;}
   .klant-kaart:hover{transform:translateY(-1px); box-shadow:var(--shadow-lg); border-color:var(--muted2);}
   .klant-kaart-strip{position:absolute; top:0; left:0; right:0; height:3px;}
   .klant-kaart-inner{padding:14px;}
@@ -296,8 +303,8 @@
   .btn:hover{background:var(--bg);}
   .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff; box-shadow:0 1px 2px rgba(34,197,138,.25);}
   .btn.primary:hover{background:var(--primary-dark); border-color:var(--primary-dark); box-shadow:0 2px 6px rgba(34,197,138,.35);}
-  .btn{transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .05s ease;}
-  .btn:active{transform:translateY(1px);}
+  .btn{transition: background .14s var(--ease), border-color .14s var(--ease), box-shadow .14s var(--ease), transform .1s var(--ease);}
+  .btn:active:not(:disabled){transform:scale(.97);}
   .btn:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
   .btn.ghost{border-color:transparent; background:transparent;}
   .btn.ghost:hover{background:var(--bg);}
@@ -314,8 +321,8 @@
 
   /* boekhouder cards */
   .bh-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px;}
-  .bh-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; cursor:pointer; transition:transform .1s;}
-  .bh-card:hover{border-color:var(--primary);}
+  .bh-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; cursor:pointer; transition:transform .16s var(--ease), box-shadow .16s var(--ease), border-color .16s var(--ease);}
+  .bh-card:hover{border-color:var(--primary); transform:translateY(-1px); box-shadow:var(--shadow-lg);}
   .bh-top{display:flex; align-items:center; gap:12px;}
   .avatar{width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:14px; flex:none;}
   .bh-name{font-weight:700; font-size:14.5px;}
@@ -485,7 +492,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.9';
+const APP_VERSION = '2026.08.13.10';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
