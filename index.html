@@ -498,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.7';
+const APP_VERSION = '2026.08.14.8';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2427,7 +2427,43 @@ function kbCategorieNaam(id){
   return c ? c.naam : 'Algemeen';
 }
 function kbArtikelenVoorCategorie(catId){
-  return KENNISBANK.artikelen.filter(a=>(a.categorieId||null)===(catId||null)).sort((a,b)=>(a.titel||'').localeCompare(b.titel||'','nl'));
+  // Bewust geen alfabetische sortering: de volgorde in het array is de handmatig
+  // gesleepte volgorde (drag & drop door een beheerder) en synct mee naar collega's.
+  return KENNISBANK.artikelen.filter(a=>(a.categorieId||null)===(catId||null));
+}
+let kbSleepArtikelId = null;
+let kbSleepCatId = null;
+// Verplaatst een artikel: vóór een doel-artikel (zelfde of andere categorie), of naar het
+// einde van een categorie (doelCatId, bij droppen op de categorie zelf/lege lijst).
+function kbVerplaatsArtikel(bronId, doelId, doelCatId){
+  if(!bronId || bronId===doelId) return false;
+  const idx = KENNISBANK.artikelen.findIndex(a=>a.id===bronId);
+  if(idx===-1) return false;
+  const art = KENNISBANK.artikelen.splice(idx,1)[0];
+  if(doelId){
+    const doelIdx = KENNISBANK.artikelen.findIndex(a=>a.id===doelId);
+    if(doelIdx===-1){ KENNISBANK.artikelen.push(art); }
+    else {
+      art.categorieId = KENNISBANK.artikelen[doelIdx].categorieId || null;
+      KENNISBANK.artikelen.splice(doelIdx, 0, art);
+    }
+  } else {
+    art.categorieId = doelCatId || null;
+    KENNISBANK.artikelen.push(art);
+  }
+  persistMeta();
+  return true;
+}
+function kbVerplaatsCategorie(bronId, doelId){
+  if(!bronId || bronId===doelId) return false;
+  const idx = KENNISBANK.categorieen.findIndex(c=>c.id===bronId);
+  if(idx===-1) return false;
+  const cat = KENNISBANK.categorieen.splice(idx,1)[0];
+  const doelIdx = doelId ? KENNISBANK.categorieen.findIndex(c=>c.id===doelId) : -1;
+  if(doelIdx===-1) KENNISBANK.categorieen.push(cat);
+  else KENNISBANK.categorieen.splice(doelIdx, 0, cat);
+  persistMeta();
+  return true;
 }
 function kennisbankHTML(){
   const admin = isAdmin();
@@ -2473,9 +2509,9 @@ function kennisbankHTML(){
   const algemeneArtikelen = kbArtikelenVoorCategorie(null);
   const groepenHtml = KENNISBANK.categorieen.map(cat=>{
     const artikelen = kbArtikelenVoorCategorie(cat.id);
-    return `<div class="section" style="margin-bottom:14px;">
-      <div class="section-head">
-        <h3>${cat.naam.replace(/</g,'&lt;')}</h3>
+    return `<div class="section" style="margin-bottom:14px;" ${admin?`data-kb-dropcat="${cat.id}"`:''}>
+      <div class="section-head" ${admin?`draggable="true" data-kb-cat-drag="${cat.id}" style="cursor:grab;" title="Sleep om de categorie-volgorde te wijzigen"`:''}>
+        <h3>${admin?'<span style="color:var(--muted2); font-size:13px; letter-spacing:-1px; margin-right:6px;">⠿</span>':''}${cat.naam.replace(/</g,'&lt;')}</h3>
         ${admin ? `<div style="display:flex; gap:6px;">
           <button class="btn sm ghost" data-kb-artikel-nieuw="${cat.id}" title="Artikel toevoegen aan deze categorie"><i class="ti ti-plus" aria-hidden="true"></i> Artikel</button>
           <button class="btn sm ghost" data-kb-cat-verwijder="${cat.id}" title="Categorie verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -2487,7 +2523,7 @@ function kennisbankHTML(){
     </div>`;
   }).join('');
 
-  const algemeenHtml = (algemeneArtikelen.length || admin) ? `<div class="section" style="margin-bottom:14px;">
+  const algemeenHtml = (algemeneArtikelen.length || admin) ? `<div class="section" style="margin-bottom:14px;" ${admin?'data-kb-dropcat=""':''}>
     <div class="section-head">
       <h3>Algemeen</h3>
       ${admin ? `<button class="btn sm ghost" data-kb-artikel-nieuw="" title="Artikel toevoegen"><i class="ti ti-plus" aria-hidden="true"></i> Artikel</button>` : ''}
@@ -2519,8 +2555,9 @@ function kennisbankHTML(){
 }
 function kbArtikelRijHTML(a, admin){
   const open = STATE.kbOpenArtikel === a.id;
-  return `<div style="border-bottom:1px solid var(--border);">
+  return `<div ${admin?`draggable="true" data-kb-drag="${a.id}"`:''} style="border-bottom:1px solid var(--border);">
     <button data-kb-artikel-toggle="${a.id}" style="width:100%; display:flex; align-items:center; gap:10px; padding:10px 18px; background:none; border:none; cursor:pointer; text-align:left; font:inherit; color:inherit;">
+      ${admin?'<span title="Sleep om te sorteren of naar een andere categorie te verplaatsen" style="cursor:grab; color:var(--muted2); font-size:13px; letter-spacing:-1px;">⠿</span>':''}
       <i class="ti ti-chevron-right" style="font-size:15px; color:var(--muted2); transition:transform .15s; transform:rotate(${open?'90deg':'0deg'});" aria-hidden="true"></i>
       <span style="flex:1; font-weight:600; font-size:13px;">${String(a.titel||'(zonder titel)').replace(/</g,'&lt;')}</span>
       ${admin ? `<span data-kb-stop-toggle style="display:flex; gap:4px;">
@@ -2541,6 +2578,38 @@ function kennisbankBindHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   if(!isAdmin()) return;
+  // --- drag & drop sorteren ---
+  const kbRerender = ()=>{ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); };
+  document.querySelectorAll('[data-kb-drag]').forEach(el=>{
+    el.addEventListener('dragstart', (e)=>{
+      kbSleepArtikelId = el.getAttribute('data-kb-drag'); kbSleepCatId = null;
+      if(e.dataTransfer){ e.dataTransfer.effectAllowed = 'move'; }
+      e.stopPropagation();
+    });
+    el.addEventListener('dragover', (e)=>{ if(!kbSleepArtikelId) return; e.preventDefault(); e.stopPropagation(); el.style.boxShadow = 'inset 0 2px 0 var(--primary)'; });
+    el.addEventListener('dragleave', ()=>{ el.style.boxShadow = ''; });
+    el.addEventListener('drop', (e)=>{
+      e.preventDefault(); e.stopPropagation(); el.style.boxShadow = '';
+      if(kbSleepArtikelId && kbVerplaatsArtikel(kbSleepArtikelId, el.getAttribute('data-kb-drag'))){ kbSleepArtikelId = null; kbRerender(); toast('Volgorde aangepast.'); }
+    });
+  });
+  document.querySelectorAll('[data-kb-dropcat]').forEach(el=>{
+    el.addEventListener('dragover', (e)=>{ if(!kbSleepArtikelId) return; e.preventDefault(); el.style.outline = '2px dashed var(--primary)'; });
+    el.addEventListener('dragleave', ()=>{ el.style.outline = ''; });
+    el.addEventListener('drop', (e)=>{
+      e.preventDefault(); el.style.outline = '';
+      if(kbSleepArtikelId && kbVerplaatsArtikel(kbSleepArtikelId, null, el.getAttribute('data-kb-dropcat') || null)){ kbSleepArtikelId = null; kbRerender(); toast('Artikel verplaatst.'); }
+    });
+  });
+  document.querySelectorAll('[data-kb-cat-drag]').forEach(el=>{
+    el.addEventListener('dragstart', (e)=>{ kbSleepCatId = el.getAttribute('data-kb-cat-drag'); kbSleepArtikelId = null; if(e.dataTransfer){ e.dataTransfer.effectAllowed = 'move'; } });
+    el.addEventListener('dragover', (e)=>{ if(!kbSleepCatId) return; e.preventDefault(); el.style.boxShadow = 'inset 0 2px 0 var(--primary)'; });
+    el.addEventListener('dragleave', ()=>{ el.style.boxShadow = ''; });
+    el.addEventListener('drop', (e)=>{
+      e.preventDefault(); el.style.boxShadow = '';
+      if(kbSleepCatId && kbVerplaatsCategorie(kbSleepCatId, el.getAttribute('data-kb-cat-drag'))){ kbSleepCatId = null; kbRerender(); toast('Categorie-volgorde aangepast.'); }
+    });
+  });
   document.querySelectorAll('[data-kb-cat-nieuw-open]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.kbCatNieuwOpen = true;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
