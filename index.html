@@ -498,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.5';
+const APP_VERSION = '2026.08.14.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1932,7 +1932,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -4367,17 +4367,94 @@ function aanleveringHTML(){
   }
   const bhOptions = BOEKHOUDERS.map(b=>`<option value="${b.id}" ${STATE.bhFilter===b.id?'selected':''}>${b.naam}</option>`).join('');
 
+  // Geselecteerde klant voor het dossier-paneel (mockup "Lijst links, dossier rechts")
+  const gesorteerd = list.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  if(!STATE.aanleverKlant || !gesorteerd.find(k=>k.id===STATE.aanleverKlant)){
+    STATE.aanleverKlant = gesorteerd.length ? gesorteerd[0].id : null;
+  }
+  const sel = STATE.aanleverKlant ? RAW_KLANTEN.find(k=>k.id===STATE.aanleverKlant) : null;
+  const fSel = sel ? STORE[sel.id] : null;
+
+  const lijstHtml = gesorteerd.map(k=>{
+    const f = STORE[k.id];
+    const open = f.items.filter(i=>!i.done).length;
+    const totaal = f.items.length;
+    const actief = STATE.aanleverKlant === k.id;
+    const tagKleur = open===0 ? 'background:var(--green-bg); color:var(--green);' : (open>=3 || f.saldo>0 ? 'background:var(--red-bg); color:var(--red);' : 'background:var(--amber-bg); color:var(--amber);');
+    const sub = totaal===0 ? (f.txn ? `${f.txn} transacties open` : 'Geen stukken ingesteld') : (open===0 ? 'Compleet' : `${open} stuk(ken) open`);
+    return `<div data-aanlever-select="${k.id}" style="padding:11px 14px; cursor:pointer; border-bottom:1px solid var(--border); ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${k.naam}</div>
+          <div style="font-size:10.5px; color:var(--muted2);">${sub} · ${bh(k.bh).naam}</div>
+        </div>
+        <span style="font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; ${tagKleur}">${totaal? `${totaal-open}/${totaal}` : (f.txn||0)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  let dossierHtml;
+  if(!sel){
+    dossierHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px;">Geen klanten gevonden.</div>`;
+  } else {
+    const obEntry = effDL(sel,'OB');
+    const checks = fSel.items.length ? fSel.items.map(i=>`
+      <div style="display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12.5px;">
+        <span style="width:20px; height:20px; border-radius:50%; background:${i.done?'var(--primary)':'var(--amber)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:11px; flex-shrink:0;">${i.done?'✓':'!'}</span>
+        <span style="${i.done?'color:var(--muted);':''}">${String(i.naam||'').replace(/</g,'&lt;')}</span>
+      </div>`).join('') : `<div style="font-size:12px; color:var(--muted2); padding:8px 0;">Geen aanleverstukken ingesteld voor deze klant — stel ze in via het dossier.</div>`;
+    dossierHtml = `
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
+        <div style="background:var(--bg); border-radius:10px; padding:12px 14px;">
+          <div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;">Banksaldo open</div>
+          <div style="font-size:16px; font-weight:800; margin-top:4px; display:flex; align-items:center; gap:6px;"><span id="saldoDisplay-${sel.id}">${fmtEUR(fSel.saldo)}</span><button class="btn sm ghost" data-edit-saldo="${sel.id}" title="Bewerken" style="padding:2px 6px;"><i class="ti ti-pencil" style="font-size:13px;" aria-hidden="true"></i></button></div>
+        </div>
+        <div style="background:var(--bg); border-radius:10px; padding:12px 14px;">
+          <div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;">Transacties open</div>
+          <div style="font-size:16px; font-weight:800; margin-top:4px;">${fSel.txn||0}</div>
+          <div style="font-size:10.5px; color:var(--muted2); margin-top:2px;">laatste sync ${fmtDate(fSel.sync)}</div>
+        </div>
+        <div style="background:var(--bg); border-radius:10px; padding:12px 14px;">
+          <div style="font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;">OB-deadline</div>
+          <div style="font-size:16px; font-weight:800; margin-top:4px;">${obEntry && !obEntry.na ? fmtDate(obEntry.datum) : 'n.v.t.'}</div>
+          <div style="font-size:10.5px; color:var(--muted2); margin-top:2px;">${fSel.log.length ? fSel.log.length+'x herinnering verstuurd' : 'nog geen herinnering'}</div>
+        </div>
+      </div>
+      <div style="font-size:11px; font-weight:700; color:var(--muted2); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px;">Aan te leveren stukken</div>
+      ${checks}
+      <div style="margin-top:16px; display:flex; gap:8px;">
+        <button class="btn sm primary" data-open-klant="${sel.id}"><i class="ti ti-bell" aria-hidden="true"></i> Herinnering sturen</button>
+        <button class="btn sm" data-open-klant="${sel.id}">Dossier openen</button>
+      </div>`;
+  }
+
   return `
   <div class="banner">
-    <i class="ti ti-bulb" aria-hidden="true"></i> <b>Bankkoppeling:</b> upload hier een CSV-export uit jullie banktool (kolommen: <code>klant,saldo,transacties</code>) om openstaande saldi in bulk bij te werken, of pas een klant handmatig aan. Automatische e-mail/WhatsApp-herinneringen worden per klant ingesteld — klik op een klant om ze te versturen of te plannen.
+    <i class="ti ti-bulb" aria-hidden="true"></i> <b>Bankkoppeling:</b> kies links een klant om het dossier te zien; herinneringen en aanleverstukken beheer je via "Dossier openen". Alle imports (per klant, bulk en saldo-CSV) zitten in het inklapbare blok onderaan.
+  </div>
+
+  <div class="section" style="margin-bottom:16px;">
+    <div class="filters">
+      <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
+      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${gesorteerd.length} klanten</span>
+    </div>
+    <div style="display:flex; height:480px;">
+      <div style="width:280px; border-right:1px solid var(--border); overflow-y:auto; flex-shrink:0;">${lijstHtml || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen klanten.</div>'}</div>
+      <div style="flex:1; padding:18px 20px; overflow-y:auto; min-width:0;">${dossierHtml}</div>
+    </div>
   </div>
 
   <div class="section">
-    <div class="section-head">
-      <h3>Banktransacties importeren (per klant)</h3>
-      <span class="hint">CSV of Excel, rechtstreeks van de bank</span>
-    </div>
-    <div class="section-body pad">
+    <button data-aanlever-import-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.aanleverImportOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">Importeren & bulk-upload</h3>
+        <span class="hint">banktransacties per klant, in bulk, of een saldo-CSV</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.aanleverImportOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.aanleverImportOpen ? `
+    <div class="section-body pad" style="border-bottom:1px solid var(--border);">
+      <h3 style="margin:0 0 4px; font-size:13px;">Banktransacties importeren (per klant)</h3>
       <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
         Upload het banktransactie-bestand van één klant — .csv (met puntkomma of komma) of .xlsx/.xls, zonder eerst handmatig om te hoeven zetten. Het openstaand saldo wordt berekend als de som van de bedragen met status "Niet verwerkt" (heeft het bestand geen statuskolom, dan tellen alle regels mee).
       </div>
@@ -4393,64 +4470,23 @@ function aanleveringHTML(){
       </div>
       <div id="txnImportPreview" style="margin-top:12px;"></div>
     </div>
-  </div>
 
-  <div class="section">
-    <div class="section-head">
-      <h3>Banktransacties in bulk importeren</h3>
-      <span class="hint">Meerdere bestanden tegelijk, één per klant</span>
-    </div>
-    <div class="section-body pad">
+    <div class="section-body pad" style="border-bottom:1px solid var(--border);">
+      <h3 style="margin:0 0 4px; font-size:13px;">Banktransacties in bulk importeren</h3>
       <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
         Heb je per klant een los banktransactie-bestand (CSV of Excel)? Selecteer ze allemaal in één keer — de klant wordt automatisch gekoppeld op basis van de bestandsnaam (bijv. "10xGrowth-....csv" → klant "10xGrowth"). Controleer de koppeling en de bedragen voor je op "Alles toepassen" klikt.
       </div>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} Meerdere bestanden kiezen<input type="file" id="bulkTxnImportFiles" accept=".csv,.xlsx,.xls" multiple style="display:none;"></label>
       <div id="bulkTxnImportPreview" style="margin-top:12px; overflow-x:auto;"></div>
     </div>
-  </div>
 
-  <div class="section">
-    <div class="section-head">
-      <h3>Bulk-upload banksaldo (samenvatting)</h3>
+    <div class="section-body pad">
+      <h3 style="margin:0 0 4px; font-size:13px;">Bulk-upload banksaldo (samenvatting)</h3>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Voor een kant-en-klare samenvatting (bijv. uit een ander systeem). Verwacht formaat per regel: <code>Klantnaam,Openstaand saldo,Aantal transacties</code>. Klanten worden gematcht op naam.</div>
       <label class="btn sm primary" style="cursor:pointer;">${ICONS.upload} CSV uploaden<input type="file" id="csvUpload" accept=".csv" style="display:none;"></label>
-    </div>
-    <div class="section-body pad" style="font-size:12px; color:var(--muted);">
-      Voor een kant-en-klare samenvatting (bijv. uit een ander systeem). Verwacht formaat per regel: <code>Klantnaam,Openstaand saldo,Aantal transacties</code>. Klanten worden gematcht op naam.
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="filters">
-      <select id="filterBh"><option value="">Alle boekhouders</option>${bhOptions}</select>
-      <span class="hint" style="margin-left:auto; color:var(--muted); font-size:12px;">${list.length} klanten</span>
-    </div>
-    <div class="section-body">
-      <table>
-        <thead><tr><th>Klant</th><th>Boekhouder</th><th>Open saldo</th><th>Transacties</th><th>Laatste sync</th><th>Aan te leveren</th><th>Herinneringen</th><th></th></tr></thead>
-        <tbody>
-          ${list.map(k=>{
-            const f = STORE[k.id];
-            const open = f.items.filter(i=>!i.done).length;
-            return `<tr>
-              <td class="row-click" data-open-klant="${k.id}"><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm}</div></td>
-              <td>${bh(k.bh).naam}</td>
-              <td>
-                <span class="saldo-edit">
-                  <span id="saldoDisplay-${k.id}">${fmtEUR(f.saldo)}</span>
-                  <button class="btn sm ghost" data-edit-saldo="${k.id}" title="Bewerken"><i class="ti ti-pencil" aria-hidden="true"></i></button>
-                </span>
-              </td>
-              <td>${f.txn}</td>
-              <td>${fmtDate(f.sync)}</td>
-              <td>${open? `<span class="badge amber"><span class="dot amber"></span>${open} open</span>` : `<span class="badge green"><span class="dot green"></span>Compleet</span>`}</td>
-              <td>${f.log.length? `<span class="badge blue"><span class="dot blue"></span>${f.log.length}x verstuurd</span>` : `<span class="badge gray"><span class="dot gray"></span>Nog geen</span>`}</td>
-              <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Beheer →</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
+    </div>` : ''}
   </div>`;
+
 }
 
 /* ============================= VIEW: LOONHEFFINGEN ============================= */
@@ -5079,26 +5115,44 @@ function autolijstHTML(){
     </div>
     <div class="section-body">
       <table>
-        <thead><tr><th>Kenteken</th><th>Merk</th><th>Klant</th><th>Type</th><th>Cataloguswaarde</th><th>Bijtelling (${TODAY.getFullYear()})</th><th>BTW-correctie (${TODAY.getFullYear()})</th><th></th></tr></thead>
+        <thead><tr><th>Kenteken</th><th>Merk</th><th>Type</th><th style="text-align:right;">Cataloguswaarde</th><th style="text-align:right;">Bijtelling (${TODAY.getFullYear()})</th><th style="text-align:right;">BTW-correctie (${TODAY.getFullYear()})</th><th></th></tr></thead>
         <tbody>
-          ${list.map(a=>{
-            const k = klantVanAuto(a);
-            const bijtelling = berekenBijtellingProRata(a);
-            const btw = berekenBtwCorrectieProRata(a);
-            const warn = autoWaarschuwingen(a);
-            return `<tr>
-            <td><b>${a.kenteken||'—'}</b>${warn.length ? ` <span title="${warn.join(' ').replace(/"/g,'&quot;')}" style="color:var(--amber);"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span>` : ''}</td>
-            <td>${a.merk||'—'}</td>
-            <td>${k ? k.naam : '<span style="color:var(--red);">Onbekende klant</span>'}</td>
-            <td>${a.type}${a.elektrisch==='ja'?' · <i class="ti ti-bolt" aria-hidden="true"></i>':''}${isJongtimer(a)?' · youngtimer':''}</td>
-            <td>${fmtEUR(a.cataloguswaarde)}</td>
-            <td>${autoBedragCel(bijtelling)}</td>
-            <td>${autoBedragCel(btw)}</td>
-            <td style="text-align:right; white-space:nowrap;">
-              <button class="btn sm ghost" data-edit-auto="${a.id}">Bewerk</button>
-              ${admin ? `<button class="btn sm ghost" data-delete-auto="${a.id}" title="Auto verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
-            </td>
-          </tr>`;}).join('')}
+          ${(function(){
+            // Gegroepeerd per klant (mockup "Strakke tabel, gegroepeerd per klant"): groepskop met
+            // klantnaam + aantal voertuigen, daaronder de auto's van die klant, alfabetisch.
+            const groepen = new Map();
+            list.forEach(a=>{
+              const k = klantVanAuto(a);
+              const key = k ? k.id : '__onbekend';
+              if(!groepen.has(key)) groepen.set(key, { naam: k ? k.naam : 'Onbekende klant', onbekend: !k, autos: [] });
+              groepen.get(key).autos.push(a);
+            });
+            const gesorteerdeGroepen = Array.from(groepen.values()).sort((a,b)=>{
+              if(a.onbekend !== b.onbekend) return a.onbekend ? 1 : -1; // onbekende klant onderaan
+              return a.naam.localeCompare(b.naam,'nl');
+            });
+            return gesorteerdeGroepen.map(g=>{
+              const kop = `<tr><td colspan="7" style="background:var(--bg); font-weight:700; font-size:12px; color:${g.onbekend?'var(--red)':'var(--muted)'}; padding:9px 14px; border-top:1px solid var(--border);">${g.naam} · ${g.autos.length} voertuig${g.autos.length===1?'':'en'}</td></tr>`;
+              const rijen = g.autos.slice().sort((a,b)=>(a.kenteken||'').localeCompare(b.kenteken||'')).map(a=>{
+                const bijtelling = berekenBijtellingProRata(a);
+                const btw = berekenBtwCorrectieProRata(a);
+                const warn = autoWaarschuwingen(a);
+                return `<tr>
+                  <td><b>${a.kenteken||'—'}</b>${warn.length ? ` <span title="${warn.join(' ').replace(/"/g,'&quot;')}" style="color:var(--amber);"><i class="ti ti-alert-triangle" aria-hidden="true"></i></span>` : ''}</td>
+                  <td>${a.merk||'—'}</td>
+                  <td>${a.type}${a.elektrisch==='ja'?' · <i class="ti ti-bolt" aria-hidden="true"></i>':''}${isJongtimer(a)?' · youngtimer':''}</td>
+                  <td style="text-align:right;">${fmtEUR(a.cataloguswaarde)}</td>
+                  <td style="text-align:right;">${autoBedragCel(bijtelling)}</td>
+                  <td style="text-align:right;">${autoBedragCel(btw)}</td>
+                  <td style="text-align:right; white-space:nowrap;">
+                    <button class="btn sm ghost" data-edit-auto="${a.id}">Bewerk</button>
+                    ${admin ? `<button class="btn sm ghost" data-delete-auto="${a.id}" title="Auto verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
+                  </td>
+                </tr>`;
+              }).join('');
+              return kop + rijen;
+            }).join('');
+          })()}
         </tbody>
       </table>
       ${list.length===0?'<div class="empty-state">Geen auto\'s gevonden.</div>':''}
@@ -7491,6 +7545,14 @@ function attachHandlers(){
   const overlay = document.getElementById('overlay');
   bindOnce(overlay, 'click', closePanel);
 
+  document.querySelectorAll('[data-aanlever-select]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.aanleverKlant = el.getAttribute('data-aanlever-select');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-aanlever-import-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.aanleverImportOpen = !STATE.aanleverImportOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-edit-saldo]').forEach(el=>el.addEventListener('click',(e)=>{
     e.stopPropagation();
     const id = el.getAttribute('data-edit-saldo');
