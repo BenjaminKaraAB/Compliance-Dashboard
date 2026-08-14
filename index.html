@@ -495,7 +495,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.13.21';
+const APP_VERSION = '2026.08.14.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1915,7 +1915,7 @@ function berekenBtwCorrectieProRata(auto){
 function klantVanAuto(auto){ return RAW_KLANTEN.find(k=>k.id===auto.klant) || null; }
 
 /* ============================= STATE ============================= */
-const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen'];
+const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','notion'];
 const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
 function onthoudHuidigePagina(view){
   // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
@@ -1949,6 +1949,7 @@ const ICONS = {
   auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l1.5-5.5A2 2 0 0 1 7.4 9h9.2a2 2 0 0 1 1.9 1.5L20 16"/><rect x="2.5" y="16" width="19" height="4.5" rx="1.5"/><circle cx="7" cy="20.5" r="1.6"/><circle cx="17" cy="20.5" r="1.6"/><path d="M4 13h16"/></svg>',
   notion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 7v10M7.5 7l9 10M16.5 7v10"/></svg>',
   book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5.5c2.2-1.1 5.2-1.5 8 0v13.3c-2.8-1.5-5.8-1.1-8 0z"/><path d="M21 5.5c-2.2-1.1-5.2-1.5-8 0v13.3c2.8-1.5 5.8-1.1 8 0z"/></svg>',
+  msteams:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M6.5 10h5M9 10v6"/><path d="M15 9h4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4"/></svg>',
   sparkle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/></svg>',
 };
 
@@ -1981,10 +1982,11 @@ function render(){
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
-        <div class="nav-group-label">Apps &amp; settings</div>
+        <div class="nav-group-label">Apps &amp; instellingen</div>
         ${navItem('kennisbank','book','Opleiding','later')}
         ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
+        ${navItem('msteams','msteams','Teams-chat')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       ${sidebarFootHTML()}
@@ -2024,7 +2026,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2038,6 +2040,7 @@ function pageSub(){
     instellingen:'Live synchronisatie tussen collega\'s',
     notion:'Gedeelde pagina\'s en data-sync uit Notion',
     kennisbank:'Stappenplannen en uitleg voor (nieuwe) collega\'s, met de AI-assistent voor vragen',
+    msteams:'Start direct een Teams-chat met een collega, met of zonder voorgevuld bericht',
     archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant'
   }[STATE.view];
 }
@@ -2054,6 +2057,7 @@ function viewHTML(){
   if(STATE.view==='instellingen') return instellingenHTML();
   if(STATE.view==='notion') return notionHTML();
   if(STATE.view==='kennisbank') return kennisbankHTML();
+  if(STATE.view==='msteams') return msteamsHTML();
   if(STATE.view==='archief') return archiefHTML();
   return '';
 }
@@ -2613,6 +2617,65 @@ function kennisbankBindHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
     toast('Artikel verwijderd.');
   }));
+}
+/* ============================= TEAMS-CHAT (Microsoft Teams koppeling) =============================
+   Werkt via officiële Teams-deeplinks (https://teams.microsoft.com/l/chat/...): opent de Teams-app
+   of browser met een chat naar de gekozen collega, optioneel met voorgevuld bericht. Bewust GEEN
+   Graph-API voor het posten van kanaalberichten — dat zou extra Azure-permissies (ChannelMessage.Send)
+   en team/kanaal-configuratie vragen. Deeplinks werken direct, zonder nieuwe rechten. */
+function msteamsChatUrl(emails, bericht){
+  let url = 'https://teams.microsoft.com/l/chat/0/0?users=' + encodeURIComponent(emails.join(','));
+  if(bericht && bericht.trim()) url += '&message=' + encodeURIComponent(bericht.trim());
+  return url;
+}
+function msteamsHTML(){
+  const eigenEmail = (SYNC.account && SYNC.account.username || '').toLowerCase();
+  const collegas = BOEKHOUDERS.filter(b=>b && b.email && b.email.trim() && b.email.trim().toLowerCase() !== eigenEmail)
+    .slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  const collegaKaarten = collegas.map(b=>`
+    <div style="display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--border);">
+      <span style="width:32px; height:32px; border-radius:50%; background:${b.kleur||'var(--muted2)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0;">${initialenVoor(b.naam)}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:600; font-size:13px;">${b.naam.replace(/</g,'&lt;')}</div>
+        <div style="font-size:11.5px; color:var(--muted);">${b.email.replace(/</g,'&lt;')}</div>
+      </div>
+      <a class="btn sm primary" href="${msteamsChatUrl([b.email])}" target="_blank" rel="noopener"><i class="ti ti-brand-teams" aria-hidden="true"></i> Chat in Teams</a>
+    </div>`).join('');
+  const opties = collegas.map(b=>`<option value="${b.email.replace(/"/g,'&quot;')}">${b.naam.replace(/</g,'&lt;')}</option>`).join('');
+  const alleEmails = collegas.map(b=>b.email);
+  const leegMelding = '<div class="empty-state" style="padding:20px; font-size:12.5px;">Geen collega' + "'" + 's met e-mailadres gevonden. Vul e-mailadressen in bij Boekhouders om te kunnen chatten.</div>';
+  return `
+  <div class="banner"><i class="ti ti-brand-teams" aria-hidden="true"></i> Deze koppeling werkt via Teams-links: kies een collega (en eventueel een bericht) en Teams opent met de chat klaarstaand. Er zijn geen extra machtigingen nodig.</div>
+  <div style="height:14px;"></div>
+  <div class="section" style="margin-bottom:16px;">
+    <div class="section-head"><h3>Bericht sturen</h3><span class="hint">opent Teams met je bericht voorgevuld — versturen doe je daar</span></div>
+    <div class="section-body pad" style="padding:16px 20px;">
+      <div style="display:grid; grid-template-columns:220px 1fr auto; gap:10px; align-items:start;">
+        <select id="msteamsOntvanger" style="padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          ${opties}
+          ${alleEmails.length>1 ? `<option value="${alleEmails.join(',').replace(/"/g,'&quot;')}">Alle collega's (groepschat)</option>` : ''}
+        </select>
+        <textarea id="msteamsBericht" rows="2" placeholder="Typ hier je bericht (optioneel)…" style="min-height:40px;"></textarea>
+        <button class="btn primary" data-msteams-verstuur style="white-space:nowrap;"><i class="ti ti-brand-teams" aria-hidden="true"></i> Open in Teams</button>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-head"><h3>Collega's</h3><span class="hint">${collegas.length} met e-mailadres</span></div>
+    <div class="section-body pad" style="padding:6px 20px 10px;">
+      ${collegaKaarten || leegMelding}
+    </div>
+  </div>`;
+}
+function msteamsBindHandlers(){
+  if(STATE.view!=='msteams') return;
+  const knop = document.querySelector('[data-msteams-verstuur]');
+  if(knop) knop.addEventListener('click', ()=>{
+    const sel = document.getElementById('msteamsOntvanger');
+    const txt = document.getElementById('msteamsBericht');
+    if(!sel || !sel.value){ toast('Kies eerst een collega.'); return; }
+    window.open(msteamsChatUrl(sel.value.split(','), txt ? txt.value : ''), '_blank');
+  });
 }
 function notionHTML(){
   return `
@@ -7525,6 +7588,7 @@ function attachHandlers(){
   if(STATE.view==='dashboard') renderKpiCharts();
   archiefBindHandlers();
   kennisbankBindHandlers();
+  msteamsBindHandlers();
 }
 
 function handleCSVUpload(e){
