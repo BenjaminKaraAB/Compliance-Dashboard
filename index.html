@@ -51,6 +51,9 @@
   html[data-theme="dark"] .topbar{background:#0f172a; border-bottom-color:#1e293b;}
   html[data-theme="dark"] table thead th{background:#1a2438; color:#94a0bb;}
   html[data-theme="dark"] tbody tr.row-click:hover{background:#152036;}
+  html[data-theme="dark"] .nav-item:hover{background:#152036; color:#f1f5f9;}
+  html[data-theme="dark"] .dl-card.dl-card-na{background:#1e293b;}
+  html[data-theme="dark"] .lh-week.is-nu{background:rgba(201,119,10,.16);}
   html[data-theme="dark"] .panel{background:#0b1220;}
   html[data-theme="dark"] .panel-section{background:#0f172a; border-color:#1e293b;}
   html[data-theme="dark"] .panel-section h4{background:#152036; color:#94a0bb;}
@@ -495,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.4';
+const APP_VERSION = '2026.08.14.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2271,7 +2274,7 @@ function archiefHTML(){
       ${item.status!=='klaar' ? `
       <div style="margin-bottom:12px;">
         <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Klantmap</div>
-        <select data-archief-klant="${idx}" style="width:100%; padding:8px 10px; border:1px solid ${item.klantmapId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; background:${item.klantmapId?'var(--primary-bg)':'#fff'};">
+        <select data-archief-klant="${idx}" style="width:100%; padding:8px 10px; border:1px solid ${item.klantmapId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; background:${item.klantmapId?'var(--primary-bg)':'var(--card)'};">
           <option value="" ${!item.klantmapId?'selected':''}>— kies klant —</option>${mapOpties}
         </select>
       </div>
@@ -2754,7 +2757,7 @@ function mschatHTML(){
   const actieveChat = MSCHAT.actieveChat ? MSCHAT.chats.find(c=>c.id===MSCHAT.actieveChat) : null;
   let gesprekHtml;
   if(!actieveChat){
-    gesprekHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Kies links een chat om te lezen en te reageren.</div>`;
+    gesprekHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg);">Kies links een chat om te lezen en te reageren.</div>`;
   } else {
     const titel = mschatTitel(actieveChat);
     const msgs = MSCHAT.berichten[actieveChat.id] || [];
@@ -2763,7 +2766,7 @@ function mschatHTML(){
       const eigen = eigenNaam && van.toLowerCase() === eigenNaam.toLowerCase();
       const tekst = mschatStripHtml(m.body && m.body.content);
       if(!tekst) return '';
-      return `<div style="align-self:${eigen?'flex-end':'flex-start'}; max-width:72%; background:${eigen?'#131417':'#fff'}; color:${eigen?'#fff':'var(--text)'}; border:${eigen?'none':'1px solid var(--border)'}; border-radius:${eigen?'10px 10px 3px 10px':'10px 10px 10px 3px'}; padding:8px 12px; font-size:12.5px;">
+      return `<div style="align-self:${eigen?'flex-end':'flex-start'}; max-width:72%; background:${eigen?'#131417':'var(--card)'}; color:${eigen?'#fff':'var(--text)'}; border:${eigen?'none':'1px solid var(--border)'}; border-radius:${eigen?'10px 10px 3px 10px':'10px 10px 10px 3px'}; padding:8px 12px; font-size:12.5px;">
         ${mschatEsc(tekst)}
         <div style="font-size:10px; color:${eigen?'rgba(255,255,255,.6)':'var(--muted2)'}; margin-top:3px;">${eigen?'Jij':mschatEsc(van.split(' ')[0])} · ${mschatTijd(m.createdDateTime)}</div>
       </div>`;
@@ -2774,7 +2777,7 @@ function mschatHTML(){
         <span style="font-size:13px; font-weight:600;">${mschatEsc(titel)}</span>
         <a class="btn sm ghost" style="margin-left:auto; font-size:11px;" href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent((actieveChat.members||[]).map(m=>m.email||'').filter(Boolean).join(','))}" target="_blank" rel="noopener">Open in Teams ↗</a>
       </div>
-      <div id="mschatBerichten" style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; background:#fafbfd; overflow-y:auto;">
+      <div id="mschatBerichten" style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; background:var(--bg); overflow-y:auto;">
         ${MSCHAT.berichtenLaden && !msgs.length ? '<div style="color:var(--muted2); font-size:12px;">Berichten laden…</div>' : (bubbels || '<div style="color:var(--muted2); font-size:12px;">Nog geen berichten in deze chat.</div>')}
       </div>
       <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px;">
@@ -2983,7 +2986,7 @@ function outlookHTML(){
     const d = new Date(m.receivedDateTime);
     const vandaag = d.toDateString() === new Date().toDateString();
     const tijd = vandaag ? d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'});
-    return `<div data-msmail-open="${m.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid #f1f4f9; ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
+    return `<div data-msmail-open="${m.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border); ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
       <div style="display:flex; justify-content:space-between; gap:8px;">
         <span style="font-size:12px; font-weight:${m.isRead?'400':'700'}; color:${m.isRead?'var(--muted)':'var(--text)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(msmailAfzender(m))}</span>
         <span style="font-size:10px; color:var(--muted2); flex-shrink:0;">${tijd}</span>
@@ -3003,7 +3006,7 @@ function outlookHTML(){
         <span style="font-size:13.5px; font-weight:700;">${titelMap[c.type]||'Opstellen'}${c.onderwerpVast?': '+mschatEsc(c.onderwerpVast):''}</span>
         <button class="btn sm ghost" data-msmail-compose-sluit><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
-      <div style="flex:1; padding:16px 18px; background:#fafbfd; display:flex; flex-direction:column; gap:10px; overflow-y:auto;">
+      <div style="flex:1; padding:16px 18px; background:var(--bg); display:flex; flex-direction:column; gap:10px; overflow-y:auto;">
         ${c.type!=='reply' ? `<div><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Aan (e-mailadres)</div><input id="msmailAan" type="text" value="${mschatEsc(c.aan||'')}" placeholder="naam@bedrijf.nl" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"></div>` : ''}
         ${c.type==='nieuw' ? `<div><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Onderwerp</div><input id="msmailOnderwerp" type="text" placeholder="Onderwerp" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"></div>` : ''}
         <div style="flex:1; display:flex; flex-direction:column;"><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Bericht</div><textarea id="msmailTekst" style="flex:1; min-height:140px;" placeholder="Typ je bericht…"></textarea></div>
@@ -3021,16 +3024,16 @@ function outlookHTML(){
         <div style="font-size:14px; font-weight:700;">${mschatEsc(det.subject||'(geen onderwerp)')}</div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">${van} · ${d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'})} ${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</div>
       </div>
-      <div style="flex:1; padding:16px 18px; font-size:12.5px; line-height:1.7; background:#fafbfd; overflow-y:auto; white-space:pre-wrap; word-break:break-word;">${mschatEsc(msmailTekst(det.body && det.body.content))}</div>
+      <div style="flex:1; padding:16px 18px; font-size:12.5px; line-height:1.7; background:var(--bg); overflow-y:auto; white-space:pre-wrap; word-break:break-word;">${mschatEsc(msmailTekst(det.body && det.body.content))}</div>
       <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:8px;">
         <button class="btn primary sm" data-msmail-reply>↩ Beantwoorden</button>
         <button class="btn sm" data-msmail-forward>↪ Doorsturen</button>
         ${det.webLink?`<a class="btn sm ghost" style="margin-left:auto;" href="${det.webLink}" target="_blank" rel="noopener">Open in Outlook ↗</a>`:''}
       </div>`;
   } else if(MSMAIL.actieveMail){
-    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Mail laden…</div>`;
+    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg);">Mail laden…</div>`;
   } else {
-    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Kies links een mail om te lezen.</div>`;
+    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg);">Kies links een mail om te lezen.</div>`;
   }
 
   return `<div class="section">
@@ -4253,11 +4256,11 @@ function klantenHTML(){
   const chip = (val, label, count, kleurCls)=>{
     const actief = STATE.statusFilter===val;
     const base = 'padding:6px 12px; border-radius:20px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:all .12s ease; border:1px solid transparent; font-weight:500;';
-    const actiefStijl = kleurCls==='groen' ? 'background:#dcf7ec; border-color:#b6ecd2; color:#0f7550;'
-      : kleurCls==='rood' ? 'background:#fdeaea; border-color:#f6c9c9; color:#791f1f;'
-      : kleurCls==='oranje' ? 'background:#fdf1de; border-color:#f3d9a8; color:#633806;'
-      : kleurCls==='blauw' ? 'background:#e5f5fa; border-color:#bfe4ee; color:#0e7fa3;'
-      : 'background:#e6faf1; border-color:#b6ecd2; color:#0f7550;';
+    const actiefStijl = kleurCls==='groen' ? 'background:var(--green-bg); border-color:var(--green-brd); color:var(--green);'
+      : kleurCls==='rood' ? 'background:var(--red-bg); border-color:var(--red-brd); color:var(--red);'
+      : kleurCls==='oranje' ? 'background:var(--amber-bg); border-color:var(--amber-brd); color:var(--amber);'
+      : kleurCls==='blauw' ? 'background:var(--blue-bg); border-color:var(--blue-brd); color:var(--blue);'
+      : 'background:var(--primary-bg); border-color:var(--green-brd); color:var(--primary-dark);';
     const inactiefStijl = 'background:transparent; border-color:var(--border); color:var(--muted);';
     return `<button data-status-chip="${val}" style="${base} ${actief?actiefStijl:inactiefStijl}">${label}<span style="opacity:.75;">${count}</span></button>`;
   };
@@ -4285,7 +4288,7 @@ function klantenHTML(){
         ${chip('ingediend', 'Ingediend', tellingen.ingediend, 'blauw')}
       </div>
       <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-        <select id="filterBh" style="padding:6px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; background:#fff;"><option value="">Alle boekhouders</option>${bhOptions}</select>
+        <select id="filterBh" style="padding:6px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; background:var(--card);"><option value="">Alle boekhouders</option>${bhOptions}</select>
         <span style="font-size:12px; color:var(--muted);">${list.length} van ${RAW_KLANTEN.length}</span>
       </div>
     </div>
@@ -4293,7 +4296,7 @@ function klantenHTML(){
       ${STATE.klantenView==='kaarten' ? `<div class="klanten-grid">${list.map(k=>{
         const w = worstStatus(k);
         const stripKleur = {actie:'#dc2626', nadert:'#c9770a', schema:'#22c58a', ingediend:'#0e7fa3'}[w] || '#e4e8f0';
-        const stKl = {actie:{bg:'#fdeaea',fg:'#791f1f',lbl:'Actie'}, nadert:{bg:'#fdf1de',fg:'#633806',lbl:'Nadert'}, schema:{bg:'#dcf7ec',fg:'#0f7550',lbl:'Op schema'}, ingediend:{bg:'#e5f5fa',fg:'#0c447c',lbl:'Ingediend'}}[w] || {bg:'#eef0f4',fg:'#556377',lbl:'—'};
+        const stKl = {actie:{bg:'var(--red-bg)',fg:'var(--red)',lbl:'Actie'}, nadert:{bg:'var(--amber-bg)',fg:'var(--amber)',lbl:'Nadert'}, schema:{bg:'var(--green-bg)',fg:'var(--green)',lbl:'Op schema'}, ingediend:{bg:'var(--blue-bg)',fg:'var(--blue)',lbl:'Ingediend'}}[w] || {bg:'var(--gray-bg)',fg:'var(--muted)',lbl:'—'};
         const boekhouder = bhVoor(k.bh);
         const kolomKl = t=>{ const st = statusOf(effDL(k,t)).key; return ({actie:'#dc2626',nadert:'#c9770a',schema:'#22c58a',ingediend:'#0e7fa3',na:'#e4e8f0'})[st]||'#e4e8f0'; };
         const nextTypeArr = ['OB','VPB','LH','JR'].map(t=>({t, s:statusOf(effDL(k,t))})).filter(x=>x.s.dagen!==undefined).sort((a,b)=>a.s.dagen-b.s.dagen);
@@ -4494,7 +4497,7 @@ function lhNotitiesJaarHTML(k, f){
         </div>`).join('')}
     </div>`).join('') : `<div class="hint" style="margin-top:8px;">Geen notities in ${jaarFilter}.</div>`;
   return `
-    <div style="margin-top:14px; padding:12px; background:#fff; border:1px solid var(--border); border-radius:8px;">
+    <div style="margin-top:14px; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:8px;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
         <b style="font-size:12px;">Notities ${jaarFilter} <span style="font-weight:400; color:var(--muted);">(${gefilterd.length})</span></b>
         ${jaren.length>1 ? `<select data-lh-notities-jaar="${k.id}" style="font-size:11.5px; padding:3px 6px; border:1px solid var(--border); border-radius:6px;">
@@ -4521,15 +4524,15 @@ function lhVorigePeriodesHTML(k, f){
   };
   const periodeInhoud = (p)=>{
     const taakBlokken = (p.taken||[]).map(t=>{
-      const anten = Array.isArray(t.aantekeningen)&&t.aantekeningen.length ? t.aantekeningen.map(a=>`<div style="padding:6px 10px; background:#fff; border:1px solid var(--border); border-radius:6px; margin-top:4px; font-size:11.5px;"><b style="font-weight:600;">${(a.door||'').replace(/</g,'&lt;')}</b> · ${fmtDatumKort(a.ts)}<div style="margin-top:2px;">${(a.tekst||'').replace(/</g,'&lt;')}</div></div>`).join('') : '<div style="font-size:11.5px; color:var(--muted); padding:4px 0;">Geen aantekeningen</div>';
+      const anten = Array.isArray(t.aantekeningen)&&t.aantekeningen.length ? t.aantekeningen.map(a=>`<div style="padding:6px 10px; background:var(--card); border:1px solid var(--border); border-radius:6px; margin-top:4px; font-size:11.5px;"><b style="font-weight:600;">${(a.door||'').replace(/</g,'&lt;')}</b> · ${fmtDatumKort(a.ts)}<div style="margin-top:2px;">${(a.tekst||'').replace(/</g,'&lt;')}</div></div>`).join('') : '<div style="font-size:11.5px; color:var(--muted); padding:4px 0;">Geen aantekeningen</div>';
       const dot = t.done ? '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--green); margin-right:6px;"></span>' : '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--border); margin-right:6px;"></span>';
       return `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
         <div style="font-size:12.5px; font-weight:600;">${dot}${t.naam}${t.done?` · afgevinkt door ${t.door||'?'}`:''}</div>
         ${anten}
       </div>`;
     }).join('');
-    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:#fdf1de; border:1px solid #f3d9a8; border-radius:6px; font-size:11.5px;"><b>Vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
-    return `<div style="padding:10px 12px; background:#fbfcfe;">${taakBlokken}${overige}</div>`;
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:var(--amber-bg); border:1px solid var(--amber-brd); border-radius:6px; font-size:11.5px;"><b>Vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    return `<div style="padding:10px 12px; background:var(--bg);">${taakBlokken}${overige}</div>`;
   };
   const periodeRijen = periodes.map(p=>{
     const isOpen = detailId === p.id;
@@ -4754,14 +4757,14 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
       return `<td style="text-align:center;" title="${titelTxt.replace(/"/g,'&quot;')}"><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${kleur||'var(--border)'};"></span></td>`;
     }).join('');
     const ster = notitieDezeMaand ? `<span title="Notitie voor ${maandLabelVanKey(bekeken)}" style='margin-right:4px;'>⭐</span>` : (anderMaandNotities ? `<span title="Notitie klaargezet voor een andere maand" style='margin-right:4px; opacity:.45;'>⭐</span>` : '');
-    const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:#f7f9fd;':''}">
+    const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:var(--bg);':''}">
       <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
       <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
     </tr>`;
-    const detailRij = expanded ? `<tr><td colspan="${kolomAantal}" style="background:#fbfcfe; padding:16px 20px; border-bottom:1px solid var(--border);">${loonheffingKlantDetailHTML(k)}</td></tr>` : '';
+    const detailRij = expanded ? `<tr><td colspan="${kolomAantal}" style="background:var(--bg); padding:16px 20px; border-bottom:1px solid var(--border);">${loonheffingKlantDetailHTML(k)}</td></tr>` : '';
     return hoofdRij + detailRij;
   }).join('');
 
@@ -4905,7 +4908,7 @@ function lhKalenderHTML(list){
   const afgerondHtml = maanden.map(m=>{
     const isNu = m.jaar===huidigJaar && m.maand===huidigMaand;
     const pct = totaalKlanten ? Math.round((m.afgerond / totaalKlanten) * 100) : 0;
-    const kleur = m.afgerond===0 ? '#eef0f4' : (pct>=100 ? '#22c58a' : (isNu ? '#c9770a' : '#94a0bb'));
+    const kleur = m.afgerond===0 ? 'var(--gray-bg)' : (pct>=100 ? '#22c58a' : (isNu ? '#c9770a' : '#94a0bb'));
     const kleurText = m.afgerond===0 ? 'var(--muted2)' : (pct>=100 ? '#fff' : 'var(--text)');
     const hoogte = Math.max(10, (m.afgerond / maxAfgerond) * 42);
     const label = `${NL_MAAND_KORT[m.maand]} ${m.jaar}`;
@@ -4923,7 +4926,7 @@ function lhKalenderHTML(list){
     const hoogte = waarde ? Math.max(8, (waarde / max) * 26) : 2;
     return `<div class="lh-week" style="flex:1;">
       <div class="lh-week-bar-wrap" style="height:30px;">
-        <div class="lh-week-bar" style="height:${hoogte}px; background:${waarde?kleur:'#eef0f4'}; min-width:100%;">
+        <div class="lh-week-bar" style="height:${hoogte}px; background:${waarde?kleur:'var(--gray-bg)'}; min-width:100%;">
           <span style="color:${waarde?kleurText:'var(--muted2)'}; font-size:11px;">${waarde}</span>
         </div>
       </div>
@@ -5606,7 +5609,7 @@ function deadlineCard(type, entry){
     schema:{bg:'#e5f6ee', brd:'#bfe6d2', txt:'#173404', sub:'#27500a'},
     ingediend:{bg:'#e5f5fa', brd:'#bfe4ee', txt:'#0c447c', sub:'#185fa5'},
   };
-  const kl = kleuren[st.key] || {bg:'#eef0f4', brd:'#dde1ea', txt:'var(--text)', sub:'var(--muted)'};
+  const kl = kleuren[st.key] || {bg:'var(--gray-bg)', brd:'var(--gray-brd)', txt:'var(--text)', sub:'var(--muted)'};
   const bigTxt = entry.status==='ingediend' ? 'Ingediend' : (st.dagen<0 ? `${Math.abs(st.dagen)}d te laat` : `${st.dagen} dagen`);
   const subTxt = entry.status==='ingediend' ? `Op ${fmtDate(entry.datum)}` : fmtDate(entry.datum);
   const herh = entry.herhaling || 'geen';
@@ -5617,13 +5620,13 @@ function deadlineCard(type, entry){
       <div class="dl-small" style="color:${kl.sub};">${subTxt}</div>
     </div>
     <div class="dl-card-actions" style="border-top:1px solid ${kl.brd};">
-      <select data-set-herhaling="${type}" style="padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px; background:#fff;">
+      <select data-set-herhaling="${type}" style="padding:3px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px; background:var(--card);">
         <option value="geen" ${herh==='geen'?'selected':''}>Geen herhaling</option>
         <option value="maandelijks" ${herh==='maandelijks'?'selected':''}>Maandelijks</option>
         <option value="kwartaal" ${herh==='kwartaal'?'selected':''}>Per kwartaal</option>
         <option value="jaarlijks" ${herh==='jaarlijks'?'selected':''}>Jaarlijks</option>
       </select>
-      ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}" style="background:#fff;">Markeer ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}" style="background:#fff;">Ongedaan maken</button>`}
+      ${entry.status!=='ingediend' ? `<button class="btn sm" data-mark-ingediend="${type}" style="background:var(--card);">Markeer ingediend</button>` : `<button class="btn sm ghost" data-unmark-ingediend="${type}" style="background:var(--card);">Ongedaan maken</button>`}
     </div>
   </div>`;
 }
