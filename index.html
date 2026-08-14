@@ -495,7 +495,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.1';
+const APP_VERSION = '2026.08.14.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1220,7 +1220,7 @@ let msalInitPromise = null;
 /* 'Mail.Send' is nodig voor het automatisch versturen van documenten (bijv. de akkoordverklaring
    aangifte IB) rechtstreeks vanuit het ingelogde Microsoft-account via Graph — dit vraagt bij de
    eerstvolgende keer inloggen (of opnieuw inloggen) om een extra toestemming van de gebruiker. */
-const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send'];
+const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
@@ -1986,7 +1986,7 @@ function render(){
         ${navItem('kennisbank','book','Opleiding','later')}
         ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
-        ${navItem('msteams','msteams','Teams-chat')}
+        ${navItem('msteams','msteams','Teams-chat','later')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       ${sidebarFootHTML()}
@@ -2628,6 +2628,182 @@ function msteamsChatUrl(emails, bericht){
   if(bericht && bericht.trim()) url += '&message=' + encodeURIComponent(bericht.trim());
   return url;
 }
+/* Mini-chat: leest en verstuurt echte Teams-chatberichten via Microsoft Graph (Chat.ReadWrite).
+   Polling elke 15s (Teams-embedding in een iframe blokkeert Microsoft; dit is de werkbare weg).
+   Bij ontbrekende toestemming (eerste keer na deze update) toont de pagina een "Verbind met
+   Teams"-knop die de interactieve Microsoft-toestemmingsvraag opent. */
+const MSCHAT = { chats:null, laden:false, fout:null, actieveChat:null, berichten:{}, berichtenLaden:false, laatstVerverst:null, timerGestart:false };
+function mschatEigenNaam(){ return (SYNC.account && (SYNC.account.name||'')) || ''; }
+function mschatStripHtml(html){
+  const zonderTags = String(html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  return zonderTags.replace(/\s+/g,' ').trim();
+}
+function mschatEsc(t){ return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mschatTitel(chat){
+  if(chat.topic) return chat.topic;
+  const eigen = mschatEigenNaam().toLowerCase();
+  const namen = (chat.members||[]).map(m=>m.displayName).filter(n=>n && n.toLowerCase()!==eigen);
+  return namen.join(', ') || 'Chat';
+}
+function mschatTijd(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  const nu = new Date();
+  const zelfdeDag = d.toDateString() === nu.toDateString();
+  return zelfdeDag ? d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'}) + ' ' + d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
+}
+function mschatIsOngelezen(chat){
+  try{
+    const laatste = chat.lastMessagePreview && chat.lastMessagePreview.createdDateTime;
+    const gelezen = chat.viewpoint && chat.viewpoint.lastMessageReadDateTime;
+    if(!laatste) return false;
+    if(!gelezen) return true;
+    return new Date(laatste).getTime() > new Date(gelezen).getTime();
+  }catch(e){ return false; }
+}
+async function mschatLaadChats(allowInteractive){
+  const res = await graphFetch('https://graph.microsoft.com/v1.0/me/chats?$expand=members,lastMessagePreview&$top=50', {}, allowInteractive);
+  const chats = (res.value||[]).filter(c=>c.chatType==='oneOnOne' || c.chatType==='group');
+  chats.sort((a,b)=>{
+    const ta = (a.lastMessagePreview && a.lastMessagePreview.createdDateTime) || a.lastUpdatedDateTime || '';
+    const tb = (b.lastMessagePreview && b.lastMessagePreview.createdDateTime) || b.lastUpdatedDateTime || '';
+    return tb.localeCompare(ta);
+  });
+  MSCHAT.chats = chats;
+  MSCHAT.laatstVerverst = Date.now();
+}
+async function mschatLaadBerichten(chatId, allowInteractive){
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/chats/${chatId}/messages?$top=30`, {}, allowInteractive);
+  const msgs = (res.value||[]).filter(m=>m.messageType==='message' && !(m.deletedDateTime));
+  msgs.reverse(); // Graph geeft nieuwste eerst; wij tonen chronologisch
+  MSCHAT.berichten[chatId] = msgs;
+}
+async function mschatInit(allowInteractive){
+  if(MSCHAT.laden || !SYNC.account) return;
+  MSCHAT.laden = true; MSCHAT.fout = null;
+  try{
+    await mschatLaadChats(allowInteractive);
+    if(MSCHAT.actieveChat) await mschatLaadBerichten(MSCHAT.actieveChat, false).catch(()=>{});
+  }catch(e){
+    MSCHAT.fout = e.message || 'Kon Teams niet bereiken.';
+  }
+  MSCHAT.laden = false;
+  if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function mschatStartPolling(){
+  if(MSCHAT.timerGestart) return;
+  MSCHAT.timerGestart = true;
+  setInterval(async ()=>{
+    if(STATE.view!=='msteams' || !SYNC.account || !MSCHAT.chats || MSCHAT.laden) return;
+    // Stil verversen op de achtergrond; invoerveld-inhoud bewaren over de re-render heen.
+    try{
+      await mschatLaadChats(false);
+      if(MSCHAT.actieveChat) await mschatLaadBerichten(MSCHAT.actieveChat, false);
+      const inputEl = document.getElementById('mschatInput');
+      const invoer = inputEl ? inputEl.value : '';
+      if(STATE.view==='msteams'){
+        document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+        const nieuwInput = document.getElementById('mschatInput');
+        if(nieuwInput && invoer) nieuwInput.value = invoer;
+      }
+    }catch(e){}
+  }, 15000);
+}
+function mschatHTML(){
+  if(!SYNC.account) return '';
+  if(MSCHAT.fout){
+    const isConsent = /consent|interaction|AADSTS65001|scope|toestemming|403/i.test(String(MSCHAT.fout));
+    return `<div class="section" style="margin-bottom:16px;"><div class="section-body pad" style="padding:22px; text-align:center;">
+      <i class="ti ti-brand-teams" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="font-size:13px; margin-top:8px; color:var(--muted);">${isConsent ? 'Het dashboard heeft nog geen toestemming om je Teams-chats te lezen. Klik hieronder en accepteer de Microsoft-toestemmingsvraag (eenmalig).' : mschatEsc(MSCHAT.fout)}</div>
+      <button class="btn primary" data-mschat-verbind style="margin-top:14px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met Teams</button>
+    </div></div>`;
+  }
+  if(!MSCHAT.chats){
+    return `<div class="section" style="margin-bottom:16px;"><div class="section-body pad" style="padding:22px; text-align:center;">
+      ${MSCHAT.laden
+        ? '<i class="ti ti-loader-2" style="font-size:24px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Teams-chats ophalen…</div>'
+        : '<i class="ti ti-brand-teams" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Verbind eenmalig met Teams om je chats hier te zien.</div><button class="btn primary" data-mschat-verbind style="margin-top:12px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met Teams</button>'}
+    </div></div>`;
+  }
+  const eigenNaam = mschatEigenNaam();
+  const chatRijen = MSCHAT.chats.slice(0, 20).map(c=>{
+    const actief = MSCHAT.actieveChat === c.id;
+    const titel = mschatTitel(c);
+    const preview = c.lastMessagePreview ? mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content) : '';
+    const ongelezen = mschatIsOngelezen(c);
+    return `<div data-mschat-open="${c.id}" style="padding:10px 14px; cursor:pointer; ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="width:26px; height:26px; border-radius:50%; background:${boekhouderKleurVoorNaam(titel)||'var(--muted2)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0;">${mschatEsc(initialenVoor(titel))}</span>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:12px; font-weight:${ongelezen?'700':'600'};">${mschatEsc(titel)}</div>
+          <div style="font-size:10.5px; color:${ongelezen?'var(--text)':'var(--muted2)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(preview.slice(0,60))}</div>
+        </div>
+        ${ongelezen?'<span style="width:7px; height:7px; border-radius:50%; background:var(--primary); flex-shrink:0;"></span>':''}
+      </div>
+    </div>`;
+  }).join('');
+  const actieveChat = MSCHAT.actieveChat ? MSCHAT.chats.find(c=>c.id===MSCHAT.actieveChat) : null;
+  let gesprekHtml;
+  if(!actieveChat){
+    gesprekHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Kies links een chat om te lezen en te reageren.</div>`;
+  } else {
+    const titel = mschatTitel(actieveChat);
+    const msgs = MSCHAT.berichten[actieveChat.id] || [];
+    const bubbels = msgs.map(m=>{
+      const van = (m.from && m.from.user && m.from.user.displayName) || 'Onbekend';
+      const eigen = eigenNaam && van.toLowerCase() === eigenNaam.toLowerCase();
+      const tekst = mschatStripHtml(m.body && m.body.content);
+      if(!tekst) return '';
+      return `<div style="align-self:${eigen?'flex-end':'flex-start'}; max-width:72%; background:${eigen?'#131417':'#fff'}; color:${eigen?'#fff':'var(--text)'}; border:${eigen?'none':'1px solid var(--border)'}; border-radius:${eigen?'10px 10px 3px 10px':'10px 10px 10px 3px'}; padding:8px 12px; font-size:12.5px;">
+        ${mschatEsc(tekst)}
+        <div style="font-size:10px; color:${eigen?'rgba(255,255,255,.6)':'var(--muted2)'}; margin-top:3px;">${eigen?'Jij':mschatEsc(van.split(' ')[0])} · ${mschatTijd(m.createdDateTime)}</div>
+      </div>`;
+    }).join('');
+    gesprekHtml = `
+      <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;">
+        <span style="width:28px; height:28px; border-radius:50%; background:${boekhouderKleurVoorNaam(titel)||'var(--muted2)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;">${mschatEsc(initialenVoor(titel))}</span>
+        <span style="font-size:13px; font-weight:600;">${mschatEsc(titel)}</span>
+        <a class="btn sm ghost" style="margin-left:auto; font-size:11px;" href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent((actieveChat.members||[]).map(m=>m.email||'').filter(Boolean).join(','))}" target="_blank" rel="noopener">Open in Teams ↗</a>
+      </div>
+      <div id="mschatBerichten" style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; background:#fafbfd; overflow-y:auto;">
+        ${MSCHAT.berichtenLaden && !msgs.length ? '<div style="color:var(--muted2); font-size:12px;">Berichten laden…</div>' : (bubbels || '<div style="color:var(--muted2); font-size:12px;">Nog geen berichten in deze chat.</div>')}
+      </div>
+      <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px;">
+        <input id="mschatInput" style="flex:1; padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;" placeholder="Typ een bericht…">
+        <button class="btn primary sm" data-mschat-verstuur style="padding:9px 16px;">Versturen</button>
+      </div>`;
+  }
+  const ververst = MSCHAT.laatstVerverst ? Math.round((Date.now()-MSCHAT.laatstVerverst)/1000) : null;
+  return `<div class="section" style="margin-bottom:16px;">
+    <div class="section-head"><h3>Chats</h3><span class="hint">${ververst!==null ? `ververst ${ververst}s geleden · elke 15s automatisch` : ''}</span></div>
+    <div style="display:flex; height:440px;">
+      <div style="width:230px; border-right:1px solid var(--border); overflow-y:auto; flex-shrink:0;">${chatRijen || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen chats gevonden.</div>'}</div>
+      <div style="flex:1; display:flex; flex-direction:column; min-width:0;">${gesprekHtml}</div>
+    </div>
+  </div>`;
+}
+async function mschatVerstuur(){
+  const input = document.getElementById('mschatInput');
+  const tekst = input ? input.value.trim() : '';
+  if(!tekst || !MSCHAT.actieveChat) return;
+  const chatId = MSCHAT.actieveChat;
+  if(input) input.value = '';
+  try{
+    await graphFetch(`https://graph.microsoft.com/v1.0/chats/${chatId}/messages`, {
+      method:'POST', body: JSON.stringify({ body: { content: tekst } })
+    }, true);
+    await mschatLaadBerichten(chatId, false).catch(()=>{});
+    if(STATE.view==='msteams'){
+      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+      const el = document.getElementById('mschatBerichten'); if(el) el.scrollTop = el.scrollHeight;
+    }
+  }catch(e){
+    toast('Versturen mislukt: ' + (e.message||'onbekende fout'));
+    if(input) input.value = tekst;
+  }
+}
 function msteamsHTML(){
   const eigenEmail = (SYNC.account && SYNC.account.username || '').toLowerCase();
   const collegas = BOEKHOUDERS.filter(b=>b && b.email && b.email.trim() && b.email.trim().toLowerCase() !== eigenEmail)
@@ -2645,7 +2821,8 @@ function msteamsHTML(){
   const alleEmails = collegas.map(b=>b.email);
   const leegMelding = '<div class="empty-state" style="padding:20px; font-size:12.5px;">Geen collega' + "'" + 's met e-mailadres gevonden. Vul e-mailadressen in bij Boekhouders om te kunnen chatten.</div>';
   return `
-  <div class="banner"><i class="ti ti-brand-teams" aria-hidden="true"></i> Deze koppeling werkt via Teams-links: kies een collega (en eventueel een bericht) en Teams opent met de chat klaarstaand. Er zijn geen extra machtigingen nodig.</div>
+  ${mschatHTML()}
+  <div class="banner"><i class="ti ti-brand-teams" aria-hidden="true"></i> Hieronder de snelkoppelingen naar de echte Teams-app: kies een collega (en eventueel een bericht) en Teams opent met de chat klaarstaand.</div>
   <div style="height:14px;"></div>
   <div class="section" style="margin-bottom:16px;">
     <div class="section-head"><h3>Bericht sturen</h3><span class="hint">opent Teams met je bericht voorgevuld — versturen doe je daar</span></div>
@@ -2676,6 +2853,32 @@ function msteamsBindHandlers(){
     if(!sel || !sel.value){ toast('Kies eerst een collega.'); return; }
     window.open(msteamsChatUrl(sel.value.split(','), txt ? txt.value : ''), '_blank');
   });
+  // --- mini-chat ---
+  mschatStartPolling();
+  if(SYNC.account && !MSCHAT.chats && !MSCHAT.laden && !MSCHAT.fout){ mschatInit(false); }
+  document.querySelectorAll('[data-mschat-verbind]').forEach(el=>el.addEventListener('click', ()=>{
+    MSCHAT.fout = null; MSCHAT.chats = null;
+    mschatInit(true);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-mschat-open]').forEach(el=>el.addEventListener('click', async ()=>{
+    const id = el.getAttribute('data-mschat-open');
+    MSCHAT.actieveChat = id;
+    MSCHAT.berichtenLaden = true;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    try{ await mschatLaadBerichten(id, false); }catch(e){ toast('Berichten laden mislukt.'); }
+    MSCHAT.berichtenLaden = false;
+    if(STATE.view==='msteams' && MSCHAT.actieveChat===id){
+      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+      const box = document.getElementById('mschatBerichten'); if(box) box.scrollTop = box.scrollHeight;
+    }
+  }));
+  const verstuurKnop = document.querySelector('[data-mschat-verstuur]');
+  if(verstuurKnop) verstuurKnop.addEventListener('click', ()=>mschatVerstuur());
+  const chatInput = document.getElementById('mschatInput');
+  if(chatInput) chatInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); mschatVerstuur(); } });
+  const berichtenBox = document.getElementById('mschatBerichten');
+  if(berichtenBox) berichtenBox.scrollTop = berichtenBox.scrollHeight;
 }
 function notionHTML(){
   return `
