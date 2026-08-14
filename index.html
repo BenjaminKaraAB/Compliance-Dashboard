@@ -495,7 +495,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.2';
+const APP_VERSION = '2026.08.14.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1929,7 +1929,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'' };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2702,10 +2702,14 @@ function mschatStartPolling(){
       if(MSCHAT.actieveChat) await mschatLaadBerichten(MSCHAT.actieveChat, false);
       const inputEl = document.getElementById('mschatInput');
       const invoer = inputEl ? inputEl.value : '';
+      const berichtEl = document.getElementById('msteamsBericht');
+      const berichtInvoer = berichtEl ? berichtEl.value : '';
       if(STATE.view==='msteams'){
         document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
         const nieuwInput = document.getElementById('mschatInput');
         if(nieuwInput && invoer) nieuwInput.value = invoer;
+        const nieuwBericht = document.getElementById('msteamsBericht');
+        if(nieuwBericht && berichtInvoer) nieuwBericht.value = berichtInvoer;
       }
     }catch(e){}
   }, 15000);
@@ -2825,8 +2829,14 @@ function msteamsHTML(){
   <div class="banner"><i class="ti ti-brand-teams" aria-hidden="true"></i> Hieronder de snelkoppelingen naar de echte Teams-app: kies een collega (en eventueel een bericht) en Teams opent met de chat klaarstaand.</div>
   <div style="height:14px;"></div>
   <div class="section" style="margin-bottom:16px;">
-    <div class="section-head"><h3>Bericht sturen</h3><span class="hint">opent Teams met je bericht voorgevuld — versturen doe je daar</span></div>
-    <div class="section-body pad" style="padding:16px 20px;">
+    <button data-msteams-bericht-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.msteamsBerichtOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">Bericht sturen</h3>
+        <span class="hint">opent Teams met je bericht voorgevuld — versturen doe je daar</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.msteamsBerichtOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.msteamsBerichtOpen ? `<div class="section-body pad" style="padding:16px 20px;">
       <div style="display:grid; grid-template-columns:220px 1fr auto; gap:10px; align-items:start;">
         <select id="msteamsOntvanger" style="padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
           ${opties}
@@ -2835,13 +2845,19 @@ function msteamsHTML(){
         <textarea id="msteamsBericht" rows="2" placeholder="Typ hier je bericht (optioneel)…" style="min-height:40px;"></textarea>
         <button class="btn primary" data-msteams-verstuur style="white-space:nowrap;"><i class="ti ti-brand-teams" aria-hidden="true"></i> Open in Teams</button>
       </div>
-    </div>
+    </div>` : ''}
   </div>
   <div class="section">
-    <div class="section-head"><h3>Collega's</h3><span class="hint">${collegas.length} met e-mailadres</span></div>
-    <div class="section-body pad" style="padding:6px 20px 10px;">
+    <button data-msteams-collegas-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.msteamsCollegasOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">Collega's</h3>
+        <span class="hint">${collegas.length} met e-mailadres</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.msteamsCollegasOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.msteamsCollegasOpen ? `<div class="section-body pad" style="padding:6px 20px 10px;">
       ${collegaKaarten || leegMelding}
-    </div>
+    </div>` : ''}
   </div>`;
 }
 function msteamsBindHandlers(){
@@ -2853,6 +2869,14 @@ function msteamsBindHandlers(){
     if(!sel || !sel.value){ toast('Kies eerst een collega.'); return; }
     window.open(msteamsChatUrl(sel.value.split(','), txt ? txt.value : ''), '_blank');
   });
+  document.querySelectorAll('[data-msteams-bericht-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.msteamsBerichtOpen = !STATE.msteamsBerichtOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-msteams-collegas-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.msteamsCollegasOpen = !STATE.msteamsCollegasOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   // --- mini-chat ---
   mschatStartPolling();
   if(SYNC.account && !MSCHAT.chats && !MSCHAT.laden && !MSCHAT.fout){ mschatInit(false); }
