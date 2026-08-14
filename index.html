@@ -498,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.6';
+const APP_VERSION = '2026.08.14.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1932,7 +1932,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -5095,15 +5095,6 @@ function autolijstHTML(){
   return `
   <div class="banner"><i class="ti ti-bulb" aria-hidden="true"></i> De bijtelling en BTW-correctie worden hier automatisch berekend — op dezelfde manier als in het oude Excel-bestand (inclusief de 60-maanden-regeling voor elektrische auto's en de youngtimer-regeling). Vul de datum 1e inschrijving en cataloguswaarde in en de rest volgt vanzelf.</div>
   <div class="section">
-    <div class="section-head">
-      <h3>Autolijst</h3>
-      <div style="display:flex; gap:8px;">
-        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Auto's importeren (Excel)<input type="file" id="autoExcelUpload" accept=".xlsx,.xls" style="display:none;"></label>
-        <button class="btn sm primary" data-add-auto-btn>+ Nieuwe auto</button>
-        ${admin && AUTOS.length ? `<button class="btn sm ghost" data-clear-all-autos title="Alle auto's verwijderen (bijv. om met een schone lei opnieuw te importeren)" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Alles wissen</button>` : ''}
-      </div>
-    </div>
-    <div id="autoImportResult" style="padding:0 20px;"></div>
     <div class="filters">
       <select id="filterAutoKlant"><option value="">Alle klanten</option>${klantOptions}</select>
       <select id="filterAutoElektrisch">
@@ -5157,6 +5148,24 @@ function autolijstHTML(){
       </table>
       ${list.length===0?'<div class="empty-state">Geen auto\'s gevonden.</div>':''}
     </div>
+  </div>
+  <div class="section" style="margin-top:18px;">
+    <button data-auto-beheer-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.autoBeheerOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">Auto's toevoegen &amp; importeren</h3>
+        <span class="hint">nieuwe auto, Excel-import${admin?' of alles wissen':''}</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.autoBeheerOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.autoBeheerOpen ? `
+    <div class="section-body pad">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn sm primary" data-add-auto-btn>+ Nieuwe auto</button>
+        <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Auto's importeren (Excel)<input type="file" id="autoExcelUpload" accept=".xlsx,.xls" style="display:none;"></label>
+        ${admin && AUTOS.length ? `<button class="btn sm ghost" data-clear-all-autos title="Alle auto's verwijderen (bijv. om met een schone lei opnieuw te importeren)" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Alles wissen</button>` : ''}
+      </div>
+      <div id="autoImportResult" style="margin-top:10px;"></div>
+    </div>` : ''}
   </div>
   ${admin ? bijtellingBeheerHTML() : ''}`;
 }
@@ -7547,6 +7556,10 @@ function attachHandlers(){
 
   document.querySelectorAll('[data-aanlever-select]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.aanleverKlant = el.getAttribute('data-aanlever-select');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-auto-beheer-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.autoBeheerOpen = !STATE.autoBeheerOpen;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-aanlever-import-toggle]').forEach(el=>el.addEventListener('click', ()=>{
