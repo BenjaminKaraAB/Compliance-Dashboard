@@ -495,7 +495,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.3';
+const APP_VERSION = '2026.08.14.4';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1220,7 +1220,7 @@ let msalInitPromise = null;
 /* 'Mail.Send' is nodig voor het automatisch versturen van documenten (bijv. de akkoordverklaring
    aangifte IB) rechtstreeks vanuit het ingelogde Microsoft-account via Graph — dit vraagt bij de
    eerstvolgende keer inloggen (of opnieuw inloggen) om een extra toestemming van de gebruiker. */
-const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite'];
+const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite', 'Mail.ReadWrite'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
@@ -1915,7 +1915,7 @@ function berekenBtwCorrectieProRata(auto){
 function klantVanAuto(auto){ return RAW_KLANTEN.find(k=>k.id===auto.klant) || null; }
 
 /* ============================= STATE ============================= */
-const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','notion'];
+const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','outlook','notion'];
 const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
 function onthoudHuidigePagina(view){
   // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
@@ -1987,6 +1987,7 @@ function render(){
         ${navItem('archief','upload','Archief-uploader','later')}
         ${navItem('notion','notion','Notion','later')}
         ${navItem('msteams','msteams','Teams-chat','later')}
+        ${navItem('outlook','mail','Outlook','later')}
         ${navItem('instellingen','gear','Instellingen')}
       </div>
       ${sidebarFootHTML()}
@@ -2026,7 +2027,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2041,6 +2042,7 @@ function pageSub(){
     notion:'Gedeelde pagina\'s en data-sync uit Notion',
     kennisbank:'Stappenplannen en uitleg voor (nieuwe) collega\'s, met de AI-assistent voor vragen',
     msteams:'Start direct een Teams-chat met een collega, met of zonder voorgevuld bericht',
+    outlook:'Je inbox in het dashboard — lezen, beantwoorden en versturen zonder te wisselen',
     archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant'
   }[STATE.view];
 }
@@ -2058,6 +2060,7 @@ function viewHTML(){
   if(STATE.view==='notion') return notionHTML();
   if(STATE.view==='kennisbank') return kennisbankHTML();
   if(STATE.view==='msteams') return msteamsHTML();
+  if(STATE.view==='outlook') return outlookHTML();
   if(STATE.view==='archief') return archiefHTML();
   return '';
 }
@@ -2903,6 +2906,213 @@ function msteamsBindHandlers(){
   if(chatInput) chatInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); mschatVerstuur(); } });
   const berichtenBox = document.getElementById('mschatBerichten');
   if(berichtenBox) berichtenBox.scrollTop = berichtenBox.scrollHeight;
+}
+/* ============================= OUTLOOK MINI-INBOX =============================
+   Outlook zelf insluiten (iframe) blokkeert Microsoft; dit is een eigen mini-inbox via Graph:
+   inbox lezen (Mail.ReadWrite), beantwoorden/doorsturen/nieuwe mail (Mail.Send, al aanwezig).
+   Berichten worden als platte tekst getoond (HTML gestript) — veilig tegen scripts in mails.
+   Bij openen wordt de mail als gelezen gemarkeerd; "Open in Outlook" gebruikt de webLink. */
+const MSMAIL = { mails:null, laden:false, fout:null, actieveMail:null, detail:{}, compose:null, laatstVerverst:null, timerGestart:false, bezig:false };
+function msmailTekst(html){
+  return String(html||'')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<\/div>/gi,'\n')
+    .replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+    .replace(/\n{3,}/g,'\n\n').trim();
+}
+async function msmailLaadInbox(allowInteractive){
+  const res = await graphFetch('https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=25&$select=id,subject,from,receivedDateTime,bodyPreview,isRead,hasAttachments,webLink&$orderby=receivedDateTime desc', {}, allowInteractive);
+  MSMAIL.mails = res.value || [];
+  MSMAIL.laatstVerverst = Date.now();
+}
+async function msmailLaadDetail(id){
+  if(MSMAIL.detail[id]) return;
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(id)}?$select=id,subject,from,toRecipients,receivedDateTime,body,webLink`, {}, false);
+  MSMAIL.detail[id] = res;
+  // Als gelezen markeren (best effort — mislukt stilletjes als het niet kan)
+  graphFetch(`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(id)}`, { method:'PATCH', body: JSON.stringify({isRead:true}) }, false)
+    .then(()=>{ const m = (MSMAIL.mails||[]).find(x=>x.id===id); if(m) m.isRead = true; })
+    .catch(()=>{});
+}
+async function msmailInit(allowInteractive){
+  if(MSMAIL.laden || !SYNC.account) return;
+  MSMAIL.laden = true; MSMAIL.fout = null;
+  try{ await msmailLaadInbox(allowInteractive); }
+  catch(e){ MSMAIL.fout = e.message || 'Kon Outlook niet bereiken.'; }
+  MSMAIL.laden = false;
+  if(STATE.view==='outlook'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function msmailStartPolling(){
+  if(MSMAIL.timerGestart) return;
+  MSMAIL.timerGestart = true;
+  setInterval(async ()=>{
+    if(STATE.view!=='outlook' || !SYNC.account || !MSMAIL.mails || MSMAIL.laden || MSMAIL.compose) return;
+    try{
+      await msmailLaadInbox(false);
+      if(STATE.view==='outlook' && !MSMAIL.compose){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+    }catch(e){}
+  }, 20000);
+}
+function msmailAfzender(m){ return (m.from && m.from.emailAddress && (m.from.emailAddress.name || m.from.emailAddress.address)) || 'Onbekend'; }
+function outlookHTML(){
+  if(!SYNC.account){
+    return `<div class="section"><div class="empty-state">
+      <i class="ti ti-mail-off" style="font-size:26px; display:block; margin-bottom:10px;" aria-hidden="true"></i>
+      Log eerst in met Microsoft bij <b>Instellingen</b> om je inbox hier te zien.
+    </div></div>`;
+  }
+  if(MSMAIL.fout){
+    const isConsent = /consent|interaction|AADSTS65001|scope|toestemming|403/i.test(String(MSMAIL.fout));
+    return `<div class="section"><div class="section-body pad" style="padding:22px; text-align:center;">
+      <i class="ti ti-mail" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="font-size:13px; margin-top:8px; color:var(--muted);">${isConsent ? 'Het dashboard heeft nog geen toestemming om je mail te lezen. Klik hieronder en accepteer de Microsoft-toestemmingsvraag (eenmalig).' : mschatEsc(MSMAIL.fout)}</div>
+      <button class="btn primary" data-msmail-verbind style="margin-top:14px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met Outlook</button>
+    </div></div>`;
+  }
+  if(!MSMAIL.mails){
+    return `<div class="section"><div class="section-body pad" style="padding:22px; text-align:center;">
+      ${MSMAIL.laden
+        ? '<i class="ti ti-loader-2" style="font-size:24px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Inbox ophalen…</div>'
+        : '<i class="ti ti-mail" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Verbind eenmalig met Outlook om je inbox hier te zien.</div><button class="btn primary" data-msmail-verbind style="margin-top:12px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met Outlook</button>'}
+    </div></div>`;
+  }
+  const ongelezen = MSMAIL.mails.filter(m=>!m.isRead).length;
+  const ververst = MSMAIL.laatstVerverst ? Math.round((Date.now()-MSMAIL.laatstVerverst)/1000) : null;
+  const mailRijen = MSMAIL.mails.map(m=>{
+    const actief = MSMAIL.actieveMail === m.id;
+    const d = new Date(m.receivedDateTime);
+    const vandaag = d.toDateString() === new Date().toDateString();
+    const tijd = vandaag ? d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'});
+    return `<div data-msmail-open="${m.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid #f1f4f9; ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
+      <div style="display:flex; justify-content:space-between; gap:8px;">
+        <span style="font-size:12px; font-weight:${m.isRead?'400':'700'}; color:${m.isRead?'var(--muted)':'var(--text)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(msmailAfzender(m))}</span>
+        <span style="font-size:10px; color:var(--muted2); flex-shrink:0;">${tijd}</span>
+      </div>
+      <div style="font-size:11.5px; font-weight:${m.isRead?'400':'600'}; color:${m.isRead?'var(--muted)':'var(--text)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(m.subject||'(geen onderwerp)')}</div>
+      <div style="font-size:10.5px; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc((m.bodyPreview||'').slice(0,70))}</div>
+      ${m.hasAttachments?'<span style="display:inline-block; font-size:9.5px; color:var(--muted); background:var(--gray-bg); border-radius:4px; padding:1px 6px; margin-top:3px;">📎 bijlage(n)</span>':''}
+    </div>`;
+  }).join('');
+
+  let rechtsHtml;
+  if(MSMAIL.compose){
+    const c = MSMAIL.compose;
+    const titelMap = { nieuw:'Nieuwe mail', reply:'Beantwoorden', forward:'Doorsturen' };
+    rechtsHtml = `
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+        <span style="font-size:13.5px; font-weight:700;">${titelMap[c.type]||'Opstellen'}${c.onderwerpVast?': '+mschatEsc(c.onderwerpVast):''}</span>
+        <button class="btn sm ghost" data-msmail-compose-sluit><i class="ti ti-x" aria-hidden="true"></i></button>
+      </div>
+      <div style="flex:1; padding:16px 18px; background:#fafbfd; display:flex; flex-direction:column; gap:10px; overflow-y:auto;">
+        ${c.type!=='reply' ? `<div><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Aan (e-mailadres)</div><input id="msmailAan" type="text" value="${mschatEsc(c.aan||'')}" placeholder="naam@bedrijf.nl" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"></div>` : ''}
+        ${c.type==='nieuw' ? `<div><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Onderwerp</div><input id="msmailOnderwerp" type="text" placeholder="Onderwerp" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"></div>` : ''}
+        <div style="flex:1; display:flex; flex-direction:column;"><div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Bericht</div><textarea id="msmailTekst" style="flex:1; min-height:140px;" placeholder="Typ je bericht…"></textarea></div>
+      </div>
+      <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:8px;">
+        <button class="btn primary sm" data-msmail-verstuur ${MSMAIL.bezig?'disabled':''}>${MSMAIL.bezig?'Bezig…':'Versturen'}</button>
+        <button class="btn sm ghost" data-msmail-compose-sluit>Annuleren</button>
+      </div>`;
+  } else if(MSMAIL.actieveMail && MSMAIL.detail[MSMAIL.actieveMail]){
+    const det = MSMAIL.detail[MSMAIL.actieveMail];
+    const van = det.from && det.from.emailAddress ? `${det.from.emailAddress.name||''} &lt;${det.from.emailAddress.address||''}&gt;` : 'Onbekend';
+    const d = new Date(det.receivedDateTime);
+    rechtsHtml = `
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border);">
+        <div style="font-size:14px; font-weight:700;">${mschatEsc(det.subject||'(geen onderwerp)')}</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">${van} · ${d.toLocaleDateString('nl-NL',{day:'numeric',month:'short'})} ${d.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</div>
+      </div>
+      <div style="flex:1; padding:16px 18px; font-size:12.5px; line-height:1.7; background:#fafbfd; overflow-y:auto; white-space:pre-wrap; word-break:break-word;">${mschatEsc(msmailTekst(det.body && det.body.content))}</div>
+      <div style="padding:12px 18px; border-top:1px solid var(--border); display:flex; gap:8px;">
+        <button class="btn primary sm" data-msmail-reply>↩ Beantwoorden</button>
+        <button class="btn sm" data-msmail-forward>↪ Doorsturen</button>
+        ${det.webLink?`<a class="btn sm ghost" style="margin-left:auto;" href="${det.webLink}" target="_blank" rel="noopener">Open in Outlook ↗</a>`:''}
+      </div>`;
+  } else if(MSMAIL.actieveMail){
+    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Mail laden…</div>`;
+  } else {
+    rechtsHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:#fafbfd;">Kies links een mail om te lezen.</div>`;
+  }
+
+  return `<div class="section">
+    <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;">
+      <span style="font-size:13px; font-weight:600;">Inbox</span>
+      ${ongelezen?`<span style="font-size:10.5px; background:var(--primary-bg); color:var(--primary-dark); padding:2px 8px; border-radius:20px; font-weight:600;">${ongelezen} ongelezen</span>`:''}
+      <span style="margin-left:auto; font-size:10.5px; color:var(--muted2);">${ververst!==null?`ververst ${ververst}s geleden · elke 20s`:''}</span>
+      <button class="btn primary sm" data-msmail-nieuw><i class="ti ti-pencil" aria-hidden="true"></i> Nieuwe mail</button>
+    </div>
+    <div style="display:flex; height:480px;">
+      <div style="width:270px; border-right:1px solid var(--border); overflow-y:auto; flex-shrink:0;">${mailRijen || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen mails in je inbox.</div>'}</div>
+      <div style="flex:1; display:flex; flex-direction:column; min-width:0;">${rechtsHtml}</div>
+    </div>
+  </div>`;
+}
+async function msmailVerstuur(){
+  if(MSMAIL.bezig || !MSMAIL.compose) return;
+  const c = MSMAIL.compose;
+  const aanEl = document.getElementById('msmailAan');
+  const ondEl = document.getElementById('msmailOnderwerp');
+  const tekstEl = document.getElementById('msmailTekst');
+  const aan = aanEl ? aanEl.value.trim() : '';
+  const onderwerp = ondEl ? ondEl.value.trim() : '';
+  const tekst = tekstEl ? tekstEl.value.trim() : '';
+  if(c.type!=='reply' && !aan){ toast('Vul een ontvanger in.'); return; }
+  if(!tekst){ toast('Typ eerst een bericht.'); return; }
+  MSMAIL.bezig = true;
+  try{
+    if(c.type==='nieuw'){
+      await sendGraphMail(aan, onderwerp || '(geen onderwerp)', mschatEsc(tekst).replace(/\n/g,'<br>'));
+    } else if(c.type==='reply'){
+      await graphFetch(`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(c.mailId)}/reply`, { method:'POST', body: JSON.stringify({ comment: tekst }) }, true);
+    } else if(c.type==='forward'){
+      await graphFetch(`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(c.mailId)}/forward`, { method:'POST', body: JSON.stringify({ comment: tekst, toRecipients: [{ emailAddress: { address: aan } }] }) }, true);
+    }
+    toast('Verstuurd.');
+    MSMAIL.compose = null;
+  }catch(e){
+    toast('Versturen mislukt: ' + (e.message||'onbekende fout'));
+  }
+  MSMAIL.bezig = false;
+  if(STATE.view==='outlook'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function msmailBindHandlers(){
+  if(STATE.view!=='outlook') return;
+  msmailStartPolling();
+  if(SYNC.account && !MSMAIL.mails && !MSMAIL.laden && !MSMAIL.fout){ msmailInit(false); }
+  document.querySelectorAll('[data-msmail-verbind]').forEach(el=>el.addEventListener('click', ()=>{
+    MSMAIL.fout = null; MSMAIL.mails = null;
+    msmailInit(true);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-msmail-open]').forEach(el=>el.addEventListener('click', async ()=>{
+    const id = el.getAttribute('data-msmail-open');
+    MSMAIL.actieveMail = id; MSMAIL.compose = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    try{ await msmailLaadDetail(id); }catch(e){ toast('Mail laden mislukt.'); }
+    if(STATE.view==='outlook' && MSMAIL.actieveMail===id){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+  }));
+  document.querySelectorAll('[data-msmail-nieuw]').forEach(el=>el.addEventListener('click', ()=>{
+    MSMAIL.compose = { type:'nieuw', aan:'' };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const aan = document.getElementById('msmailAan'); if(aan) aan.focus();
+  }));
+  document.querySelectorAll('[data-msmail-reply]').forEach(el=>el.addEventListener('click', ()=>{
+    const det = MSMAIL.detail[MSMAIL.actieveMail];
+    MSMAIL.compose = { type:'reply', mailId: MSMAIL.actieveMail, onderwerpVast: det ? ('Re: '+(det.subject||'')) : '' };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const t = document.getElementById('msmailTekst'); if(t) t.focus();
+  }));
+  document.querySelectorAll('[data-msmail-forward]').forEach(el=>el.addEventListener('click', ()=>{
+    const det = MSMAIL.detail[MSMAIL.actieveMail];
+    MSMAIL.compose = { type:'forward', mailId: MSMAIL.actieveMail, aan:'', onderwerpVast: det ? ('Fw: '+(det.subject||'')) : '' };
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const aan = document.getElementById('msmailAan'); if(aan) aan.focus();
+  }));
+  document.querySelectorAll('[data-msmail-compose-sluit]').forEach(el=>el.addEventListener('click', ()=>{
+    MSMAIL.compose = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  const verstuur = document.querySelector('[data-msmail-verstuur]');
+  if(verstuur) verstuur.addEventListener('click', ()=>msmailVerstuur());
 }
 function notionHTML(){
   return `
@@ -7816,6 +8026,7 @@ function attachHandlers(){
   archiefBindHandlers();
   kennisbankBindHandlers();
   msteamsBindHandlers();
+  msmailBindHandlers();
 }
 
 function handleCSVUpload(e){
