@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.5';
+const APP_VERSION = '2026.08.17.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5069,7 +5069,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const ster = notitieDezeMaand ? `<span title="Notitie voor ${maandLabelVanKey(bekeken)}" style='margin-right:4px;'>⭐</span>` : (anderMaandNotities ? `<span title="Notitie klaargezet voor een andere maand" style='margin-right:4px; opacity:.45;'>⭐</span>` : '');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:var(--bg);':''}">
       <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
-      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}${k.extId?' · Nr. '+k.extId:''}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
@@ -5090,7 +5090,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const afgerondDatum = snap.afgerondOp ? new Date(snap.afgerondOp).toLocaleDateString('nl-NL',{day:'numeric', month:'short'}) : '';
     return `<tr style="opacity:.75;">
       <td style="color:var(--muted);">${open.length + i + 1}</td>
-      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}${k.extId?' · Nr. '+k.extId:''}</div></td>
       ${taakCellen}
       <td colspan="2">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
