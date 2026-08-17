@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.3';
+const APP_VERSION = '2026.08.17.4';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -4355,44 +4355,16 @@ function dashboardHTML(){
     </div>
   </div>
 
-  <div class="kpi-grid dash-tegels" style="margin-bottom:14px;">
-    <div class="kpi-card red" data-dash-tegel="urgent" style="cursor:pointer; ${STATE.dashActieTegel==='urgent' ? 'box-shadow:0 0 0 2px var(--red);' : ''}">
-      <div style="display:flex; align-items:center; justify-content:space-between;">
-        <div class="kpi-label">Urgente acties</div>
-        <i class="ti ti-alert-triangle" style="font-size:16px; color:var(--red);" aria-hidden="true"></i>
-      </div>
-      <div class="kpi-value">${urgent.length}</div>
-      <div class="kpi-sub" style="color:var(--muted)">${urgent.length ? urgent[0].klant.naam + (urgent.length>1 ? ` · +${urgent.length-1}` : '') : 'Alles op schema'}</div>
-    </div>
-    <div class="kpi-card amber" data-dash-tegel="herinnering" style="cursor:pointer; ${STATE.dashActieTegel==='herinnering' ? 'box-shadow:0 0 0 2px var(--amber);' : ''}">
-      <div style="display:flex; align-items:center; justify-content:space-between;">
-        <div class="kpi-label">Herinneringen</div>
-        <i class="ti ti-flag" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
-      </div>
-      <div class="kpi-value">${flagged.length}</div>
-      <div class="kpi-sub" style="color:var(--muted)">Openstaande transacties</div>
-    </div>
-    <div class="kpi-card blue" data-dash-tegel="distributie" style="cursor:pointer; ${STATE.dashActieTegel==='distributie' ? 'box-shadow:0 0 0 2px var(--primary);' : ''}">
-      <div style="display:flex; align-items:center; justify-content:space-between;">
-        <div class="kpi-label">Per deadlinecategorie</div>
-        <i class="ti ti-chart-bar" style="font-size:16px; color:var(--primary);" aria-hidden="true"></i>
-      </div>
-      <div class="kpi-value">${rows.length}</div>
-      <div class="kpi-sub" style="color:var(--muted)">OB, VPB, LH, JR, overige</div>
-    </div>
-    <div class="kpi-card amber" data-dash-tegel="aanleverpunt" style="cursor:pointer; ${STATE.dashActieTegel==='aanleverpunt' ? 'box-shadow:0 0 0 2px var(--amber);' : ''}">
-      <div style="display:flex; align-items:center; justify-content:space-between;">
-        <div class="kpi-label">Aanlevering & saldo</div>
-        <i class="ti ti-building-bank" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
-      </div>
-      <div class="kpi-value">${remindDue.length}</div>
-      <div class="kpi-sub" style="color:var(--muted)">${fmtEUR(klantenGefilterd.reduce((s,k)=>s+STORE[k.id].saldo,0))} open</div>
+  <div class="section" style="margin-bottom:0; border-radius:var(--radius) var(--radius) 0 0; padding:0 8px;">
+    <div style="display:flex; gap:2px; flex-wrap:wrap;">
+      <div data-dash-tegel="urgent" style="padding:12px 14px; font-size:12.5px; font-weight:500; cursor:pointer; color:${STATE.dashActieTegel==='urgent'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.dashActieTegel==='urgent'?'var(--text)':'transparent'};">Urgente acties ${urgent.length ? `<span style=\"color:var(--red);\">${urgent.length}</span>` : ''}</div>
+      <div data-dash-tegel="herinnering" style="padding:12px 14px; font-size:12.5px; font-weight:500; cursor:pointer; color:${STATE.dashActieTegel==='herinnering'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.dashActieTegel==='herinnering'?'var(--text)':'transparent'};">Herinneringen ${flagged.length ? `<span style=\"color:var(--amber);\">${flagged.length}</span>` : ''}</div>
+      <div data-dash-tegel="distributie" style="padding:12px 14px; font-size:12.5px; font-weight:500; cursor:pointer; color:${STATE.dashActieTegel==='distributie'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.dashActieTegel==='distributie'?'var(--text)':'transparent'};">Per deadlinecategorie</div>
+      <div data-dash-tegel="aanleverpunt" style="padding:12px 14px; font-size:12.5px; font-weight:500; cursor:pointer; color:${STATE.dashActieTegel==='aanleverpunt'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.dashActieTegel==='aanleverpunt'?'var(--text)':'transparent'};">Aanlevering & saldo ${remindDue.length ? `<span style=\"color:var(--amber);\">${remindDue.length}</span>` : ''}</div>
     </div>
   </div>
 
-  ${kpiOverzichtHTML()}
-
-  <div class="section">
+  <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none; margin-bottom:18px;">
     ${STATE.dashActieTegel==='urgent' ? `
     <div class="section-head"><h3>Urgente acties</h3><span class="hint">Gesorteerd op resterende tijd</span></div>
     <div class="section-body">
@@ -4439,6 +4411,8 @@ function dashboardHTML(){
       </tbody></table>` : `<div class="empty-state">Niets openstaand.</div>`}
     </div>` : ''}
   </div>
+
+  ${kpiOverzichtHTML()}
   `;
 }
 /* ============================= VIEW: BOEKHOUDERS ============================= */
