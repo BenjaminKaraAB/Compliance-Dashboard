@@ -498,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.1';
+const APP_VERSION = '2026.08.17.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2641,6 +2641,13 @@ function kennisbankHTML(){
         <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">Inhoud (stappenplan/uitleg — gewone tekst, regels blijven behouden)</div>
         <textarea id="kbArtikelInhoud" rows="10" placeholder="1. Eerste stap...&#10;2. Tweede stap..." style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; resize:vertical;">${(bestaand?bestaand.inhoud:'').replace(/</g,'&lt;')}</textarea>
       </div>
+      <div style="margin-bottom:12px; background:var(--bg); border-radius:8px; padding:10px 12px;">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px;"><i class="ti ti-video" aria-hidden="true"></i> Video invoegen — plak een videolink (SharePoint/Stream voor interne video's, of YouTube). De video verschijnt in het artikel op de plek van de cursor.</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="kbVideoUrl" placeholder="https://administratiebox.sharepoint.com/... of https://youtu.be/..." style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <button class="btn sm" data-kb-video-insert type="button"><i class="ti ti-video-plus" aria-hidden="true"></i> Video invoegen</button>
+        </div>
+      </div>
       <div style="display:flex; gap:8px;">
         <button class="btn sm primary" data-kb-artikel-opslaan="${f.id||''}">Opslaan</button>
         <button class="btn sm ghost" data-kb-artikel-annuleer>Annuleren</button>
@@ -2701,6 +2708,36 @@ function kennisbankHTML(){
   ${groepenHtml}
   ${algemeenHtml}`;
 }
+/* Zet artikel-inhoud om naar HTML: gewone tekst blijft geescapete tekst (pre-wrap), en
+   [video]https://...[/video]-blokken worden afspeelbare spelers. Ondersteund: YouTube en
+   Vimeo (embed-iframe), directe videobestanden (.mp4/.webm/.mov), en SharePoint/Stream-links
+   (iframe + altijd een "Open video"-knop als vangnet, want SharePoint embed vereist dat je in
+   dezelfde browser bij Microsoft bent ingelogd). */
+function kbVideoEmbedHTML(rawUrl){
+  const url = String(rawUrl||'').trim();
+  if(!/^https?:\/\//i.test(url)) return '';
+  const esc = url.replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const wrap = (inner)=>`<div style="margin:10px 0;">${inner}</div>`;
+  const openKnop = `<div style="margin-top:6px;"><a class="btn sm" href="${esc}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open video in nieuw tabblad</a></div>`;
+  let m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{6,20})/);
+  if(m) return wrap(`<iframe src="https://www.youtube.com/embed/${m[1]}" style="width:100%; aspect-ratio:16/9; border:none; border-radius:10px;" allowfullscreen loading="lazy"></iframe>`);
+  m = url.match(/vimeo\.com\/(\d+)/);
+  if(m) return wrap(`<iframe src="https://player.vimeo.com/video/${m[1]}" style="width:100%; aspect-ratio:16/9; border:none; border-radius:10px;" allowfullscreen loading="lazy"></iframe>`);
+  if(/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)) return wrap(`<video controls preload="metadata" src="${esc}" style="width:100%; max-height:420px; border-radius:10px; background:#000;"></video>`);
+  if(/sharepoint\.com|microsoftstream\.com|onedrive/i.test(url)){
+    return wrap(`<iframe src="${esc}" style="width:100%; aspect-ratio:16/9; border:1px solid var(--border); border-radius:10px;" allowfullscreen loading="lazy"></iframe>${openKnop}`);
+  }
+  return wrap(openKnop);
+}
+function kbRenderInhoud(inhoud){
+  const tekst = String(inhoud||'');
+  if(!tekst.trim()) return '(geen inhoud)';
+  const delen = tekst.split(/\[video\]([\s\S]*?)\[\/video\]/gi);
+  return delen.map((deel, i)=>{
+    if(i % 2 === 1) return kbVideoEmbedHTML(deel);
+    return deel.replace(/</g,'&lt;');
+  }).join('');
+}
 function kbArtikelRijHTML(a, admin){
   const open = STATE.kbOpenArtikel === a.id;
   return `<div ${admin?`draggable="true" data-kb-drag="${a.id}"`:''} style="border-bottom:1px solid var(--border);">
@@ -2713,7 +2750,7 @@ function kbArtikelRijHTML(a, admin){
         <span data-kb-artikel-verwijder="${a.id}" class="btn sm ghost" style="padding:3px 8px; color:var(--red);" title="Verwijderen"><i class="ti ti-trash" aria-hidden="true"></i></span>
       </span>` : ''}
     </button>
-    ${open ? `<div style="padding:0 18px 16px 43px; font-size:13px; line-height:1.7; white-space:pre-wrap; word-break:break-word; color:var(--text2);">${String(a.inhoud||'(geen inhoud)').replace(/</g,'&lt;')}</div>` : ''}
+    ${open ? `<div style="padding:0 18px 16px 43px; font-size:13px; line-height:1.7; white-space:pre-wrap; word-break:break-word; color:var(--text2);">${kbRenderInhoud(a.inhoud)}</div>` : ''}
   </div>`;
 }
 function kennisbankBindHandlers(){
@@ -2807,6 +2844,21 @@ function kennisbankBindHandlers(){
   document.querySelectorAll('[data-kb-artikel-annuleer]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.kbArtikelForm = null;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kb-video-insert]').forEach(el=>el.addEventListener('click', ()=>{
+    const urlInput = document.getElementById('kbVideoUrl');
+    const inhoud = document.getElementById('kbArtikelInhoud');
+    const url = urlInput ? urlInput.value.trim() : '';
+    if(!url){ toast('Plak eerst een videolink.'); return; }
+    if(!/^https?:\/\//i.test(url)){ toast('Dat lijkt geen geldige link (moet met https:// beginnen).'); return; }
+    if(inhoud){
+      const blok = `[video]${url}[/video]`;
+      const pos = typeof inhoud.selectionStart === 'number' ? inhoud.selectionStart : inhoud.value.length;
+      const voor = inhoud.value.slice(0, pos), na = inhoud.value.slice(pos);
+      inhoud.value = voor + (voor && !voor.endsWith('\n') ? '\n' : '') + blok + (na && !na.startsWith('\n') ? '\n' : '') + na;
+    }
+    if(urlInput) urlInput.value = '';
+    toast('Video ingevoegd — sla het artikel op om \'m te bewaren.');
   }));
   document.querySelectorAll('[data-kb-artikel-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
     const id = el.getAttribute('data-kb-artikel-opslaan') || null;
