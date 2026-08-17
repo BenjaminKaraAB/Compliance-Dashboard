@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.12';
+const APP_VERSION = '2026.08.17.13';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5641,7 +5641,40 @@ function bijtellingBeheerHTML(){
    en viewHTML() valt terug op het dashboard als iemand zonder adminrechten hier toch op STATE.view
    uitkomt (bijv. een verouderde localStorage-waarde). De data zelf wordt wél gewoon gesynchroniseerd
    (samen met de rest van de meta-data) zodat alle beheerders hetzelfde overzicht zien. */
+/* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
+   Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
+   localStorage (hoeft niet mee in de gedeelde sync). */
+const ADMIN_SECTIES = ['bevoegdheid','documenten','logboek','inventaris'];
+function adminPaneelPrefs(){
+  let p = {};
+  try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
+  const volgorde = Array.isArray(p.volgorde) ? p.volgorde.filter(k=>ADMIN_SECTIES.includes(k)) : [];
+  ADMIN_SECTIES.forEach(k=>{ if(!volgorde.includes(k)) volgorde.push(k); });
+  const open = (p.open && typeof p.open==='object') ? p.open : {};
+  return { volgorde, open };
+}
+function adminPaneelOpslaan(p){ try{ localStorage.setItem('cd_admin_paneel', JSON.stringify(p)); }catch(e){} }
 function adminHTML(){
+  const prefs = adminPaneelPrefs();
+  const volgorde = prefs.volgorde;
+  const isOpen = (key)=> prefs.open[key] !== false; // standaard open
+
+  const kop = (key, titel, extra)=>{
+    const idx = volgorde.indexOf(key);
+    return `<div class="section-head" data-admin-sectie-toggle="${key}" style="cursor:pointer; user-select:none;">
+      <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+        <span style="font-size:14px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${isOpen(key)?'0':'-90'}deg);">▾</span>
+        <h3 style="margin:0;">${titel}</h3>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;" data-geen-toggle>
+        ${extra||''}
+        <button class="btn sm ghost" data-admin-sectie-omhoog="${key}" title="Sectie omhoog" ${idx===0?'disabled style="opacity:.35;"':''}>↑</button>
+        <button class="btn sm ghost" data-admin-sectie-omlaag="${key}" title="Sectie omlaag" ${idx===volgorde.length-1?'disabled style="opacity:.35;"':''}>↓</button>
+      </div>
+    </div>`;
+  };
+  const marge = (key)=> volgorde.indexOf(key)===0 ? '' : ' style="margin-top:14px;"';
+
   const filter = STATE.inventarisFilter || 'in_bezit';
   const items = INVENTARIS_ITEMS.filter(it=> filter==='alles' ? true : !it.teruggegeven);
   const groepen = new Map();
@@ -5657,14 +5690,11 @@ function adminHTML(){
   const bhOptionsVoor = (geselecteerdId)=> BOEKHOUDERS.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl')).map(b=>`<option value="${b.id}" ${geselecteerdId===b.id?'selected':''}>${b.naam}</option>`).join('');
   const totaalInBezit = INVENTARIS_ITEMS.filter(it=>!it.teruggegeven).length;
 
-  return `
-  <div class="banner"><i class="ti ti-lock" aria-hidden="true"></i> Deze pagina is alleen zichtbaar voor beheerders — collega's zien dit nav-item niet en kunnen deze pagina niet openen.</div>
-
-  <div class="section">
-    <div class="section-head">
-      <h3>Bevoegdheid Loonheffingen</h3>
-    </div>
-    <div class="section-body pad">
+  const blokken = {
+    bevoegdheid: ()=>`
+  <div class="section"${marge('bevoegdheid')}>
+    ${kop('bevoegdheid','Bevoegdheid Loonheffingen')}
+    ${isOpen('bevoegdheid') ? `<div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
       ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
@@ -5675,14 +5705,13 @@ function adminHTML(){
       <div style="margin-top:10px;">
         <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
       </div>
-    </div>
-  </div>
+    </div>` : ''}
+  </div>`,
 
-  <div class="section" style="margin-top:14px;">
-    <div class="section-head">
-      <h3>Documenten &amp; automatiseringen</h3>
-    </div>
-    <div class="section-body pad">
+    documenten: ()=>`
+  <div class="section"${marge('documenten')}>
+    ${kop('documenten','Documenten &amp; automatiseringen')}
+    ${isOpen('documenten') ? `<div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Automatisch versturen van klant-documenten (bijv. de akkoordverklaring aangifte IB, zie "Documenten" op de klantkaart) staat hier standaard op hold. Zet dit pas aan zodra je klaar bent om dit systeem echt te gebruiken — zolang dit uitstaat kan er niemand per ongeluk een e-mail naar een klant sturen; voorbeeld/download blijft altijd gewoon werken.</p>
       <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
         <input type="checkbox" id="akkoordActiefToggle" ${RECHTEN.documentenVersturenActief?'checked':''}>
@@ -5691,26 +5720,25 @@ function adminHTML(){
       <div style="margin-top:10px;">
         <button class="btn sm primary" data-save-documenten-instellingen>Opslaan</button>
       </div>
-    </div>
-  </div>
+    </div>` : ''}
+  </div>`,
 
-  <div style="margin-top:14px;">${activiteitenlogboekHTML()}</div>
+    logboek: ()=>`
+  <div class="section"${marge('logboek')}>
+    ${kop('logboek','Activiteitenlogboek', `<span class="hint">${ACTIVITEITENLOG.length} gebeurtenis(sen)</span>${ACTIVITEITENLOG.length ? `<button class="btn sm ghost" data-clear-log title="Logboek wissen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Wissen</button>` : ''}`)}
+    ${isOpen('logboek') ? activiteitenlogboekBodyHTML() : ''}
+  </div>`,
 
-  <div class="section" style="margin-top:14px;">
-    <div class="section-head">
-      <h3>Inventarisatie</h3>
-      <div style="display:flex; gap:8px; align-items:center;">
+    inventaris: ()=>`
+  <div class="section"${marge('inventaris')}>
+    ${kop('inventaris','Inventarisatie', `<span class="hint">${totaalInBezit} in bezit</span>
         <select id="inventarisFilterSelect" data-inventaris-filter style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
           <option value="in_bezit" ${filter==='in_bezit'?'selected':''}>Alleen in bezit</option>
           <option value="alles" ${filter==='alles'?'selected':''}>Inclusief teruggegeven</option>
         </select>
-        <button class="btn sm primary" data-add-inventaris-btn>+ Item toevoegen</button>
-      </div>
-    </div>
-    <div class="section-body pad">
-      <span class="hint">${totaalInBezit} item(s) momenteel in bezit bij collega's</span>
-    </div>
+        <button class="btn sm primary" data-add-inventaris-btn>+ Item toevoegen</button>`)}
   </div>
+  ${isOpen('inventaris') ? `
   ${STATE.showAddInventaris ? (()=>{
     const editing = STATE.editInventaris ? INVENTARIS_ITEMS.find(i=>i.id===STATE.editInventaris) : null;
     const v = (field)=> editing ? (editing[field]||'') : '';
@@ -5749,7 +5777,12 @@ function adminHTML(){
         </tr>`).join('')}
       </tbody></table>
     </div>
-  </div>`).join('') : `<div class="section" style="margin-top:14px;"><div class="empty-state">${filter==='in_bezit' ? 'Niets dat momenteel als "in bezit" geregistreerd staat.' : 'Nog geen items toegevoegd.'}</div></div>`}
+  </div>`).join('') : `<div class="section" style="margin-top:14px;"><div class="empty-state">${filter==='in_bezit' ? 'Niets dat momenteel als "in bezit" geregistreerd staat.' : 'Nog geen items toegevoegd.'}</div></div>`}` : ''}`,
+  };
+
+  return `
+  <div class="banner"><i class="ti ti-lock" aria-hidden="true"></i> Deze pagina is alleen zichtbaar voor beheerders — collega's zien dit nav-item niet en kunnen deze pagina niet openen.</div>
+  ${volgorde.map(k=>blokken[k]()).join('')}
   `;
 }
 /* RDW-koppeling: haalt actuele voertuiggegevens op bij de open data van de RDW
@@ -6155,18 +6188,10 @@ async function handleAutoImport(e){
 }
 
 /* ============================= VIEW: INSTELLINGEN (CLOUD SYNC) ============================= */
-function activiteitenlogboekHTML(){
+function activiteitenlogboekBodyHTML(){
   const limiet = STATE.logboekLimiet || 50;
   const items = ACTIVITEITENLOG.slice(0, limiet);
   return `
-  <div class="section">
-    <div class="section-head">
-      <h3>Activiteitenlogboek</h3>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <span class="hint">Alleen zichtbaar voor beheerders · ${ACTIVITEITENLOG.length} gebeurtenis(sen)</span>
-        ${ACTIVITEITENLOG.length ? `<button class="btn sm ghost" data-clear-log title="Logboek wissen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i> Wissen</button>` : ''}
-      </div>
-    </div>
     <div class="section-body">
       ${items.length ? `<table>
         <thead><tr><th>Tijdstip</th><th>Door</th><th>Actie</th></tr></thead>
@@ -6180,8 +6205,7 @@ function activiteitenlogboekHTML(){
       </table>
       ${ACTIVITEITENLOG.length > items.length ? `<div style="padding:12px 20px;"><button class="btn sm ghost" data-log-meer-tonen>Meer tonen (nog ${ACTIVITEITENLOG.length - items.length})</button></div>` : ''}
       ` : `<div class="empty-state">Nog geen activiteit gelogd.</div>`}
-    </div>
-  </div>`;
+    </div>`;
 }
 function instellingenHTML(){
   const runningLocally = window.location.protocol === 'file:';
@@ -6206,7 +6230,9 @@ function instellingenHTML(){
       <div class="field-row"><label>Tenant ID</label><input type="text" id="syncTenantId" value="${SYNC.tenantId||''}" placeholder="optioneel — leeg = elk werk-/schoolaccount"></div>
       <div class="field-row"><label>SharePoint site-adres</label><input type="text" id="syncSiteUrl" value="${SYNC.siteUrl||''}" placeholder="https://jullietenant.sharepoint.com/sites/Compliance-Dashboard"></div>
       <div class="field-row"><label>Lijstnaam</label><input type="text" id="syncListName" value="${SYNC.listName||'ComplianceDashboardData'}"></div>
-      <div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(RECHTEN.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>
+      ${isAdmin() || !(RECHTEN.adminEmails||[]).length
+        ? `<div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(RECHTEN.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>`
+        : `<div class="field-row"><label>Beheerders</label><span class="hint" style="align-self:center;">${(RECHTEN.adminEmails||[]).length} beheerder(s) ingesteld — alleen een beheerder kan dit wijzigen</span></div>`}
       <div class="field-row"><label>Synchronisatie</label>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;"><input type="checkbox" id="syncEnabled" ${SYNC.enabled?'checked':''}> Inschakelen</label>
       </div>
@@ -8195,6 +8221,25 @@ function attachHandlers(){
     toast(`"${klant.naam}" gemarkeerd als gecontroleerd.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-admin-sectie-toggle]').forEach(el=>el.addEventListener('click',(e)=>{
+    if(e && e.target && e.target.closest && e.target.closest('[data-geen-toggle]')) return;
+    const key = el.getAttribute('data-admin-sectie-toggle');
+    const p = adminPaneelPrefs();
+    p.open[key] = !(p.open[key] !== false);
+    adminPaneelOpslaan(p);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  const adminSectieVerplaats = (key, richting)=>{
+    const p = adminPaneelPrefs();
+    const i = p.volgorde.indexOf(key);
+    const j = i + richting;
+    if(i < 0 || j < 0 || j >= p.volgorde.length) return;
+    [p.volgorde[i], p.volgorde[j]] = [p.volgorde[j], p.volgorde[i]];
+    adminPaneelOpslaan(p);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  };
+  document.querySelectorAll('[data-admin-sectie-omhoog]').forEach(el=>el.addEventListener('click',()=>adminSectieVerplaats(el.getAttribute('data-admin-sectie-omhoog'),-1)));
+  document.querySelectorAll('[data-admin-sectie-omlaag]').forEach(el=>el.addEventListener('click',()=>adminSectieVerplaats(el.getAttribute('data-admin-sectie-omlaag'),1)));
   document.querySelectorAll('[data-inventaris-filter]').forEach(el=>el.addEventListener('change', ()=>{
     STATE.inventarisFilter = el.value;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -8630,9 +8675,16 @@ function attachHandlers(){
       siteId:null, listId:null, // opnieuw opzoeken na wijziging van site/lijst
     });
     // Beheerders staat in de GEDEELDE data (RECHTEN), niet in de lokale SYNC-instellingen, zodat de lijst
-    // ook bij collega's doorkomt zodra zij synchroniseren.
-    RECHTEN.adminEmails = document.getElementById('syncAdminEmails').value.split(',').map(s=>s.trim()).filter(Boolean);
-    logActiviteit('Lijst met beheerders gewijzigd');
+    // ook bij collega's doorkomt zodra zij synchroniseren. Alleen een bestaande beheerder mag de lijst
+    // wijzigen (of iedereen, als de lijst leeg is — anders kan niemand zichzelf ooit instellen).
+    const adminVeld = document.getElementById('syncAdminEmails');
+    if(adminVeld && (isAdmin() || !(RECHTEN.adminEmails||[]).length)){
+      const nieuweLijst = adminVeld.value.split(',').map(s=>s.trim()).filter(Boolean);
+      if(JSON.stringify(nieuweLijst) !== JSON.stringify(RECHTEN.adminEmails||[])){
+        RECHTEN.adminEmails = nieuweLijst;
+        logActiviteit('Lijst met beheerders gewijzigd');
+      }
+    }
     persistMeta();
     msalInstance = null; msalInitPromise = null; // opnieuw initialiseren met (mogelijk) nieuwe App ID/Tenant ID
     toast('Instellingen opgeslagen.');
