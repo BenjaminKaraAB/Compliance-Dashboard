@@ -498,7 +498,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.14.8';
+const APP_VERSION = '2026.08.17.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1223,7 +1223,7 @@ let msalInitPromise = null;
 /* 'Mail.Send' is nodig voor het automatisch versturen van documenten (bijv. de akkoordverklaring
    aangifte IB) rechtstreeks vanuit het ingelogde Microsoft-account via Graph — dit vraagt bij de
    eerstvolgende keer inloggen (of opnieuw inloggen) om een extra toestemming van de gebruiker. */
-const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite', 'Mail.ReadWrite'];
+const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite', 'Mail.ReadWrite', 'Files.ReadWrite'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
@@ -2081,6 +2081,9 @@ function viewHTML(){
    nodig). De drive + hoofdmap worden eenmalig via Graph opgezocht en daarna gecachet. */
 const ARCHIEF_HOOFDMAP = 'AB- ZAKELIJKE KLANTEN';
 const ARCHIEF = {
+  doel: 'klanten', // 'klanten' (gedeeld archief) of 'prive' (eigen OneDrive)
+  priveDriveId: null, priveRootId: null, priveSubmappen: {},
+  privePad: (function(){ try{ return JSON.parse(localStorage.getItem('cd_archief_prive')||'[]'); }catch(e){ return []; } })(),
   cfg: (function(){ try{ return JSON.parse(localStorage.getItem('cd_archief_cfg')||'null'); }catch(e){ return null; } })(),
   klantmappen: null,      // [{id, naam, nummer}]
   submappen: {},          // klantmapId -> [{id, naam}]
@@ -2196,9 +2199,36 @@ function archiefMapSelectsHTML(item, idx){
   }
   return blokken.join('');
 }
+/* Privé-stand: uploads naar de eigen OneDrive van de ingelogde gebruiker (het "huisje" met je
+   naam in Finder). Volledig gescheiden van het klantenarchief — collega's kunnen er niet bij. */
+async function archiefPriveInit(allowInteractive){
+  if(ARCHIEF.priveDriveId && ARCHIEF.priveRootId) return;
+  const root = await graphFetch('https://graph.microsoft.com/v1.0/me/drive/root?$select=id,parentReference', {}, allowInteractive);
+  ARCHIEF.priveRootId = root.id;
+  ARCHIEF.priveDriveId = root.parentReference && root.parentReference.driveId;
+  if(!ARCHIEF.priveDriveId){
+    const drive = await graphFetch('https://graph.microsoft.com/v1.0/me/drive?$select=id', {}, false);
+    ARCHIEF.priveDriveId = drive.id;
+  }
+}
+async function archiefPriveLaadSubmappen(parentId){
+  if(ARCHIEF.priveSubmappen[parentId]) return ARCHIEF.priveSubmappen[parentId];
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/drive/items/${parentId}/children?$top=200&$select=id,name,folder`, {}, false);
+  const subs = (res.value||[]).filter(it=>it.folder).map(it=>({id:it.id, naam:it.name}));
+  subs.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  ARCHIEF.priveSubmappen[parentId] = subs;
+  return subs;
+}
+function archiefPriveDoelId(){
+  return ARCHIEF.privePad.length ? ARCHIEF.privePad[ARCHIEF.privePad.length-1].id : ARCHIEF.priveRootId;
+}
+function archiefPrivePadNamen(){
+  return ['Mijn OneDrive'].concat(ARCHIEF.privePad.map(p=>p.naam));
+}
 async function archiefUploadBestand(item){
-  const cfg = ARCHIEF.cfg;
-  const parentId = archiefDoelmapId(item);
+  const prive = item.doel === 'prive';
+  const cfg = prive ? { driveId: ARCHIEF.priveDriveId } : ARCHIEF.cfg;
+  const parentId = prive ? archiefPriveDoelId() : archiefDoelmapId(item);
   const bestandsnaam = item.file.name.replace(/[\\/:*?"<>|#%]/g,'_');
   const token = await getGraphToken(true);
   if(item.file.size < 3800000){
@@ -2237,6 +2267,65 @@ function archiefStatusTekst(item){
   if(item.status==='fout') return 'Mislukt: ' + (item.fout||'onbekende fout');
   return '';
 }
+function archiefDoelSchakelaarHTML(){
+  const knop = (doel, label, icoon)=>`<button data-archief-doel="${doel}" style="padding:7px 16px; border-radius:8px; font-size:12px; border:none; cursor:pointer; font-weight:${ARCHIEF.doel===doel?'700':'400'}; background:${ARCHIEF.doel===doel?'var(--card)':'transparent'}; color:var(--text); ${ARCHIEF.doel===doel?'box-shadow:0 1px 3px rgba(15,23,42,.12);':''}"><i class="ti ${icoon}" aria-hidden="true"></i> ${label}</button>`;
+  return `<div style="display:inline-flex; background:var(--bg); border-radius:10px; padding:3px; margin-bottom:14px;">
+    ${knop('klanten','Klantenarchief','ti-building')}
+    ${knop('prive','Mijn OneDrive','ti-lock')}
+  </div>`;
+}
+function archiefPriveHTML(){
+  if(!ARCHIEF.priveRootId){
+    return `${archiefDoelSchakelaarHTML()}
+    <div class="section"><div class="section-body pad" style="padding:22px; text-align:center;">
+      ${ARCHIEF.laden
+        ? '<i class="ti ti-loader-2" style="font-size:24px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Jouw OneDrive verbinden…</div>'
+        : `<i class="ti ti-lock" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Verbind eenmalig met je eigen OneDrive (het mapje met jouw naam). ${ARCHIEF.fout?'<br><span style="color:var(--red);">'+String(ARCHIEF.fout).replace(/</g,'&lt;')+'</span>':''}</div><button class="btn primary" data-archief-prive-verbind style="margin-top:12px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met mijn OneDrive</button>`}
+    </div></div>`;
+  }
+  // Cascade-mapkeuze door de eigen OneDrive
+  const blokken = [];
+  let parentId = ARCHIEF.priveRootId;
+  for(let level=0; ; level++){
+    const subs = ARCHIEF.priveSubmappen[parentId];
+    if(!subs || !subs.length) break;
+    const gekozenId = (ARCHIEF.privePad[level]||{}).id || '';
+    const opties = subs.map(sm=>`<option value="${sm.id}" ${gekozenId===sm.id?'selected':''}>${sm.naam.replace(/</g,'&lt;')}</option>`).join('');
+    blokken.push(`<select data-archief-prive-map="${level}" style="flex:1; min-width:140px; padding:8px 10px; border:1px solid ${gekozenId?'var(--primary)':'var(--border)'}; border-radius:8px; font-size:12.5px; ${gekozenId?'background:var(--primary-bg);':''}">
+      <option value="">(hier plaatsen)</option>${opties}
+    </select>`);
+    if(!gekozenId) break;
+    parentId = gekozenId;
+  }
+  const rijen = ARCHIEF.wachtrij.filter(it=>it.doel==='prive').map((item)=>{
+    const idx = ARCHIEF.wachtrij.indexOf(item);
+    const grootte = item.file.size<1024*1024 ? (item.file.size/1024).toFixed(0)+' KB' : (item.file.size/1024/1024).toFixed(1)+' MB';
+    return `<div class="section" style="margin-bottom:12px;"><div class="section-body pad" style="padding:14px 18px; display:flex; align-items:center; gap:10px;">
+      <i class="ti ti-file" style="font-size:20px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:12.5px; word-break:break-all;">${item.file.name.replace(/</g,'&lt;')}</div>
+        <div style="font-size:11px; color:var(--muted2);">${grootte} · naar jouw OneDrive${item.status==='fout'?` · <span style="color:var(--red);">${String(item.fout||'').replace(/</g,'&lt;')}</span>`:''}</div>
+      </div>
+      ${item.status==='klaar'
+        ? '<i class="ti ti-circle-check" style="font-size:20px; color:var(--primary-dark);" aria-hidden="true"></i>'
+        : `<button class="btn sm primary" data-archief-upload="${idx}" ${item.status==='bezig'?'disabled':''}>${item.status==='bezig'?'Bezig…':'Uploaden'}</button>
+           <button class="btn sm ghost" data-archief-verwijder="${idx}" title="Uit wachtrij halen"><i class="ti ti-x" aria-hidden="true"></i></button>`}
+    </div></div>`;
+  }).join('');
+  return `${archiefDoelSchakelaarHTML()}
+  <div id="archiefDropzone" style="border:2px dashed var(--primary); background:var(--primary-bg); border-radius:14px; padding:38px 24px; text-align:center; cursor:pointer; margin-bottom:16px; transition:filter .12s;">
+    <i class="ti ti-cloud-upload" style="font-size:30px; color:var(--primary-dark);" aria-hidden="true"></i>
+    <div style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-top:8px;">Sleep bestanden hierheen</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">ze gaan naar jouw eigen OneDrive — niemand anders ziet ze</div>
+    <input type="file" id="archiefFileInput" multiple style="display:none;">
+  </div>
+  <div class="section" style="margin-bottom:16px;"><div class="section-body pad" style="padding:14px 18px;">
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">Doelmap in jouw OneDrive</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">${blokken.join('') || '<span style="font-size:12px; color:var(--muted2);">Geen submappen — bestanden komen in de hoofdmap.</span>'}</div>
+    <div style="font-size:11px; color:var(--muted2); margin-top:8px;">Wordt geplaatst in: <b>${archiefPrivePadNamen().map(n=>String(n).replace(/</g,'&lt;')).join(' › ')}</b> · laatst gebruikte map wordt onthouden</div>
+  </div></div>
+  ${rijen}`;
+}
 function archiefHTML(){
   if(!SYNC.account){
     return `<div class="section"><div class="empty-state">
@@ -2244,8 +2333,9 @@ function archiefHTML(){
       Log eerst in met Microsoft bij <b>Instellingen</b> om bestanden te kunnen archiveren in SharePoint.
     </div></div>`;
   }
+  if(ARCHIEF.doel === 'prive') return archiefPriveHTML();
   if(ARCHIEF.fout){
-    return `<div class="section"><div class="empty-state">
+    return `${archiefDoelSchakelaarHTML()}<div class="section"><div class="empty-state">
       <i class="ti ti-alert-triangle" style="font-size:26px; display:block; margin-bottom:10px; color:var(--amber);" aria-hidden="true"></i>
       ${String(ARCHIEF.fout).replace(/</g,'&lt;')}
       <div style="margin-top:14px;"><button class="btn sm" data-archief-retry>Opnieuw proberen</button></div>
@@ -2294,6 +2384,7 @@ function archiefHTML(){
     </div>`).join('')}
   </div></div>` : '';
   return `
+  ${archiefDoelSchakelaarHTML()}
   <div class="banner"><i class="ti ti-folder-check" aria-hidden="true"></i> Verbonden met <b>${(ARCHIEF.cfg&&ARCHIEF.cfg.siteNaam||'SharePoint').replace(/</g,'&lt;')}</b> → ${ARCHIEF_HOOFDMAP} · ${ARCHIEF.klantmappen.length} klantmappen. Herkenning gaat op klantnummer in de bestandsnaam; map staat standaard op ${jaarNu}.</div>
   <div id="archiefDropzone" style="border:2px dashed var(--primary); background:var(--primary-bg); border-radius:14px; padding:38px 24px; text-align:center; cursor:pointer; margin-bottom:16px; transition:filter .12s;">
     <i class="ti ti-cloud-upload" style="font-size:30px; color:var(--primary-dark);" aria-hidden="true"></i>
@@ -2317,6 +2408,13 @@ async function archiefInit(){
 }
 async function archiefVoegBestandenToe(fileList){
   const jaarNu = String(TODAY.getFullYear());
+  if(ARCHIEF.doel === 'prive'){
+    for(const file of Array.from(fileList)){
+      ARCHIEF.wachtrij.push({ file, doel:'prive', klantmapId:null, pad:[], status:'wachten', fout:null, geraden:false });
+    }
+    if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+    return;
+  }
   for(const file of Array.from(fileList)){
     const geraden = archiefRaadKlantmap(file.name);
     const item = { file, klantmapId: geraden?geraden.id:null, pad: [], status:'wachten', fout:null, geraden: !!geraden };
@@ -2334,9 +2432,58 @@ async function archiefVoegBestandenToe(fileList){
   }
   if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
 }
+async function archiefPriveInitFlow(allowInteractive){
+  if(ARCHIEF.laden) return;
+  ARCHIEF.laden = true; ARCHIEF.fout = null;
+  try{
+    await archiefPriveInit(allowInteractive);
+    await archiefPriveLaadSubmappen(ARCHIEF.priveRootId);
+    // Onthouden pad valideren en de kinderen van elk niveau alvast laden
+    let parentId = ARCHIEF.priveRootId;
+    const geldigPad = [];
+    for(const stap of ARCHIEF.privePad){
+      const subs = ARCHIEF.priveSubmappen[parentId] || await archiefPriveLaadSubmappen(parentId);
+      const gevonden = subs.find(sm=>sm.id===stap.id || sm.naam===stap.naam);
+      if(!gevonden) break;
+      geldigPad.push({id:gevonden.id, naam:gevonden.naam});
+      await archiefPriveLaadSubmappen(gevonden.id).catch(()=>{});
+      parentId = gevonden.id;
+    }
+    ARCHIEF.privePad = geldigPad;
+    try{ localStorage.setItem('cd_archief_prive', JSON.stringify(ARCHIEF.privePad)); }catch(e){}
+  }catch(e){
+    ARCHIEF.fout = e.message || 'Kon je OneDrive niet bereiken.';
+  }
+  ARCHIEF.laden = false;
+  if(STATE.view==='archief'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
 function archiefBindHandlers(){
   if(STATE.view!=='archief') return;
-  if(!ARCHIEF.klantmappen && !ARCHIEF.fout){ archiefInit(); }
+  if(ARCHIEF.doel==='klanten' && !ARCHIEF.klantmappen && !ARCHIEF.fout){ archiefInit(); }
+  if(ARCHIEF.doel==='prive' && SYNC.account && !ARCHIEF.priveRootId && !ARCHIEF.laden && !ARCHIEF.fout){ archiefPriveInitFlow(false); }
+  document.querySelectorAll('[data-archief-doel]').forEach(el=>el.addEventListener('click', ()=>{
+    ARCHIEF.doel = el.getAttribute('data-archief-doel');
+    ARCHIEF.fout = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-archief-prive-verbind]').forEach(el=>el.addEventListener('click', ()=>{
+    ARCHIEF.fout = null;
+    archiefPriveInitFlow(true);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-archief-prive-map]').forEach(el=>el.addEventListener('change', async ()=>{
+    const level = Number(el.getAttribute('data-archief-prive-map'));
+    ARCHIEF.privePad = ARCHIEF.privePad.slice(0, level);
+    if(el.value){
+      let parentId = level===0 ? ARCHIEF.priveRootId : ARCHIEF.privePad[level-1].id;
+      const subs = ARCHIEF.priveSubmappen[parentId] || [];
+      const gekozen = subs.find(sm=>sm.id===el.value);
+      ARCHIEF.privePad.push({id: el.value, naam: gekozen ? gekozen.naam : ''});
+      try{ await archiefPriveLaadSubmappen(el.value); }catch(e){}
+    }
+    try{ localStorage.setItem('cd_archief_prive', JSON.stringify(ARCHIEF.privePad)); }catch(e){}
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   const dz = document.getElementById('archiefDropzone');
   const fi = document.getElementById('archiefFileInput');
   if(dz && fi){
@@ -2395,13 +2542,14 @@ function archiefBindHandlers(){
   document.querySelectorAll('[data-archief-upload]').forEach(el=>el.addEventListener('click', async ()=>{
     const idx = Number(el.getAttribute('data-archief-upload'));
     const item = ARCHIEF.wachtrij[idx];
-    if(!item || !item.klantmapId || item.status==='bezig') return;
+    if(!item || item.status==='bezig') return;
+    if(item.doel!=='prive' && !item.klantmapId) return;
     item.status = 'bezig'; item.fout = null;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
     try{
       await archiefUploadBestand(item);
       item.status = 'klaar';
-      const doel = archiefDoelmapPad(item).join(' › ') || '?';
+      const doel = item.doel==='prive' ? archiefPrivePadNamen().join(' › ') : (archiefDoelmapPad(item).join(' › ') || '?');
       ARCHIEF.log.push({ bestand: item.file.name, doel, ts: new Date().toISOString() });
       archiefBewaarLog();
       logActiviteit(`Archief: "${item.file.name}" gearchiveerd bij ${doel}`);
