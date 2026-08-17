@@ -242,6 +242,7 @@
   .kpi-card.amber::before{background:var(--amber);} .kpi-card.amber .kpi-value{color:var(--amber);}
   .kpi-card.green::before{background:var(--green);} .kpi-card.green .kpi-value{color:var(--green);}
   .kpi-card.blue::before{background:var(--primary);} .kpi-card.blue .kpi-value{color:var(--primary);}
+  .dash-tegels{grid-template-columns:repeat(4,1fr);}
 
   .section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:20px; overflow:hidden;}
   .section-head{padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px;}
@@ -484,7 +485,7 @@
   #cmdkHost .cmdk-foot{display:flex; gap:14px; padding:8px 14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); background:var(--bg);}
   #cmdkHost kbd{font-family:ui-monospace,monospace; background:var(--card); border:1px solid var(--border); padding:1px 5px; border-radius:4px; font-size:10.5px; margin-right:4px;}
 
-  @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} .bh-grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} .dash-tegels{grid-template-columns:repeat(2,1fr);} .bh-grid{grid-template-columns:repeat(2,1fr);} }
 </style>
 </head>
 <body>
@@ -498,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.2';
+const APP_VERSION = '2026.08.17.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1932,7 +1933,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent' };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -4299,6 +4300,7 @@ function dashboardHTML(){
 
   const teamOptions = TEAMS.map(t=>`<option value="${t.id}" ${teamFilter===t.id?'selected':''}>${t.naam}</option>`).join('');
   const heroHTML = heroBannerHTML(rows, klantenGefilterd, cnt);
+  const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
 
   return `
   ${heroHTML}
@@ -4353,7 +4355,45 @@ function dashboardHTML(){
     </div>
   </div>
 
+  <div class="kpi-grid dash-tegels" style="margin-bottom:14px;">
+    <div class="kpi-card red" data-dash-tegel="urgent" style="cursor:pointer; ${STATE.dashActieTegel==='urgent' ? 'box-shadow:0 0 0 2px var(--red);' : ''}">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="kpi-label">Urgente acties</div>
+        <i class="ti ti-alert-triangle" style="font-size:16px; color:var(--red);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${urgent.length}</div>
+      <div class="kpi-sub" style="color:var(--muted)">${urgent.length ? urgent[0].klant.naam + (urgent.length>1 ? ` · +${urgent.length-1}` : '') : 'Alles op schema'}</div>
+    </div>
+    <div class="kpi-card amber" data-dash-tegel="herinnering" style="cursor:pointer; ${STATE.dashActieTegel==='herinnering' ? 'box-shadow:0 0 0 2px var(--amber);' : ''}">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="kpi-label">Herinneringen</div>
+        <i class="ti ti-flag" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${flagged.length}</div>
+      <div class="kpi-sub" style="color:var(--muted)">Openstaande transacties</div>
+    </div>
+    <div class="kpi-card blue" data-dash-tegel="distributie" style="cursor:pointer; ${STATE.dashActieTegel==='distributie' ? 'box-shadow:0 0 0 2px var(--primary);' : ''}">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="kpi-label">Per deadlinecategorie</div>
+        <i class="ti ti-chart-bar" style="font-size:16px; color:var(--primary);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${rows.length}</div>
+      <div class="kpi-sub" style="color:var(--muted)">OB, VPB, LH, JR, overige</div>
+    </div>
+    <div class="kpi-card amber" data-dash-tegel="aanleverpunt" style="cursor:pointer; ${STATE.dashActieTegel==='aanleverpunt' ? 'box-shadow:0 0 0 2px var(--amber);' : ''}">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="kpi-label">Aanlevering & saldo</div>
+        <i class="ti ti-building-bank" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
+      </div>
+      <div class="kpi-value">${remindDue.length}</div>
+      <div class="kpi-sub" style="color:var(--muted)">${fmtEUR(klantenGefilterd.reduce((s,k)=>s+STORE[k.id].saldo,0))} open</div>
+    </div>
+  </div>
+
+  ${kpiOverzichtHTML()}
+
   <div class="section">
+    ${STATE.dashActieTegel==='urgent' ? `
     <div class="section-head"><h3>Urgente acties</h3><span class="hint">Gesorteerd op resterende tijd</span></div>
     <div class="section-body">
       ${urgent.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Type</th><th>Deadline</th><th>Status</th><th></th></tr></thead><tbody>
@@ -4366,16 +4406,11 @@ function dashboardHTML(){
           <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${r.klant.id}">Bekijk →</button></td>
         </tr>`).join('')}
       </tbody></table>` : `<div class="empty-state">Geen urgente acties — alles op schema.</div>`}
-    </div>
-  </div>
-
-  ${kpiOverzichtHTML()}
-
-  <div class="section">
+    </div>` : ''}
+    ${STATE.dashActieTegel==='herinnering' ? `
     <div class="section-head"><h3><i class="ti ti-flag" aria-hidden="true"></i> Stuur een herinnering</h3><span class="hint">Deadline nadert/verstreken én banktransacties nog niet verwerkt</span></div>
     <div class="section-body">
-      ${(()=>{ const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
-        return flagged.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Status</th><th>Openstaande transacties</th><th></th></tr></thead><tbody>
+      ${flagged.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Status</th><th>Openstaande transacties</th><th></th></tr></thead><tbody>
         ${flagged.map(k=>{ const w = worstStatus(k); const meta = STATUS_META[w];
           return `<tr class="row-click" data-open-klant="${k.id}">
             <td><div class="klant-name">${k.naam}</div></td>
@@ -4384,16 +4419,12 @@ function dashboardHTML(){
             <td>${STORE[k.id].txn} transactie(s)</td>
             <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
           </tr>`; }).join('')}
-        </tbody></table>` : `<div class="empty-state">Niets dat nu om een herinnering vraagt.</div>`; })()}
-    </div>
-  </div>
-
-  <div class="section">
+        </tbody></table>` : `<div class="empty-state">Niets dat nu om een herinnering vraagt.</div>`}
+    </div>` : ''}
+    ${STATE.dashActieTegel==='distributie' ? `
     <div class="section-head"><h3>Status per deadlinecategorie</h3><span class="hint">${rows.length} deadlines totaal</span></div>
-    <div class="section-body" style="padding:10px 0;">${distRows}</div>
-  </div>
-
-  <div class="section">
+    <div class="section-body" style="padding:10px 0;">${distRows}</div>` : ''}
+    ${STATE.dashActieTegel==='aanleverpunt' ? `
     <div class="section-head"><h3>Aanlevering & banksaldo — aandachtspunten</h3><span class="hint">Klanten met openstaand saldo of ontbrekende stukken</span></div>
     <div class="section-body">
       ${remindDue.length ? `<table><thead><tr><th>Klant</th><th>Boekhouder</th><th>Open saldo</th><th>Aan te leveren</th><th></th></tr></thead><tbody>
@@ -4406,7 +4437,7 @@ function dashboardHTML(){
           <td style="text-align:right"><button class="btn sm ghost" data-open-klant="${k.id}">Bekijk →</button></td>
         </tr>`; }).join('')}
       </tbody></table>` : `<div class="empty-state">Niets openstaand.</div>`}
-    </div>
+    </div>` : ''}
   </div>
   `;
 }
@@ -8363,6 +8394,10 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-kpi-toggle]').forEach(el=>el.addEventListener('click',()=>{
     STATE.kpiExpanded = !STATE.kpiExpanded;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-dash-tegel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.dashActieTegel = el.getAttribute('data-dash-tegel');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-import-toggle]').forEach(el=>el.addEventListener('click',()=>{
