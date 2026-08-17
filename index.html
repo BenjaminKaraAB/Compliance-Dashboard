@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.14';
+const APP_VERSION = '2026.08.17.15';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2130,6 +2130,9 @@ function viewHTML(){
    Microsoft-login (Sites.ReadWrite.All dekt ook bestandsuploads — geen extra Azure-machtiging
    nodig). De drive + hoofdmap worden eenmalig via Graph opgezocht en daarna gecachet. */
 const ARCHIEF_HOOFDMAP = 'AB- ZAKELIJKE KLANTEN';
+/* PDF-samenvoeger: puur lokaal in de browser (pdf-lib), bestanden verlaten de computer niet.
+   Bewust niet gesynchroniseerd of bewaard — File-objecten bestaan alleen in dit tabblad. */
+let PDF_MERGE = { wachtrij: [], bezig: false, resultaat: null, fout: null };
 const ARCHIEF = {
   doel: 'klanten', // 'klanten' (gedeeld archief) of 'prive' (eigen OneDrive)
   priveDriveId: null, priveRootId: null, priveSubmappen: {},
@@ -2377,6 +2380,109 @@ function archiefPriveHTML(){
   ${rijen}`;
 }
 function archiefHTML(){
+  return archiefUploaderDeelHTML() + pdfSamenvoegerHTML();
+}
+function pdfSamenvoegerHTML(){
+  const fmtGrootte = (b)=> b<1024*1024 ? (b/1024).toFixed(0)+' KB' : (b/1024/1024).toFixed(1)+' MB';
+  const rijen = PDF_MERGE.wachtrij.map((item, idx)=>`
+    <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);">
+      <span style="width:22px; height:22px; border-radius:50%; background:var(--primary-bg); color:var(--primary-dark); font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">${idx+1}</span>
+      <i class="ti ti-file-type-pdf" style="font-size:18px; color:var(--red); flex-shrink:0;" aria-hidden="true"></i>
+      <div style="flex:1; min-width:0;">
+        <div style="font-weight:700; font-size:12.5px; word-break:break-all;">${String(item.naam).replace(/</g,'&lt;')}</div>
+        <div style="font-size:11px; color:var(--muted2);">${fmtGrootte(item.grootte)}</div>
+      </div>
+      <button class="btn sm ghost" data-pdfmerge-omhoog="${idx}" title="Eerder in het document" ${idx===0?'disabled style="opacity:.35;"':''}>↑</button>
+      <button class="btn sm ghost" data-pdfmerge-omlaag="${idx}" title="Later in het document" ${idx===PDF_MERGE.wachtrij.length-1?'disabled style="opacity:.35;"':''}>↓</button>
+      <button class="btn sm ghost" data-pdfmerge-verwijder="${idx}" title="Uit de lijst halen" style="color:var(--red);"><i class="ti ti-x" aria-hidden="true"></i></button>
+    </div>`).join('');
+  return `
+  <div class="section" style="margin-top:22px;">
+    <div class="section-head">
+      <h3>PDF samenvoegen</h3>
+      <span class="hint">Volledig lokaal — je bestanden verlaten je computer niet</span>
+    </div>
+    <div class="section-body pad">
+      <div id="pdfMergeDropzone" style="border:2px dashed var(--primary); background:var(--primary-bg); border-radius:14px; padding:30px 24px; text-align:center; cursor:pointer; transition:filter .12s;">
+        <i class="ti ti-files" style="font-size:28px; color:var(--primary-dark);" aria-hidden="true"></i>
+        <div style="font-size:13px; font-weight:700; color:var(--primary-dark); margin-top:8px;">Sleep PDF-bestanden hierheen</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">of klik om te bladeren — de volgorde in de lijst wordt de volgorde in het samengevoegde document</div>
+        <input type="file" id="pdfMergeFileInput" multiple accept="application/pdf,.pdf" style="display:none;">
+      </div>
+      ${PDF_MERGE.wachtrij.length ? `
+      <div style="margin-top:14px;">${rijen}</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:14px; flex-wrap:wrap;">
+        <button class="btn sm primary" data-pdfmerge-samenvoegen ${PDF_MERGE.wachtrij.length<2 || PDF_MERGE.bezig ? 'disabled':''}>${PDF_MERGE.bezig ? 'Bezig met samenvoegen…' : `Samenvoegen tot één PDF (${PDF_MERGE.wachtrij.length})`}</button>
+        <button class="btn sm ghost" data-pdfmerge-wissen ${PDF_MERGE.bezig?'disabled':''}>Lijst wissen</button>
+        ${PDF_MERGE.wachtrij.length<2 ? '<span class="hint">Voeg minimaal 2 PDF-bestanden toe</span>' : ''}
+      </div>` : ''}
+      ${PDF_MERGE.fout ? `<div class="banner" style="margin-top:14px; background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${String(PDF_MERGE.fout).replace(/</g,'&lt;')}</div>` : ''}
+      ${PDF_MERGE.resultaat ? `<div class="banner" style="margin-top:14px;"><i class="ti ti-circle-check" aria-hidden="true"></i> <b>${String(PDF_MERGE.resultaat.naam).replace(/</g,'&lt;')}</b> (${PDF_MERGE.resultaat.aantal} bestanden, ${PDF_MERGE.resultaat.paginas} pagina's) is gedownload.</div>` : ''}
+    </div>
+  </div>`;
+}
+function pdfMergeRerender(){
+  if(STATE.view==='archief'){ const el = document.getElementById('contentArea'); if(el){ el.innerHTML = viewHTML(); attachHandlers(); } }
+}
+function pdfMergeVoegToe(fileList){
+  let overgeslagen = 0;
+  for(const file of Array.from(fileList||[])){
+    const isPdf = (file.type === 'application/pdf') || /\.pdf$/i.test(file.name||'');
+    if(!isPdf){ overgeslagen++; continue; }
+    PDF_MERGE.wachtrij.push({ file, naam: file.name || 'naamloos.pdf', grootte: file.size || 0 });
+  }
+  PDF_MERGE.resultaat = null; PDF_MERGE.fout = null;
+  if(overgeslagen) toast(`${overgeslagen} bestand(en) overgeslagen: alleen PDF-bestanden kunnen worden samengevoegd.`);
+  pdfMergeRerender();
+}
+function pdfMergeVerplaats(idx, richting){
+  const j = idx + richting;
+  if(idx < 0 || j < 0 || j >= PDF_MERGE.wachtrij.length) return;
+  [PDF_MERGE.wachtrij[idx], PDF_MERGE.wachtrij[j]] = [PDF_MERGE.wachtrij[j], PDF_MERGE.wachtrij[idx]];
+  pdfMergeRerender();
+}
+async function pdfMergeSamenvoegen(){
+  if(PDF_MERGE.bezig || PDF_MERGE.wachtrij.length < 2) return;
+  if(typeof PDFLib === 'undefined' || !PDFLib || !PDFLib.PDFDocument){
+    PDF_MERGE.fout = 'De PDF-bibliotheek kon niet geladen worden. Controleer je internetverbinding en herlaad de pagina.';
+    pdfMergeRerender(); return;
+  }
+  PDF_MERGE.bezig = true; PDF_MERGE.fout = null; PDF_MERGE.resultaat = null;
+  pdfMergeRerender();
+  try{
+    const doel = await PDFLib.PDFDocument.create();
+    let totaalPaginas = 0;
+    for(const item of PDF_MERGE.wachtrij){
+      let bron;
+      try{
+        const bytes = await item.file.arrayBuffer();
+        bron = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+      }catch(e){
+        throw new Error(`"${item.naam}" kon niet gelezen worden — is dit een geldig, niet-beveiligd PDF-bestand?`);
+      }
+      const paginas = await doel.copyPages(bron, bron.getPageIndices());
+      paginas.forEach(p=>doel.addPage(p));
+      totaalPaginas += paginas.length;
+    }
+    const uitBytes = await doel.save();
+    const naam = `Samengevoegd-${new Date().toISOString().slice(0,10)}.pdf`;
+    const blob = new Blob([uitBytes], {type:'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = naam;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    PDF_MERGE.resultaat = { naam, aantal: PDF_MERGE.wachtrij.length, paginas: totaalPaginas };
+    logActiviteit(`PDF-samenvoeger: ${PDF_MERGE.wachtrij.length} bestanden samengevoegd (${totaalPaginas} pagina's)`);
+    PDF_MERGE.wachtrij = [];
+    toast('PDF samengevoegd en gedownload.');
+  }catch(e){
+    PDF_MERGE.fout = e.message || 'Samenvoegen mislukt.';
+  }
+  PDF_MERGE.bezig = false;
+  pdfMergeRerender();
+}
+function archiefUploaderDeelHTML(){
   if(!SYNC.account){
     return `<div class="section"><div class="empty-state">
       <i class="ti ti-cloud-lock" style="font-size:26px; display:block; margin-bottom:10px;" aria-hidden="true"></i>
@@ -2552,6 +2658,31 @@ function archiefBindHandlers(){
     });
     fi.addEventListener('change', ()=>{ if(fi.files.length) archiefVoegBestandenToe(fi.files); fi.value=''; });
   }
+  // --- PDF-samenvoeger ---
+  const pmDz = document.getElementById('pdfMergeDropzone');
+  const pmFi = document.getElementById('pdfMergeFileInput');
+  if(pmDz && pmFi){
+    pmDz.addEventListener('click', ()=>pmFi.click());
+    pmDz.addEventListener('dragover', (e)=>{ e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect='copy'; pmDz.style.filter='brightness(0.95)'; });
+    pmDz.addEventListener('dragleave', ()=>{ pmDz.style.filter=''; });
+    pmDz.addEventListener('drop', (e)=>{
+      e.preventDefault(); pmDz.style.filter='';
+      if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){ pdfMergeVoegToe(e.dataTransfer.files); return; }
+      toast('Kon dit bestand niet direct verwerken. Download het eerst (bijv. naar Finder) en sleep het dan opnieuw, of klik om te bladeren.');
+    });
+    pmFi.addEventListener('change', ()=>{ if(pmFi.files.length) pdfMergeVoegToe(pmFi.files); pmFi.value=''; });
+  }
+  document.querySelectorAll('[data-pdfmerge-omhoog]').forEach(el=>el.addEventListener('click', ()=>pdfMergeVerplaats(Number(el.getAttribute('data-pdfmerge-omhoog')), -1)));
+  document.querySelectorAll('[data-pdfmerge-omlaag]').forEach(el=>el.addEventListener('click', ()=>pdfMergeVerplaats(Number(el.getAttribute('data-pdfmerge-omlaag')), 1)));
+  document.querySelectorAll('[data-pdfmerge-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
+    PDF_MERGE.wachtrij.splice(Number(el.getAttribute('data-pdfmerge-verwijder')), 1);
+    PDF_MERGE.resultaat = null;
+    pdfMergeRerender();
+  }));
+  const pmWis = document.querySelector('[data-pdfmerge-wissen]');
+  if(pmWis) pmWis.addEventListener('click', ()=>{ PDF_MERGE.wachtrij = []; PDF_MERGE.resultaat = null; PDF_MERGE.fout = null; pdfMergeRerender(); });
+  const pmGo = document.querySelector('[data-pdfmerge-samenvoegen]');
+  if(pmGo) pmGo.addEventListener('click', ()=>pdfMergeSamenvoegen());
   const retry = document.querySelector('[data-archief-retry]');
   if(retry) retry.addEventListener('click', ()=>{ ARCHIEF.fout=null; ARCHIEF.cfg=null; try{localStorage.removeItem('cd_archief_cfg');}catch(e){} archiefInit(); document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); });
   document.querySelectorAll('[data-archief-klant]').forEach(el=>el.addEventListener('change', async ()=>{
@@ -10133,5 +10264,6 @@ window.addEventListener('beforeunload', ()=>{
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 </body>
 </html>
