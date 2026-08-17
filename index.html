@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.13';
+const APP_VERSION = '2026.08.17.14';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -932,6 +932,7 @@ function deleteKlant(id){
 }
 function deleteBoekhouder(id){
   if(RAW_KLANTEN.some(k=>k.bh===id)) return 'heeft-klanten';
+  if(INVENTARIS_ITEMS.some(it=>it.bhId===id && !it.teruggegeven)) return 'heeft-inventaris';
   const idx = BOEKHOUDERS.findIndex(b=>b.id===id);
   if(idx===-1) return false;
   BOEKHOUDERS.splice(idx,1); invalidateBhIndex();
@@ -1045,6 +1046,8 @@ function confirmDeleteBoekhouder(id){
   if(!b) return;
   const klanten = klantsOf(id);
   if(klanten.length){ toast(`Kan "${b.naam}" niet verwijderen: heeft nog ${klanten.length} klant(en). Verplaats of verwijder deze eerst.`); return; }
+  const inventaris = INVENTARIS_ITEMS.filter(it=>it.bhId===id && !it.teruggegeven);
+  if(inventaris.length){ toast(`Kan "${b.naam}" niet verwijderen: heeft nog ${inventaris.length} inventaris-item(s) in bezit. Markeer deze eerst als teruggegeven op de Admin-pagina.`); return; }
   if(!confirm(`Weet je zeker dat je "${b.naam}" wilt verwijderen?`)) return;
   logActiviteit(`Boekhouder verwijderd: "${b.naam}"`);
   deleteBoekhouder(id);
@@ -1725,7 +1728,7 @@ function readTabularFile(file, callback){
 /* ============================= HELPERS ============================= */
 function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); if(isNaN(dt.getTime())) return '—'; return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
 function datumNaarInvoer(iso){
   // Zet interne ISO-datum (JJJJ-MM-DD) om naar het invoerformaat DD-MM-JJJJ voor formuliervelden.
   if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
@@ -1800,7 +1803,12 @@ function bh(id){
   // per interactie scheelt dat merkbaar op de Klanten-, Loonheffingen- en Overzicht-pagina.
   // De cache wordt geïnvalideerd zodra BOEKHOUDERS wijzigt (toevoegen/verwijderen/bewerken/sync).
   if(!_bhIndex) _rebuildBhIndex();
-  return _bhIndex.get(id);
+  const gevonden = _bhIndex.get(id);
+  if(gevonden) return gevonden;
+  // Vangnet: een klant/auto/inventaris-item kan (bijv. door een sync-race waarbij een collega net
+  // een boekhouder verwijderde) verwijzen naar een boekhouder die niet meer bestaat. Voorheen
+  // crashte de hele pagina dan op undefined.naam — nu tonen we "Onbekende boekhouder".
+  return { id: id||'', naam:'Onbekende boekhouder', kleur:'#9ca3af', email:'', team:'' };
 }
 function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
 function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
@@ -5648,7 +5656,7 @@ const ADMIN_SECTIES = ['bevoegdheid','documenten','logboek','inventaris'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
-  const volgorde = Array.isArray(p.volgorde) ? p.volgorde.filter(k=>ADMIN_SECTIES.includes(k)) : [];
+  const volgorde = Array.isArray(p.volgorde) ? p.volgorde.filter((k,i,arr)=>ADMIN_SECTIES.includes(k) && arr.indexOf(k)===i) : [];
   ADMIN_SECTIES.forEach(k=>{ if(!volgorde.includes(k)) volgorde.push(k); });
   const open = (p.open && typeof p.open==='object') ? p.open : {};
   return { volgorde, open };
@@ -7142,7 +7150,8 @@ function emailsSectieHTML(klant){
   </div>`;
 }
 function panelHTML(klant){
-  const f = STORE[klant.id];
+  let f = STORE[klant.id];
+  if(!f){ migrateData(); f = STORE[klant.id]; } // herstel ontbrekend STORE-record i.p.v. crashen
   const open = f.items.filter(i=>!i.done).length;
   return `
   <div class="panel-head">
@@ -7792,8 +7801,14 @@ function openAddTeamPanel(silent){
   });
 }
 function openPanel(klantId, silent){
-  STATE.panelKlant = klantId;
   const klant = RAW_KLANTEN.find(k=>k.id===klantId);
+  if(!klant){
+    // Klant bestaat niet (meer) — bijv. net verwijderd door een collega terwijl het paneel openging.
+    STATE.panelKlant = null;
+    if(!silent) toast('Deze klant bestaat niet meer.');
+    return;
+  }
+  STATE.panelKlant = klantId;
   const panel = document.getElementById('panel');
   const overlay = document.getElementById('overlay');
   const editing = STATE.editKlant === klantId;
@@ -9582,6 +9597,7 @@ function attachPanelHandlers(klant){
   });
 }
 function refreshPanel(klant){
+  if(!klant || !RAW_KLANTEN.some(k=>k.id===klant.id)){ STATE.panelKlant = null; return; }
   document.getElementById('panel').innerHTML = panelHTML(klant);
   attachPanelHandlers(klant);
   if(STATE.view!=='dashboard'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlersLite(); }
