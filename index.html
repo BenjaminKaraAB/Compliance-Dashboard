@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.6';
+const APP_VERSION = '2026.08.17.9';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -601,6 +601,7 @@ let KPI_CHARTS = {};
    daarboven); voor 2017/2018 was er nog geen verlaagd tarief (laag/cap = null). Beheerders kunnen hier
    later gewoon een nieuw jaar aan toevoegen zodra de Belastingdienst nieuwe percentages publiceert —
    geen codewijziging nodig. Auto's van vóór 2017 gebruiken altijd 25% (net als in het Excel-bestand). */
+let RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
   {jaar:2018, laag:null, cap:null, algemeen:0.22},
@@ -668,13 +669,14 @@ function loadMeta(){
       if(parsed.kpiTactisch) KPI_TACTISCH = parsed.kpiTactisch;
       if(parsed.kpiCommercieel) KPI_COMMERCIEEL = parsed.kpiCommercieel;
       if(parsed.kennisbank) KENNISBANK = Object.assign({categorieen:[], artikelen:[]}, parsed.kennisbank);
+      if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -875,6 +877,7 @@ function addKlant(data){
     staatOpHold: !!data.staatOpHold,
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
+    kvkLaatsteControle: data.kvkLaatsteControle || null,
     ib: defaultIbData(),
     vpb: defaultVpbData(),
     fiscaleEenheid: defaultFiscaleEenheid(),
@@ -973,6 +976,7 @@ function addAuto(data){
     vuzgAanwezig: data.vuzgAanwezig==='ja' ? 'ja' : 'nee',
     bijtellingViaSalaris: data.bijtellingViaSalaris==='Ja' ? 'Ja' : 'Nee',
     notities: data.notities || '',
+    rdwOverschrijvingen: null, rdwLaatsteCheck: null, rdwEigenaarGewijzigd: false,
   };
   AUTOS.push(auto);
   logActiviteit(`Auto toegevoegd: "${auto.kenteken||auto.merk||auto.id}"`);
@@ -1482,7 +1486,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1573,8 +1577,9 @@ async function fetchRemoteAndMerge(showFeedback){
         KPI_TACTISCH = json.kpiTactisch || KPI_TACTISCH;
         KPI_COMMERCIEEL = json.kpiCommercieel || KPI_COMMERCIEEL;
         KENNISBANK = json.kennisbank ? Object.assign({categorieen:[], artikelen:[]}, json.kennisbank) : KENNISBANK;
+        RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1933,7 +1938,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent' };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', rdwHercheckOpen:false, kvkBewakingOpen:false };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -3667,6 +3672,7 @@ function migrateData(){
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.salarisdossierWerknemer===undefined) k.salarisdossierWerknemer=true;
       if(k.opHoldReden===undefined) k.opHoldReden='';
+      if(k.kvkLaatsteControle===undefined) k.kvkLaatsteControle=null;
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
@@ -3758,12 +3764,17 @@ function migrateData(){
       if(a.vuzgAanwezig !== 'ja') a.vuzgAanwezig = 'nee';
       if(a.bijtellingViaSalaris !== 'Ja') a.bijtellingViaSalaris = 'Nee';
       if(typeof a.notities !== 'string') a.notities = '';
+      if(a.rdwOverschrijvingen===undefined) a.rdwOverschrijvingen = null;
+      if(a.rdwLaatsteCheck===undefined) a.rdwLaatsteCheck = null;
+      if(a.rdwEigenaarGewijzigd===undefined) a.rdwEigenaarGewijzigd = false;
     }catch(e){
       console.error('Migratie van auto "'+(a && a.id)+'" mislukt:', e);
     }
   });
   // Bijtellingstabel: nooit leeg laten (anders vallen alle berekeningen terug op het forfaitaire
   // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
+  if(!RDW_HERCHECK_CFG || typeof RDW_HERCHECK_CFG !== 'object') RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
+  if(!['uit','wekelijks','maandelijks','per_kwartaal'].includes(RDW_HERCHECK_CFG.herhaling)) RDW_HERCHECK_CFG.herhaling = 'uit';
   if(!Array.isArray(BIJTELLING_TABEL) || !BIJTELLING_TABEL.length){
     BIJTELLING_TABEL = [
       {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -4628,6 +4639,62 @@ function klantenHTML(){
       </table>
       ${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}`}
     </div>
+  </div>
+  ${kvkBewakingHTML()}`;
+}
+/* KvK-bewaking: zonder KvK API-koppeling (die vereist een geregistreerd developer-account met eigen
+   API-key) is er geen automatische controle mogelijk op uitschrijving/statuswijziging. Dit is het
+   handmatige alternatief: een klant komt op de aandachtslijst zodra hij nooit gecontroleerd is, of de
+   laatste controle langer dan KVK_CONTROLE_MAANDEN geleden is. Eén klik opent de klant in het KvK
+   Handelsregister zoeken, een tweede klik zet de teller weer op nul. */
+const KVK_CONTROLE_MAANDEN = 6;
+function kvkControleVervaldatum(klant){
+  if(!klant.kvkLaatsteControle) return null;
+  const d = new Date(klant.kvkLaatsteControle);
+  d.setMonth(d.getMonth() + KVK_CONTROLE_MAANDEN);
+  return d;
+}
+function kvkControleNodig(klant){
+  if(!klant.kvk) return false;
+  if(!klant.kvkLaatsteControle) return true;
+  const vervalt = kvkControleVervaldatum(klant);
+  return vervalt ? vervalt <= TODAY : true;
+}
+function kvkBewakingHTML(){
+  const metKvk = RAW_KLANTEN.filter(k=>k.kvk);
+  const nodig = metKvk.filter(kvkControleNodig).sort((a,b)=>{
+    const da = a.kvkLaatsteControle ? new Date(a.kvkLaatsteControle).getTime() : 0;
+    const db = b.kvkLaatsteControle ? new Date(b.kvkLaatsteControle).getTime() : 0;
+    return da - db; // langst geleden (of nooit) eerst
+  });
+  const zonderKvk = RAW_KLANTEN.length - metKvk.length;
+  return `<div class="section" style="margin-top:18px;">
+    <button data-kvk-bewaking-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.kvkBewakingOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">KvK-bewaking</h3>
+        <span class="hint">${nodig.length ? `${nodig.length} klant(en) toe aan een controle` : `alle klanten met KvK-nummer gecontroleerd binnen ${KVK_CONTROLE_MAANDEN} maanden`}</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.kvkBewakingOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.kvkBewakingOpen ? `
+    <div class="section-body pad">
+      <p style="font-size:12px; color:var(--muted); margin:0 0 12px;">Zonder KvK API-koppeling (vereist een eigen developer-account) kan uitschrijving of een statuswijziging niet automatisch worden gedetecteerd. Deze lijst herinnert je om klanten periodiek zelf even na te kijken in het Handelsregister — elke ${KVK_CONTROLE_MAANDEN} maanden, of vaker als je dat wilt.</p>
+      ${nodig.length ? `<table><thead><tr><th>Klant</th><th>KvK-nummer</th><th>Laatste controle</th><th></th></tr></thead><tbody>
+        ${nodig.map(k=>{
+          const laatste = k.kvkLaatsteControle ? fmtDate(k.kvkLaatsteControle) : 'Nooit gecontroleerd';
+          return `<tr>
+            <td><div class="klant-name">${k.naam}</div></td>
+            <td>${k.kvk}</td>
+            <td>${laatste}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <a class="btn sm ghost" href="https://www.kvk.nl/zoeken/?kvknummer=${encodeURIComponent(k.kvk)}" target="_blank" rel="noopener">Bekijk op KvK.nl <i class="ti ti-external-link" aria-hidden="true"></i></a>
+              <button class="btn sm" data-kvk-controle="${k.id}">Markeer als gecontroleerd</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>` : `<div class="empty-state">Niets dat nu een controle nodig heeft.</div>`}
+      ${zonderKvk ? `<p style="font-size:11px; color:var(--muted); margin:12px 0 0;">${zonderKvk} klant(en) hebben geen KvK-nummer ingevuld en staan daarom niet op deze lijst.</p>` : ''}
+    </div>` : ''}
   </div>`;
 }
 
@@ -5350,6 +5417,7 @@ function autoWaarschuwingen(auto){
   if(!auto.datumEersteInschrijving) w.push('Geen datum 1e inschrijving ingevuld — berekening kan niet kloppen.');
   if(!auto.cataloguswaarde) w.push('Geen cataloguswaarde ingevuld.');
   if(isJongtimer(auto) && (auto.dagwaarde===null || auto.dagwaarde===undefined)) w.push('Youngtimer zonder dagwaarde — bijtelling staat nu op €0.');
+  if(auto.rdwEigenaarGewijzigd) w.push('RDW: kenteken is vaker overgeschreven dan bij de vorige hercheck — mogelijk van eigenaar gewisseld. Controleer of dit voertuig nog bij deze klant hoort.');
   return w;
 }
 function autolijstHTML(){
@@ -5441,6 +5509,55 @@ function autolijstHTML(){
       <div id="autoImportResult" style="margin-top:10px;"></div>
     </div>` : ''}
   </div>
+  <div class="section" style="margin-top:18px;">
+    <button data-rdw-hercheck-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:${STATE.rdwHercheckOpen?'1px solid var(--border)':'none'};">
+      <div>
+        <h3 style="margin:0; font-size:14.5px; font-weight:700;">RDW hercheck — eigenaarswissel</h3>
+        <span class="hint">${AUTOS.filter(a=>a.rdwEigenaarGewijzigd).length ? `${AUTOS.filter(a=>a.rdwEigenaarGewijzigd).length} auto('s) met openstaande waarschuwing` : 'controleert of kentekens sinds de vorige check zijn overgeschreven'}</span>
+      </div>
+      <span style="font-size:16px; color:var(--muted); display:inline-block; transition:transform .15s; transform:rotate(${STATE.rdwHercheckOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.rdwHercheckOpen ? `
+    <div class="section-body pad">
+      <p style="font-size:12px; color:var(--muted); margin:0 0 10px;">Vraagt voor elke auto met kenteken opnieuw de RDW open data op en vergelijkt het aantal keer dat het kenteken is overgeschreven met de vorige check. Neemt dit toe, dan is het voertuig hoogstwaarschijnlijk van eigenaar gewisseld — de RDW geeft geen naam of BSN vrij, dus dit is de enige privacyveilige manier om dit publiek te signaleren.</p>
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn sm" id="rdwHercheckBtn" data-rdw-hercheck-btn>RDW hercheck uitvoeren</button>
+        <span class="hint">of laat 'm vanzelf lopen:</span>
+        <select id="rdwHerhalingSelect" data-rdw-herhaling style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="uit" ${RDW_HERCHECK_CFG.herhaling==='uit'?'selected':''}>Uit — alleen handmatig</option>
+          <option value="wekelijks" ${RDW_HERCHECK_CFG.herhaling==='wekelijks'?'selected':''}>Wekelijks</option>
+          <option value="maandelijks" ${RDW_HERCHECK_CFG.herhaling==='maandelijks'?'selected':''}>Maandelijks</option>
+          <option value="per_kwartaal" ${RDW_HERCHECK_CFG.herhaling==='per_kwartaal'?'selected':''}>Per kwartaal</option>
+        </select>
+      </div>
+      ${RDW_HERCHECK_CFG.herhaling!=='uit' ? `<p style="font-size:11px; color:var(--muted); margin:0 0 10px;">${RDW_HERCHECK_CFG.laatsteAutoCheck ? `Automatisch laatst uitgevoerd op ${fmtDate(RDW_HERCHECK_CFG.laatsteAutoCheck)}.` : 'Nog niet automatisch uitgevoerd — dit gebeurt zodra iemand het dashboard opent.'} Let op: er draait geen achtergrondproces op een statisch gehost dashboard, dus dit loopt pas op het moment dat iemand de app open heeft ná het verstrijken van de termijn — niet exact op de klok.</p>` : ''}
+      <div id="rdwHercheckResult" style="margin-top:10px;"></div>
+    </div>` : ''}
+  </div>
+  ${(()=>{ const gewijzigd = AUTOS.filter(a=>a.rdwEigenaarGewijzigd);
+    if(!gewijzigd.length) return '';
+    return `<div class="section" style="margin-top:18px; border-color:var(--amber-brd);">
+      <div class="section-head" style="background:var(--amber-bg);">
+        <h3 style="color:#8a4b06;"><i class="ti ti-flag" aria-hidden="true"></i> Mogelijk van eigenaar gewisseld</h3>
+        <span class="hint" style="color:#8a4b06;">${gewijzigd.length} auto('s) — RDW-hercheck</span>
+      </div>
+      <div class="section-body">
+        <table><thead><tr><th>Kenteken</th><th>Merk</th><th>Klant</th><th>Laatste hercheck</th><th></th></tr></thead><tbody>
+        ${gewijzigd.map(a=>{ const k = klantVanAuto(a);
+          return `<tr>
+            <td><b>${a.kenteken||'—'}</b> <span style="color:var(--amber);" title="Mogelijk van eigenaar gewisseld"><i class="ti ti-flag" aria-hidden="true"></i></span></td>
+            <td>${a.merk||'—'}</td>
+            <td>${k ? k.naam : 'Onbekende klant'}</td>
+            <td>${a.rdwLaatsteCheck ? fmtDate(a.rdwLaatsteCheck) : '—'}</td>
+            <td style="text-align:right; white-space:nowrap;">
+              <button class="btn sm ghost" data-edit-auto="${a.id}">Bekijk</button>
+              <button class="btn sm" data-rdw-erken="${a.id}">Markeer als gecontroleerd</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        </tbody></table>
+      </div>
+    </div>`; })()}
   ${admin ? bijtellingBeheerHTML() : ''}`;
 }
 function bijtellingBeheerHTML(){
@@ -5506,9 +5623,94 @@ async function rdwOphalenKenteken(kentekenRuw){
       const cp = Number(v.catalogusprijs);
       if(!isNaN(cp)) catalogusprijs = cp;
     }
-    return { merk: v.merk||'', type, elektrisch, datumEersteInschrijving, catalogusprijs };
+    let overschrijvingen = null;
+    if(v.aantal_keer_overschrijving !== undefined && v.aantal_keer_overschrijving !== null && v.aantal_keer_overschrijving !== ''){
+      const n = Number(v.aantal_keer_overschrijving);
+      if(!isNaN(n)) overschrijvingen = n;
+    }
+    return { merk: v.merk||'', type, elektrisch, datumEersteInschrijving, catalogusprijs, overschrijvingen };
   }catch(e){
     return null;
+  }
+}
+/* RDW hercheck: vergelijkt "aantal_keer_overschrijving" (publiek, geen naam/BSN — RDW open data bevat
+   geen eigenaargegevens) met de vorige bekende stand per auto. Een toename betekent dat het kenteken
+   sinds de vorige check opnieuw is overgeschreven — een sterke indicatie dat het voertuig van eigenaar
+   is gewisseld, al is dit geen 100% garantie (bijv. een tenaamstelling-correctie telt ook mee). Puur
+   best-effort: geen achtergrondproces mogelijk op een statisch gehost dashboard, dus dit draait alleen
+   wanneer iemand op de knop klikt. Bij de eerste check per auto wordt alleen een nulmeting vastgelegd
+   (geen waarschuwing) — pas bij een volgende check kan een toename worden gesignaleerd. */
+async function rdwHercheckAlleAutos(){
+  const metKenteken = AUTOS.filter(a=>a.kenteken && a.kenteken.trim());
+  const report = { gecontroleerd:0, nieuweWaarschuwingen:0, nulmeting:0, mislukt:0, overgeslagen: AUTOS.length - metKenteken.length };
+  for(const auto of metKenteken){
+    try{
+      const info = await rdwOphalenKenteken(auto.kenteken);
+      if(!info || info.overschrijvingen===null || info.overschrijvingen===undefined){ report.mislukt++; continue; }
+      const vorige = auto.rdwOverschrijvingen;
+      if(vorige !== null && vorige !== undefined && info.overschrijvingen > vorige){
+        auto.rdwEigenaarGewijzigd = true;
+        report.nieuweWaarschuwingen++;
+        logActiviteit(`RDW hercheck: kenteken ${auto.kenteken} vaker overgeschreven (${vorige} → ${info.overschrijvingen}) — mogelijk van eigenaar gewisseld`);
+      } else if(vorige === null || vorige === undefined){
+        report.nulmeting++;
+      }
+      auto.rdwOverschrijvingen = info.overschrijvingen;
+      auto.rdwLaatsteCheck = new Date().toISOString().slice(0,10);
+      report.gecontroleerd++;
+    }catch(e){
+      report.mislukt++;
+    }
+  }
+  persistMeta();
+  return report;
+}
+function rdwHercheckIntervalDagen(){
+  return { wekelijks:7, maandelijks:30, per_kwartaal:90 }[RDW_HERCHECK_CFG.herhaling] || null;
+}
+function rdwHercheckAutoNodig(){
+  const dagen = rdwHercheckIntervalDagen();
+  if(!dagen) return false;
+  if(!RDW_HERCHECK_CFG.laatsteAutoCheck) return true;
+  const verschilMs = new Date() - new Date(RDW_HERCHECK_CFG.laatsteAutoCheck);
+  return (verschilMs / (1000*60*60*24)) >= dagen;
+}
+/* Best-effort automatisering: geen achtergrondproces mogelijk op een statisch gehost dashboard, dus dit
+   draait alleen wanneer iemand het dashboard toevallig open heeft ná het verstrijken van de gekozen
+   termijn. laatsteAutoCheck wordt meteen bijgewerkt (vóór de RDW-aanroepen) en gesynchroniseerd, zodat
+   niet elke gelijktijdig geopende browser de check nog eens dubbel start. */
+async function rdwHercheckAutoUitvoeren(){
+  RDW_HERCHECK_CFG.laatsteAutoCheck = new Date().toISOString().slice(0,10);
+  persistMeta();
+  try{
+    const report = await rdwHercheckAlleAutos();
+    logActiviteit(`RDW hercheck automatisch uitgevoerd (${RDW_HERCHECK_CFG.herhaling}): ${report.gecontroleerd} gecontroleerd${report.nieuweWaarschuwingen ? `, ${report.nieuweWaarschuwingen} mogelijke eigenaarswissel(s)` : ''}`);
+    if(report.nieuweWaarschuwingen) toast(`Automatische RDW hercheck: ${report.nieuweWaarschuwingen} auto('s) mogelijk van eigenaar gewisseld.`);
+    if(STATE.view==='autolijst'){ const el = document.getElementById('contentArea'); if(el){ el.innerHTML = viewHTML(); attachHandlers(); } }
+  }catch(e){ console.error('Automatische RDW hercheck mislukt:', e); }
+}
+async function rdwHercheckUitvoeren(){
+  const btn = document.getElementById('rdwHercheckBtn');
+  const box = document.getElementById('rdwHercheckResult');
+  if(btn){ btn.disabled = true; btn.textContent = 'Bezig met controleren…'; }
+  if(box) box.innerHTML = `<div class="banner">RDW-gegevens worden opnieuw opgehaald voor ${AUTOS.filter(a=>a.kenteken).length} auto('s)…</div>`;
+  try{
+    const report = await rdwHercheckAlleAutos();
+    if(box){
+      box.innerHTML = `<div class="banner"${report.nieuweWaarschuwingen ? ` style="border-color:var(--amber-brd); color:#8a4b06;"` : ''}>
+        <i class="ti ti-${report.nieuweWaarschuwingen ? 'alert-triangle' : 'circle-check'}" aria-hidden="true"></i>
+        <b>${report.gecontroleerd}</b> auto('s) gecontroleerd bij de RDW.
+        ${report.nieuweWaarschuwingen ? ` <b>${report.nieuweWaarschuwingen}</b> mogelijk van eigenaar gewisseld — te herkennen aan het waarschuwingsicoon in de kentekenkolom.` : ' Geen aanwijzingen voor een eigenaarswissel gevonden.'}
+        ${report.nulmeting ? `<br>${report.nulmeting} auto('s) voor het eerst gecontroleerd (nulmeting vastgelegd, pas bij de volgende hercheck zichtbaar).` : ''}
+        ${report.mislukt ? `<br>${report.mislukt} auto('s) niet op te vragen bij de RDW (onbekend kenteken of tijdelijk niet bereikbaar).` : ''}
+        ${report.overgeslagen ? `<br>${report.overgeslagen} auto('s) overgeslagen (geen kenteken ingevuld).` : ''}
+      </div>`;
+    }
+    toast(`RDW hercheck klaar: ${report.gecontroleerd} gecontroleerd${report.nieuweWaarschuwingen ? `, ${report.nieuweWaarschuwingen} mogelijke eigenaarswissel(s)` : ''}.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }catch(e){
+    if(box) box.innerHTML = `<div class="banner" style="border-color:var(--red); color:var(--red);"><i class="ti ti-alert-circle" aria-hidden="true"></i> RDW hercheck mislukt: ${((e&&e.message)||e)}</div>`;
+    if(btn){ btn.disabled = false; btn.textContent = 'RDW hercheck uitvoeren'; }
   }
 }
 function autoFormHTML(auto){
@@ -7836,6 +8038,39 @@ function attachHandlers(){
     STATE.autoBeheerOpen = !STATE.autoBeheerOpen;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-rdw-hercheck-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.rdwHercheckOpen = !STATE.rdwHercheckOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-rdw-hercheck-btn]').forEach(el=>el.addEventListener('click', rdwHercheckUitvoeren));
+  document.querySelectorAll('[data-rdw-herhaling]').forEach(el=>el.addEventListener('change', ()=>{
+    RDW_HERCHECK_CFG.herhaling = el.value;
+    logActiviteit(`RDW hercheck herhaling ingesteld op: ${el.value}`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-rdw-erken]').forEach(el=>el.addEventListener('click', ()=>{
+    const auto = AUTOS.find(a=>a.id===el.getAttribute('data-rdw-erken'));
+    if(!auto) return;
+    auto.rdwEigenaarGewijzigd = false;
+    logActiviteit(`RDW-waarschuwing gecontroleerd en afgevinkt voor kenteken ${auto.kenteken||auto.id}`);
+    persistMeta();
+    toast(`Waarschuwing voor ${auto.kenteken||'deze auto'} gemarkeerd als gecontroleerd.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kvk-bewaking-toggle]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kvkBewakingOpen = !STATE.kvkBewakingOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-kvk-controle]').forEach(el=>el.addEventListener('click', ()=>{
+    const klant = RAW_KLANTEN.find(k=>k.id===el.getAttribute('data-kvk-controle'));
+    if(!klant) return;
+    klant.kvkLaatsteControle = new Date().toISOString().slice(0,10);
+    logActiviteit(`KvK-controle uitgevoerd voor "${klant.naam}"`);
+    persistMeta();
+    toast(`"${klant.naam}" gemarkeerd als gecontroleerd.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
   document.querySelectorAll('[data-aanlever-import-toggle]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.aanleverImportOpen = !STATE.aanleverImportOpen;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -9157,6 +9392,7 @@ try{ render(); }catch(e){
     + '<p>Probeer de pagina te verversen. Blijft dit gebeuren, stuur deze foutmelding door.</p></div>';
 }
 if(SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
+try{ if(rdwHercheckAutoNodig()) rdwHercheckAutoUitvoeren(); }catch(e){ console.error('RDW auto-hercheck controle mislukt:', e); }
 setInterval(()=>{
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
     try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }
