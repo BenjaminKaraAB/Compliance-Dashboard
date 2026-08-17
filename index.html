@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.10';
+const APP_VERSION = '2026.08.17.11';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -602,6 +602,7 @@ let KPI_CHARTS = {};
    later gewoon een nieuw jaar aan toevoegen zodra de Belastingdienst nieuwe percentages publiceert —
    geen codewijziging nodig. Auto's van vóór 2017 gebruiken altijd 25% (net als in het Excel-bestand). */
 let RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
+let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
   {jaar:2018, laag:null, cap:null, algemeen:0.22},
@@ -670,13 +671,14 @@ function loadMeta(){
       if(parsed.kpiCommercieel) KPI_COMMERCIEEL = parsed.kpiCommercieel;
       if(parsed.kennisbank) KENNISBANK = Object.assign({categorieen:[], artikelen:[]}, parsed.kennisbank);
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
+      if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -990,6 +992,35 @@ function updateAuto(id, data){
   logActiviteit(`Auto bijgewerkt: "${auto.kenteken||auto.merk||auto.id}"`);
   persistMeta();
   return auto;
+}
+function addInventarisItem(data){
+  const id = nextId(INVENTARIS_ITEMS,'inv');
+  const item = {
+    id, bhId: data.bhId||'', naam:(data.naam||'').trim(), omschrijving:(data.omschrijving||'').trim(),
+    serienummer:(data.serienummer||'').trim(), uitgegevenOp: data.uitgegevenOp || new Date().toISOString().slice(0,10),
+    teruggegeven:false, teruggegevenOp:null, notities:(data.notities||'').trim(),
+  };
+  INVENTARIS_ITEMS.push(item);
+  logActiviteit(`Inventaris: "${item.naam}" toegewezen aan ${bh(item.bhId).naam}`);
+  persistMeta();
+  return item;
+}
+function updateInventarisItem(id, data){
+  const item = INVENTARIS_ITEMS.find(i=>i.id===id);
+  if(!item) return null;
+  Object.assign(item, data);
+  logActiviteit(`Inventaris: "${item.naam}" bijgewerkt`);
+  persistMeta();
+  return item;
+}
+function deleteInventarisItem(id){
+  const idx = INVENTARIS_ITEMS.findIndex(i=>i.id===id);
+  if(idx===-1) return false;
+  const item = INVENTARIS_ITEMS[idx];
+  logActiviteit(`Inventaris: "${item.naam}" verwijderd`);
+  INVENTARIS_ITEMS.splice(idx,1);
+  persistMeta();
+  return true;
 }
 function deleteAuto(id){
   const idx = AUTOS.findIndex(a=>a.id===id);
@@ -1486,7 +1517,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1578,8 +1609,9 @@ async function fetchRemoteAndMerge(showFeedback){
         KPI_COMMERCIEEL = json.kpiCommercieel || KPI_COMMERCIEEL;
         KENNISBANK = json.kennisbank ? Object.assign({categorieen:[], artikelen:[]}, json.kennisbank) : KENNISBANK;
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
+        INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -1938,7 +1970,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', rdwHercheckOpen:false, kvkBewakingOpen:false };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -1958,6 +1990,7 @@ const ICONS = {
   auto:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l1.5-5.5A2 2 0 0 1 7.4 9h9.2a2 2 0 0 1 1.9 1.5L20 16"/><rect x="2.5" y="16" width="19" height="4.5" rx="1.5"/><circle cx="7" cy="20.5" r="1.6"/><circle cx="17" cy="20.5" r="1.6"/><path d="M4 13h16"/></svg>',
   notion:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 7v10M7.5 7l9 10M16.5 7v10"/></svg>',
   book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5.5c2.2-1.1 5.2-1.5 8 0v13.3c-2.8-1.5-5.8-1.1-8 0z"/><path d="M21 5.5c-2.2-1.1-5.2-1.5-8 0v13.3c2.8-1.5 5.8-1.1 8 0z"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8l9-5 9 5-9 5-9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
   msteams:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M6.5 10h5M9 10v6"/><path d="M15 9h4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4"/></svg>',
   sparkle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/></svg>',
 };
@@ -1998,6 +2031,7 @@ function render(){
         ${navItem('msteams','msteams','Teams-chat','later')}
         ${navItem('outlook','mail','Outlook','later')}
         ${navItem('instellingen','gear','Instellingen')}
+        ${isAdmin() ? navItem('inventarisatie','box','Inventarisatie') : ''}
       </div>
       ${sidebarFootHTML()}
     </div>
@@ -2036,7 +2070,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Inventarisatie'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2052,7 +2086,8 @@ function pageSub(){
     kennisbank:'Stappenplannen en uitleg voor (nieuwe) collega\'s, met de AI-assistent voor vragen',
     msteams:'Start direct een Teams-chat met een collega, met of zonder voorgevuld bericht',
     outlook:'Je inbox in het dashboard — lezen, beantwoorden en versturen zonder te wisselen',
-    archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant'
+    archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant',
+    inventarisatie:'Wie heeft welke bedrijfsmiddelen in bezit — alleen zichtbaar voor beheerders'
   }[STATE.view];
 }
 
@@ -2071,6 +2106,7 @@ function viewHTML(){
   if(STATE.view==='msteams') return msteamsHTML();
   if(STATE.view==='outlook') return outlookHTML();
   if(STATE.view==='archief') return archiefHTML();
+  if(STATE.view==='inventarisatie') return isAdmin() ? inventarisatieHTML() : dashboardHTML();
   return '';
 }
 /* ============================= NOTION APP-SECTIE (PLACEHOLDER) =============================
@@ -3773,6 +3809,15 @@ function migrateData(){
   });
   // Bijtellingstabel: nooit leeg laten (anders vallen alle berekeningen terug op het forfaitaire
   // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
+  if(!Array.isArray(INVENTARIS_ITEMS)) INVENTARIS_ITEMS = [];
+  INVENTARIS_ITEMS.forEach(it=>{
+    if(typeof it.naam !== 'string') it.naam = it.naam ? String(it.naam) : '';
+    if(typeof it.omschrijving !== 'string') it.omschrijving = '';
+    if(typeof it.serienummer !== 'string') it.serienummer = '';
+    if(it.teruggegeven===undefined) it.teruggegeven = false;
+    if(it.teruggegevenOp===undefined) it.teruggegevenOp = null;
+    if(typeof it.notities !== 'string') it.notities = '';
+  });
   if(!RDW_HERCHECK_CFG || typeof RDW_HERCHECK_CFG !== 'object') RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
   if(!['uit','wekelijks','maandelijks','per_kwartaal'].includes(RDW_HERCHECK_CFG.herhaling)) RDW_HERCHECK_CFG.herhaling = 'uit';
   if(!Array.isArray(BIJTELLING_TABEL) || !BIJTELLING_TABEL.length){
@@ -5589,6 +5634,86 @@ function bijtellingBeheerHTML(){
       </div>
     </div>` : ''}
   </div>`;
+}
+/* ============================= VIEW: INVENTARISATIE (ADMIN-ONLY) =============================
+   Wie heeft welk bedrijfsmiddel in bezit — laptop, telefoon, sleutels, etc. Deze pagina is bewust
+   alleen bereikbaar voor beheerders: het nav-item wordt alleen gerenderd als isAdmin() (zie sidebar),
+   en viewHTML() valt terug op het dashboard als iemand zonder adminrechten hier toch op STATE.view
+   uitkomt (bijv. een verouderde localStorage-waarde). De data zelf wordt wél gewoon gesynchroniseerd
+   (samen met de rest van de meta-data) zodat alle beheerders hetzelfde overzicht zien. */
+function inventarisatieHTML(){
+  const filter = STATE.inventarisFilter || 'in_bezit';
+  const items = INVENTARIS_ITEMS.filter(it=> filter==='alles' ? true : !it.teruggegeven);
+  const groepen = new Map();
+  items.forEach(it=>{
+    const key = it.bhId || '__onbekend';
+    if(!groepen.has(key)) groepen.set(key, { bhId:key, naam: it.bhId ? bh(it.bhId).naam : 'Niet toegewezen', items:[] });
+    groepen.get(key).items.push(it);
+  });
+  const gesorteerdeGroepen = Array.from(groepen.values()).sort((a,b)=>{
+    if(a.bhId==='__onbekend' !== (b.bhId==='__onbekend')) return a.bhId==='__onbekend' ? 1 : -1;
+    return a.naam.localeCompare(b.naam,'nl');
+  });
+  const bhOptionsVoor = (geselecteerdId)=> BOEKHOUDERS.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl')).map(b=>`<option value="${b.id}" ${geselecteerdId===b.id?'selected':''}>${b.naam}</option>`).join('');
+  const totaalInBezit = INVENTARIS_ITEMS.filter(it=>!it.teruggegeven).length;
+
+  return `
+  <div class="banner"><i class="ti ti-lock" aria-hidden="true"></i> Deze pagina is alleen zichtbaar voor beheerders — collega's zien dit nav-item niet en kunnen deze pagina niet openen.</div>
+  <div class="section">
+    <div class="section-head">
+      <h3>Inventarisatie</h3>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select id="inventarisFilterSelect" data-inventaris-filter style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="in_bezit" ${filter==='in_bezit'?'selected':''}>Alleen in bezit</option>
+          <option value="alles" ${filter==='alles'?'selected':''}>Inclusief teruggegeven</option>
+        </select>
+        <button class="btn sm primary" data-add-inventaris-btn>+ Item toevoegen</button>
+      </div>
+    </div>
+    <div class="section-body pad">
+      <span class="hint">${totaalInBezit} item(s) momenteel in bezit bij collega's</span>
+    </div>
+  </div>
+  ${STATE.showAddInventaris ? (()=>{
+    const editing = STATE.editInventaris ? INVENTARIS_ITEMS.find(i=>i.id===STATE.editInventaris) : null;
+    const v = (field)=> editing ? (editing[field]||'') : '';
+    return `
+  <div class="section" style="margin-top:14px;">
+    <div class="section-head"><h3>${editing ? 'Item bewerken' : 'Nieuw item'}</h3></div>
+    <div class="section-body pad">
+      <div class="field-row"><label>Boekhouder*</label><select id="invBhId" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">${BOEKHOUDERS.length ? bhOptionsVoor(editing ? editing.bhId : '') : '<option value="">Voeg eerst een boekhouder toe</option>'}</select></div>
+      <div class="field-row"><label>Item*</label><input type="text" id="invNaam" value="${v('naam')}" placeholder="bv. Laptop Dell XPS 13"></div>
+      <div class="field-row"><label>Omschrijving</label><input type="text" id="invOmschrijving" value="${v('omschrijving')}" placeholder="bv. incl. oplader en muis"></div>
+      <div class="field-row"><label>Serienummer</label><input type="text" id="invSerienummer" value="${v('serienummer')}" placeholder="optioneel"></div>
+      <div class="field-row"><label>Uitgegeven op</label><input type="text" id="invUitgegevenOp" value="${datumNaarInvoer(v('uitgegevenOp'))}" placeholder="DD-MM-JJJJ"></div>
+      <div class="field-row"><label>Notities</label><input type="text" id="invNotities" value="${v('notities')}" placeholder="optioneel"></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn sm primary" data-inventaris-opslaan>${editing ? 'Wijzigingen opslaan' : 'Toevoegen'}</button>
+        <button class="btn sm ghost" data-inventaris-annuleren>Annuleren</button>
+      </div>
+    </div>
+  </div>`; })() : ''}
+  ${gesorteerdeGroepen.length ? gesorteerdeGroepen.map(g=>`
+  <div class="section" style="margin-top:14px;">
+    <div class="section-head"><h3>${g.naam}</h3><span class="hint">${g.items.length} item(s)</span></div>
+    <div class="section-body">
+      <table><thead><tr><th>Item</th><th>Omschrijving</th><th>Serienummer</th><th>Uitgegeven</th><th>Status</th><th></th></tr></thead><tbody>
+        ${g.items.map(it=>`<tr>
+          <td><b>${it.naam||'—'}</b></td>
+          <td>${it.omschrijving||'—'}</td>
+          <td>${it.serienummer||'—'}</td>
+          <td>${it.uitgegevenOp ? fmtDate(it.uitgegevenOp) : '—'}</td>
+          <td>${it.teruggegeven ? `<span class="badge gray">Teruggegeven${it.teruggegevenOp?' '+fmtDate(it.teruggegevenOp):''}</span>` : `<span class="badge green"><span class="dot green"></span>In bezit</span>`}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            <button class="btn sm ghost" data-edit-inventaris="${it.id}">Bewerk</button>
+            ${it.teruggegeven ? `<button class="btn sm ghost" data-inventaris-heropenen="${it.id}">Weer in bezit</button>` : `<button class="btn sm ghost" data-inventaris-terug="${it.id}">Teruggegeven</button>`}
+            <button class="btn sm ghost" data-delete-inventaris="${it.id}" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>
+  </div>`).join('') : `<div class="section" style="margin-top:14px;"><div class="empty-state">${filter==='in_bezit' ? 'Niets dat momenteel als "in bezit" geregistreerd staat.' : 'Nog geen items toegevoegd.'}</div></div>`}
+  `;
 }
 /* RDW-koppeling: haalt actuele voertuiggegevens op bij de open data van de RDW
    (opendata.rdw.nl), gratis en publiek toegankelijk, geen API-key nodig. Wordt aangeroepen
@@ -8069,6 +8194,65 @@ function attachHandlers(){
     logActiviteit(`KvK-controle uitgevoerd voor "${klant.naam}"`);
     persistMeta();
     toast(`"${klant.naam}" gemarkeerd als gecontroleerd.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-inventaris-filter]').forEach(el=>el.addEventListener('change', ()=>{
+    STATE.inventarisFilter = el.value;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-add-inventaris-btn]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.showAddInventaris = true; STATE.editInventaris = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-edit-inventaris]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.showAddInventaris = true; STATE.editInventaris = el.getAttribute('data-edit-inventaris');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-inventaris-annuleren]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.showAddInventaris = false; STATE.editInventaris = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-inventaris-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const bhId = document.getElementById('invBhId').value;
+    const naam = document.getElementById('invNaam').value.trim();
+    if(!bhId){ toast('Kies eerst een boekhouder.'); return; }
+    if(!naam){ toast('Vul een naam voor het item in.'); return; }
+    const data = {
+      bhId, naam,
+      omschrijving: document.getElementById('invOmschrijving').value.trim(),
+      serienummer: document.getElementById('invSerienummer').value.trim(),
+      uitgegevenOp: invoerNaarDatum(document.getElementById('invUitgegevenOp').value) || new Date().toISOString().slice(0,10),
+      notities: document.getElementById('invNotities').value.trim(),
+    };
+    const wasEditing = !!STATE.editInventaris;
+    if(wasEditing) updateInventarisItem(STATE.editInventaris, data);
+    else addInventarisItem(data);
+    STATE.showAddInventaris = false; STATE.editInventaris = null;
+    toast(wasEditing ? 'Item bijgewerkt.' : `"${naam}" toegevoegd.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-inventaris-terug]').forEach(el=>el.addEventListener('click', ()=>{
+    const item = INVENTARIS_ITEMS.find(i=>i.id===el.getAttribute('data-inventaris-terug'));
+    if(!item) return;
+    item.teruggegeven = true; item.teruggegevenOp = new Date().toISOString().slice(0,10);
+    logActiviteit(`Inventaris: "${item.naam}" teruggegeven door ${bh(item.bhId).naam}`);
+    persistMeta();
+    toast(`"${item.naam}" gemarkeerd als teruggegeven.`);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-inventaris-heropenen]').forEach(el=>el.addEventListener('click', ()=>{
+    const item = INVENTARIS_ITEMS.find(i=>i.id===el.getAttribute('data-inventaris-heropenen'));
+    if(!item) return;
+    item.teruggegeven = false; item.teruggegevenOp = null;
+    logActiviteit(`Inventaris: "${item.naam}" weer als in bezit gemarkeerd`);
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-delete-inventaris]').forEach(el=>el.addEventListener('click', ()=>{
+    const item = INVENTARIS_ITEMS.find(i=>i.id===el.getAttribute('data-delete-inventaris'));
+    if(!item) return;
+    if(!confirm(`"${item.naam}" verwijderen uit de inventarisatielijst?`)) return;
+    deleteInventarisItem(item.id);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-aanlever-import-toggle]').forEach(el=>el.addEventListener('click', ()=>{
