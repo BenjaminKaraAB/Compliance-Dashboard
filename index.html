@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.4';
+const APP_VERSION = '2026.08.17.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -8613,7 +8613,7 @@ function handleKlantenCSVUpload(e){
     if(err){ toast(err); if(resultBox) resultBox.innerHTML=''; return; }
     if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(resultBox) resultBox.innerHTML=''; return; }
 
-    const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, nieuweBoekhouders:[], nieuweTeams:[] };
+    const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, gecorrigeerdKlantnr:0, nieuweBoekhouders:[], nieuweTeams:[] };
     let fallbackBhId = null;
     const getFallbackBh = ()=>{
       if(fallbackBhId) return fallbackBhId;
@@ -8626,7 +8626,7 @@ function handleKlantenCSVUpload(e){
     rows.forEach(row=>{
       const naam = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
       if(!naam){ report.overgeslagen++; return; }
-      const extId = (findField(row,['Id']) || findField(row,['Klantnummer'])||'').trim();
+      const extId = (findField(row,['Klantnummer']) || findField(row,['Id'])||'').trim();
       const vorm = (findField(row,['Rechtsvorm'])||'').trim();
       const kvk = (findField(row,['KvK nummer','KVK nummer','Kvk nummer'])||'').trim();
       const contact = (findField(row,['Contactpersoon'])||findField(row,['Voornaam'])||'').trim();
@@ -8666,7 +8666,8 @@ function handleKlantenCSVUpload(e){
         if(contact) bestaand.contact = contact;
         if(email) bestaand.email = email;
         if(tel) bestaand.tel = tel;
-        if(extId && !bestaand.extId) bestaand.extId = extId;
+        if(extId && bestaand.extId && bestaand.extId !== extId) report.gecorrigeerdKlantnr++;
+        if(extId) bestaand.extId = extId;
         bestaand.bh = bhId;
         if(!STORE[bestaand.id]) STORE[bestaand.id] = { dl:JSON.parse(JSON.stringify(bestaand.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[], lh:{taken:nieuwLhTaken(bestaand.heeftDga), log:[], volgendeMaandNotitie:''} };
         STORE[bestaand.id].txn = txn;
@@ -8691,7 +8692,7 @@ function handleKlantenCSVUpload(e){
       }
     });
 
-    logActiviteit(`Klantenimport uit "${file.name}": ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt${report.overgeslagen?`, ${report.overgeslagen} overgeslagen`:''}`);
+    logActiviteit(`Klantenimport uit "${file.name}": ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt${report.gecorrigeerdKlantnr?`, ${report.gecorrigeerdKlantnr} klantnummer(s) gecorrigeerd`:''}${report.overgeslagen?`, ${report.overgeslagen} overgeslagen`:''}`);
     migrateData();
     persistMeta(); persist();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
@@ -8701,13 +8702,13 @@ function handleKlantenCSVUpload(e){
     const box = document.getElementById('klantImportResult');
     if(box){
       box.innerHTML = `<div class="banner">
-        <i class="ti ti-circle-check" aria-hidden="true"></i> Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
+        <i class="ti ti-circle-check" aria-hidden="true"></i> Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.gecorrigeerdKlantnr?`, <b>${report.gecorrigeerdKlantnr}</b> klantnummer(s) gecorrigeerd`:''}${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
         ${bhList.length ? `Nieuwe boekhouders aangemaakt: ${bhList.join(', ')}.<br>` : ''}
         ${teamList.length ? `Nieuwe teams aangemaakt: ${teamList.join(', ')}.<br>` : ''}
         Let op: deadlinedata (OB/VPB/LH/JR) zaten niet in dit bestand en zijn dus niet ingevuld — die stel je per klant handmatig in (met eventueel een herhaling).
       </div>`;
     }
-    toast(`Import klaar: ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt.`);
+    toast(`Import klaar: ${report.nieuw} nieuw, ${report.bijgewerkt} bijgewerkt${report.gecorrigeerdKlantnr?`, ${report.gecorrigeerdKlantnr} klantnummer(s) gecorrigeerd`:''}.`);
   });
 }
 
