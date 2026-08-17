@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.11';
+const APP_VERSION = '2026.08.17.12';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2031,7 +2031,7 @@ function render(){
         ${navItem('msteams','msteams','Teams-chat','later')}
         ${navItem('outlook','mail','Outlook','later')}
         ${navItem('instellingen','gear','Instellingen')}
-        ${isAdmin() ? navItem('inventarisatie','box','Inventarisatie') : ''}
+        ${isAdmin() ? navItem('inventarisatie','box','Admin') : ''}
       </div>
       ${sidebarFootHTML()}
     </div>
@@ -2070,7 +2070,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Inventarisatie'}[STATE.view];
+  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Admin'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2087,7 +2087,7 @@ function pageSub(){
     msteams:'Start direct een Teams-chat met een collega, met of zonder voorgevuld bericht',
     outlook:'Je inbox in het dashboard — lezen, beantwoorden en versturen zonder te wisselen',
     archief:'Sleep bestanden hierheen — direct gearchiveerd in SharePoint bij de juiste klant',
-    inventarisatie:'Wie heeft welke bedrijfsmiddelen in bezit — alleen zichtbaar voor beheerders'
+    inventarisatie:'Beheerdersfuncties: bevoegdheden, automatiseringen, activiteitenlog en inventarisatie — alleen zichtbaar voor beheerders'
   }[STATE.view];
 }
 
@@ -2106,7 +2106,7 @@ function viewHTML(){
   if(STATE.view==='msteams') return msteamsHTML();
   if(STATE.view==='outlook') return outlookHTML();
   if(STATE.view==='archief') return archiefHTML();
-  if(STATE.view==='inventarisatie') return isAdmin() ? inventarisatieHTML() : dashboardHTML();
+  if(STATE.view==='inventarisatie') return isAdmin() ? adminHTML() : dashboardHTML();
   return '';
 }
 /* ============================= NOTION APP-SECTIE (PLACEHOLDER) =============================
@@ -5641,7 +5641,7 @@ function bijtellingBeheerHTML(){
    en viewHTML() valt terug op het dashboard als iemand zonder adminrechten hier toch op STATE.view
    uitkomt (bijv. een verouderde localStorage-waarde). De data zelf wordt wél gewoon gesynchroniseerd
    (samen met de rest van de meta-data) zodat alle beheerders hetzelfde overzicht zien. */
-function inventarisatieHTML(){
+function adminHTML(){
   const filter = STATE.inventarisFilter || 'in_bezit';
   const items = INVENTARIS_ITEMS.filter(it=> filter==='alles' ? true : !it.teruggegeven);
   const groepen = new Map();
@@ -5659,7 +5659,44 @@ function inventarisatieHTML(){
 
   return `
   <div class="banner"><i class="ti ti-lock" aria-hidden="true"></i> Deze pagina is alleen zichtbaar voor beheerders — collega's zien dit nav-item niet en kunnen deze pagina niet openen.</div>
+
   <div class="section">
+    <div class="section-head">
+      <h3>Bevoegdheid Loonheffingen</h3>
+    </div>
+    <div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
+      ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
+          <input type="checkbox" data-lh-access-check value="${b.id}" ${(RECHTEN.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
+          <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
+          ${b.naam}${b.email? ' · '+b.email : ''}
+        </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
+      <div style="margin-top:10px;">
+        <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" style="margin-top:14px;">
+    <div class="section-head">
+      <h3>Documenten &amp; automatiseringen</h3>
+    </div>
+    <div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Automatisch versturen van klant-documenten (bijv. de akkoordverklaring aangifte IB, zie "Documenten" op de klantkaart) staat hier standaard op hold. Zet dit pas aan zodra je klaar bent om dit systeem echt te gebruiken — zolang dit uitstaat kan er niemand per ongeluk een e-mail naar een klant sturen; voorbeeld/download blijft altijd gewoon werken.</p>
+      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
+        <input type="checkbox" id="akkoordActiefToggle" ${RECHTEN.documentenVersturenActief?'checked':''}>
+        Akkoordverklaring aangifte IB: automatisch versturen inschakelen
+      </label>
+      <div style="margin-top:10px;">
+        <button class="btn sm primary" data-save-documenten-instellingen>Opslaan</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;">${activiteitenlogboekHTML()}</div>
+
+  <div class="section" style="margin-top:14px;">
     <div class="section-head">
       <h3>Inventarisatie</h3>
       <div style="display:flex; gap:8px; align-items:center;">
@@ -6209,44 +6246,6 @@ function instellingenHTML(){
       })() : ''}
     </div>
   </div>
-
-  ${isAdmin() ? `<div class="section">
-    <div class="section-head">
-      <h3>Bevoegdheid Loonheffingen</h3>
-      <span class="hint">Alleen zichtbaar voor beheerders</span>
-    </div>
-    <div class="section-body pad">
-      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
-      ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
-        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
-          <input type="checkbox" data-lh-access-check value="${b.id}" ${(RECHTEN.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
-          <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
-          ${b.naam}${b.email? ' · '+b.email : ''}
-        </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
-      <div style="margin-top:10px;">
-        <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
-      </div>
-    </div>
-  </div>` : ''}
-
-  ${isAdmin() ? `<div class="section">
-    <div class="section-head">
-      <h3>Documenten &amp; automatiseringen</h3>
-      <span class="hint">Alleen zichtbaar voor beheerders</span>
-    </div>
-    <div class="section-body pad">
-      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Automatisch versturen van klant-documenten (bijv. de akkoordverklaring aangifte IB, zie "Documenten" op de klantkaart) staat hier standaard op hold. Zet dit pas aan zodra je klaar bent om dit systeem echt te gebruiken — zolang dit uitstaat kan er niemand per ongeluk een e-mail naar een klant sturen; voorbeeld/download blijft altijd gewoon werken.</p>
-      <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
-        <input type="checkbox" id="akkoordActiefToggle" ${RECHTEN.documentenVersturenActief?'checked':''}>
-        Akkoordverklaring aangifte IB: automatisch versturen inschakelen
-      </label>
-      <div style="margin-top:10px;">
-        <button class="btn sm primary" data-save-documenten-instellingen>Opslaan</button>
-      </div>
-    </div>
-  </div>` : ''}
-
-  ${isAdmin() ? activiteitenlogboekHTML() : ''}
 
   <div class="section">
     <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
