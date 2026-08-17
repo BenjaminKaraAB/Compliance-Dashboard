@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.9';
+const APP_VERSION = '2026.08.17.10';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1987,13 +1987,13 @@ function render(){
         ${navItem('boekhouders','building','Boekhouders')}
         ${navItem('teams','team','Teams')}
         ${navItem('klanten','users','Klanten')}
+        ${navItem('kennisbank','book','Opleiding','later')}
         <div class="nav-group-label">Werkzaamheden</div>
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
-        <div class="nav-group-label">Apps &amp; instellingen</div>
-        ${navItem('kennisbank','book','Opleiding','later')}
         ${navItem('archief','upload','Archief-uploader','later')}
+        <div class="nav-group-label">Apps &amp; instellingen</div>
         ${navItem('notion','notion','Notion','later')}
         ${navItem('msteams','msteams','Teams-chat','later')}
         ${navItem('outlook','mail','Outlook','later')}
