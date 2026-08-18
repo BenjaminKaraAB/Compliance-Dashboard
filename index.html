@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.5';
+const APP_VERSION = '2026.08.18.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5931,7 +5931,7 @@ function adminHTML(){
       ${plan ? `
         <div class="banner">
           <b>Voorbeeld van de opschoning</b><br>
-          Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records.<br>
+          Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records · <b>${plan.groepen.size}</b> van ${plan.csvKlanten.length} export-klanten gematcht${plan.groepen.size < plan.csvKlanten.length*0.5 && RAW_KLANTEN.length > 50 ? ' <b style="color:var(--red);">— dit lijkt niet te kloppen, uitvoeren is geblokkeerd</b>' : ''}.<br>
           → <b>${plan.dubbeleRecords}</b> duplicaat-records worden samengevoegd met hun origineel (${plan.dupGroepen.length} klanten hebben duplicaten)<br>
           → <b>${plan.nieuwUitExport.length}</b> export-klanten staan nog niet in het dashboard en worden aangemaakt<br>
           → <b>${plan.beschermd.length}</b> handmatig toegevoegde klanten (en evt. loonheffinglijst-klanten) blijven <b>staan</b><br>
@@ -8417,6 +8417,13 @@ function attachHandlers(){
   if(opschoonGo) opschoonGo.addEventListener('click', ()=>{
     if(!OPSCHOON_PLAN) return;
     const p = OPSCHOON_PLAN;
+    // Noodrem: als er nauwelijks export-klanten matchen met de bestaande lijst terwijl het
+    // dashboard vol klanten staat, klopt er iets niet (verkeerd bestand? andere dataset?).
+    // Dan zou uitvoeren honderden klanten dubbel aanmaken — blokkeren dus.
+    if(RAW_KLANTEN.length > 50 && p.csvKlanten.length > 50 && p.groepen.size < p.csvKlanten.length * 0.5){
+      toast(`Uitvoeren geblokkeerd: slechts ${p.groepen.size} van ${p.csvKlanten.length} export-klanten matchen met de huidige lijst. Dit zou honderden dubbelen aanmaken. Waarschijnlijk is dit het verkeerde bestand of een afwijkende dataset — neem contact op voordat je verdergaat.`);
+      return;
+    }
     if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd en ${p.teVerwijderen.length} import-restanten verwijderd. Handmatige klanten en loonheffing-gegevens blijven behouden. Er wordt eerst een backup-bestand gedownload. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
     try{
       const backup = JSON.stringify({ ts:new Date().toISOString(), klanten:RAW_KLANTEN, store:STORE, autos:AUTOS });
@@ -9433,6 +9440,14 @@ function voerOpschoningUit(){
     verslag.bijgewerkt++;
   });
   (plan.nieuwUitExport||[]).forEach(c=>{
+    // Dubbele zekerheid tegen dubbel aanmaken: bestaat er op DIT moment al een klant met dit
+    // nummer of deze (genormaliseerde) naam, dan NIET aanmaken maar bijwerken.
+    const bestaatAl = (c.nummer && RAW_KLANTEN.find(k=>String(k.extId).trim()===c.nummer)) || vindKlantOpNaam(c.naam);
+    if(bestaatAl){
+      if(c.nummer) bestaatAl.extId = c.nummer;
+      verslag.bijgewerkt++;
+      return;
+    }
     const id = nextId(RAW_KLANTEN,'k');
     const klant = { id, naam:c.naam, vorm:c.vorm||'Onbekend', bh: (BOEKHOUDERS[0]&&BOEKHOUDERS[0].id)||'', kvk:c.kvk, contact:c.contact, email:c.email, tel:c.tel,
       doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', salarisdossierWerknemer:true, extId:c.nummer,
