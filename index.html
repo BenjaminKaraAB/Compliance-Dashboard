@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.13';
+const APP_VERSION = '2026.08.18.15';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -635,6 +635,11 @@ let RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
 /* Maand-specifieke waarschuwingsbanners op de Loonheffingen-pagina (zoals "Let op! Loon vandaag openen!",
    maar dan voor één gekozen maand). Beheerd via de Admin-pagina, gedeeld via sync. */
 let LH_MAAND_BANNERS = [];
+/* Leerpad (Opleiding): vaste route voor nieuwe medewerkers. LEERPAD bevat aanpassingen op de
+   standaardroute (artikel-koppelingen); LEERPAD_VOORTGANG houdt per medewerker (e-mail) bij
+   welke stappen klaar zijn. Beide gesynchroniseerd zodat de admin voortgang kan volgen. */
+let LEERPAD = null;
+let LEERPAD_VOORTGANG = {};
 let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -706,13 +711,15 @@ function loadMeta(){
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
       if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
       if(parsed.lhMaandBanners && parsed.lhMaandBanners.length) LH_MAAND_BANNERS = parsed.lhMaandBanners;
+      if(parsed.leerpad) LEERPAD = parsed.leerpad;
+      if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1554,7 +1561,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1648,8 +1655,10 @@ async function fetchRemoteAndMerge(showFeedback){
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         LH_MAAND_BANNERS = json.lhMaandBanners && json.lhMaandBanners.length ? json.lhMaandBanners : LH_MAAND_BANNERS;
+        LEERPAD = json.leerpad || LEERPAD;
+        LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -2013,7 +2022,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbTab:'leerpad', lpModule:0, lpStap:0, lpAntwoord:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2831,11 +2840,223 @@ function kbVerplaatsCategorie(bronId, doelId){
   persistMeta();
   return true;
 }
+/* ============================= LEERPAD (OPLEIDING) ============================= */
+const OEFENKLANT_NAAM = 'Oefenklant B.V.';
+function standaardLeerpad(){
+  return { modules: [
+    { id:'m1', titel:'Welkom & je werkdag', stappen:[
+      { id:'m1s1', type:'lezen', titel:'Hoe begin je je werkdag', inhoud:'Lees het artikel over de start van je werkdag: bak met laptop pakken, opstarten, goedemorgen zeggen in de aanwezigheidschat en het dashboard openen.' },
+      { id:'m1s2', type:'bezoek', titel:'Open de Teams-chat', doel:'msteams', inhoud:'Open de pagina Teams-chat in de zijbalk en zeg goedemorgen in de Aanwezigheidschat — zo begint hier elke werkdag.' },
+      { id:'m1s3', type:'vraag', titel:'Kennischeck', vraag:'Wat doe je als eerste bij binnenkomst?', opties:['Meteen je mail beantwoorden','Je bak met laptop pakken, opstarten en goedemorgen zeggen in de aanwezigheidschat','Wachten tot een collega je iets geeft'], juist:1 },
+    ]},
+    { id:'m2', titel:'Het dashboard in vogelvlucht', stappen:[
+      { id:'m2s1', type:'bezoek', titel:'Bekijk het Overzicht', doel:'dashboard', inhoud:'Open de pagina Overzicht. Dit is je startpunt: bovenaan zie je wat urgent is, daaronder de tellers per status.' },
+      { id:'m2s2', type:'bezoek', titel:'Bekijk de Klantenlijst', doel:'klanten', inhoud:'Open de pagina Klanten. Elke klant heeft per belastingsoort een status; met de chips bovenaan filter je.' },
+      { id:'m2s3', type:'vraag', titel:'Kennischeck', vraag:'Wat betekent een rode status bij een klant?', opties:['De klant heeft niet betaald','Actie vereist: de deadline is verlopen of valt binnen 7 dagen','De klant is inactief'], juist:1 },
+    ]},
+    { id:'m3', titel:'Loonheffingen', stappen:[
+      { id:'m3s1', type:'lezen', titel:'De vier taken per maand', inhoud:'Elke loonheffing-klant heeft per maand een vaste takenlijst (salarissen verwerken t/m aangifte). Een gekleurd bolletje = taak afgerond door die collega (de kleur is van de collega).' },
+      { id:'m3s2', type:'bezoek', titel:'Open de Loonheffingen-pagina', doel:'loonheffing', inhoud:'Open de pagina Loonheffingen. Bovenaan DGA-klanten, daaronder geen-DGA. Met de filterchips zie je wie nog niet gestart is.' },
+      { id:'m3s3', type:'doen', titel:'Doe-opdracht: vink je eerste taak af', check:'lh_taak_oefenklant', inhoud:'Ga naar Loonheffingen, zoek "Oefenklant B.V." (klantnr. 999), klik de rij open en vink taak 1 af. Bij deze oefenklant kan niets misgaan — het dashboard controleert automatisch of het gelukt is.' },
+      { id:'m3s4', type:'vraag', titel:'Kennischeck', vraag:'Wat betekent een grijs bolletje in de Loonheffingen-tabel?', opties:['De taak is nog niet afgerond deze periode','De klant is gestopt','De taak is niet belangrijk'], juist:0 },
+    ]},
+    { id:'m4', titel:'Klanten & deadlines', stappen:[
+      { id:'m4s1', type:'lezen', titel:'Deadlines en herhalingen', inhoud:'Per klant staan de deadlines voor BTW (OB), VPB, Loonheffing en Jaarrekening. Op de klantkaart kun je per deadline een herhaling instellen (maandelijks/kwartaal/jaarlijks) en markeren als ingediend.' },
+      { id:'m4s2', type:'vraag', titel:'Kennischeck', vraag:'De BTW-deadline van een klant staat op rood met "vandaag". Wat doe je?', opties:['Niets, komt morgen wel','Direct oppakken of overleggen met de verantwoordelijke boekhouder','De deadline een maand opschuiven'], juist:1 },
+    ]},
+    { id:'m5', titel:'Aanlevering & banksaldo', stappen:[
+      { id:'m5s1', type:'bezoek', titel:'Bekijk Aanlevering & Saldo', doel:'aanlevering', inhoud:'Open de pagina Aanlevering & Saldo. Links kies je een klant, rechts zie je welke stukken nog missen en het openstaande banksaldo. Vanuit hier stuur je ook herinneringen.' },
+      { id:'m5s2', type:'vraag', titel:'Kennischeck', vraag:'Een klant heeft een naderende deadline én openstaande banktransacties. Wat toont het dashboard?', opties:['Niets bijzonders','Een vlaggetje/waarschuwing: stuur een herinnering','De klant wordt verwijderd'], juist:1 },
+    ]},
+    { id:'m6', titel:'Autolijst & bijtelling', stappen:[
+      { id:'m6s1', type:'bezoek', titel:'Bekijk de Autolijst', doel:'autolijst', inhoud:'Open de pagina Autolijst. Bijtelling en BTW-correctie worden automatisch berekend zodra kenteken, 1e inschrijving en cataloguswaarde bekend zijn (RDW vult veel automatisch in).' },
+      { id:'m6s2', type:'vraag', titel:'Kennischeck', vraag:'Welk gegeven is nodig om de bijtelling te kunnen berekenen?', opties:['De kleur van de auto','De cataloguswaarde en datum 1e inschrijving','Het aantal kilometers per jaar'], juist:1 },
+    ]},
+    { id:'m7', titel:'Afsluiting & aan de slag', stappen:[
+      { id:'m7s1', type:'lezen', titel:'Waar vind je hulp', inhoud:'Kom je er niet uit? Gebruik de AI-assistent (✨ rechtsboven), kijk in de Opleiding-bibliotheek, of stel je vraag in de Teams-chat. Niemand verwacht dat je alles direct weet.' },
+      { id:'m7s2', type:'afronden', titel:'Opleiding afronden', inhoud:'Je hebt alle modules doorlopen. Klik hieronder om je opleiding af te ronden — je leidinggevende ziet dit vanzelf, en jij kunt aan de slag!' },
+    ]},
+  ]};
+}
+function leerpadData(){
+  const basis = standaardLeerpad();
+  if(LEERPAD && LEERPAD.artikelKoppeling){
+    basis.modules.forEach(m=>m.stappen.forEach(s=>{
+      if(LEERPAD.artikelKoppeling[s.id]) s.artikelId = LEERPAD.artikelKoppeling[s.id];
+    }));
+  }
+  return basis;
+}
+function leerpadGebruiker(){ return (SYNC.account && SYNC.account.username) ? SYNC.account.username.toLowerCase() : 'lokaal'; }
+function leerpadVoortgangVan(email){
+  const wie = email || leerpadGebruiker();
+  if(!LEERPAD_VOORTGANG[wie]) LEERPAD_VOORTGANG[wie] = { klaar:{}, gestart:null, afgerond:null };
+  return LEERPAD_VOORTGANG[wie];
+}
+function leerpadStapKlaar(stapId){ return !!leerpadVoortgangVan().klaar[stapId]; }
+function leerpadMarkeerKlaar(stapId, stil){
+  const v = leerpadVoortgangVan();
+  if(v.klaar[stapId]) return false;
+  v.klaar[stapId] = true;
+  if(!v.gestart){ v.gestart = new Date().toISOString(); logActiviteit('Leerpad gestart'); }
+  persistMeta();
+  if(!stil) toast('Stap afgerond! ✓');
+  return true;
+}
+function leerpadOefenklant(){
+  return RAW_KLANTEN.find(k=>normalizeKlantNaam(k.naam)===normalizeKlantNaam(OEFENKLANT_NAAM));
+}
+function leerpadZorgOefenklant(){
+  let k = leerpadOefenklant();
+  if(!k){
+    k = addKlant({ naam:OEFENKLANT_NAAM, vorm:'BV', bh:(BOEKHOUDERS[0]&&BOEKHOUDERS[0].id)||'', extId:'999', contact:'Oefencontact', doetLoonaangifte:true, heeftDga:false });
+    logActiviteit('Oefenklant voor het leerpad aangemaakt');
+  }
+  return k;
+}
+function leerpadCheckDoen(stap){
+  if(stap.check === 'lh_taak_oefenklant'){
+    const k = leerpadOefenklant();
+    if(!k) return false;
+    const f = STORE[k.id];
+    return !!(f && f.lh && Array.isArray(f.lh.taken) && f.lh.taken.some(t=>t && t.done));
+  }
+  return false;
+}
+function leerpadAutoChecks(){
+  // Draait na elke render: bezoek-stappen en doe-checks automatisch afvinken.
+  try{
+    const v = leerpadVoortgangVan();
+    if(v.afgerond) return;
+    if(!v.gestart && !Object.keys(v.klaar).length) return; // nog niet begonnen: niets automatisch doen
+    leerpadData().modules.forEach(m=>m.stappen.forEach(s=>{
+      if(v.klaar[s.id]) return;
+      if(s.type==='bezoek' && STATE.view === s.doel) leerpadMarkeerKlaar(s.id, true);
+      if(s.type==='doen' && leerpadCheckDoen(s)) leerpadMarkeerKlaar(s.id, true);
+    }));
+  }catch(e){}
+}
+function leerpadTelling(email){
+  const v = (LEERPAD_VOORTGANG[email] || {klaar:{}});
+  let totaal = 0, klaar = 0;
+  leerpadData().modules.forEach(m=>m.stappen.forEach(s=>{ totaal++; if(v.klaar && v.klaar[s.id]) klaar++; }));
+  return { totaal, klaar };
+}
+function leerpadHTML(){
+  const pad = leerpadData();
+  const v = leerpadVoortgangVan();
+  const telling = leerpadTelling(leerpadGebruiker());
+  const mIdx = Math.min(STATE.lpModule||0, pad.modules.length-1);
+  const module = pad.modules[mIdx];
+  const sIdx = Math.min(STATE.lpStap||0, module.stappen.length-1);
+  const stap = module.stappen[sIdx];
+  const pct = telling.totaal ? Math.round(telling.klaar/telling.totaal*100) : 0;
+
+  const moduleStatus = (m)=>{
+    const klaar = m.stappen.filter(s=>v.klaar[s.id]).length;
+    if(klaar === m.stappen.length) return 'klaar';
+    if(klaar > 0) return 'bezig';
+    return 'open';
+  };
+  const moduleLijst = pad.modules.map((m,i)=>{
+    const st = moduleStatus(m);
+    const actief = i === mIdx;
+    const icoon = st==='klaar' ? '<i class="ti ti-circle-check" style="font-size:17px; color:var(--green);" aria-hidden="true"></i>'
+      : (st==='bezig' ? '<i class="ti ti-progress" style="font-size:17px; color:var(--primary-dark);" aria-hidden="true"></i>'
+      : '<i class="ti ti-circle" style="font-size:17px; color:var(--muted2);" aria-hidden="true"></i>');
+    const klaarN = m.stappen.filter(s=>v.klaar[s.id]).length;
+    return `<div data-lp-module="${i}" style="display:flex; align-items:center; gap:9px; padding:9px 10px; cursor:pointer; border-radius:8px; font-size:12.5px; ${actief?'background:var(--primary-bg); font-weight:700;':''}">
+      ${icoon} <span style="flex:1;">${i+1} · ${m.titel}</span>
+      <span style="font-size:10.5px; color:var(--muted2);">${klaarN}/${m.stappen.length}</span>
+    </div>`;
+  }).join('');
+
+  const stapKlaar = !!v.klaar[stap.id];
+  const typeInfo = { lezen:['ti-book','Lezen'], video:['ti-player-play','Kijken'], bezoek:['ti-click','Bekijken in het dashboard'], doen:['ti-hand-click','Doe-opdracht'], vraag:['ti-help-circle','Kennischeck'], afronden:['ti-award','Afronding'] }[stap.type] || ['ti-book','Stap'];
+  const artikel = stap.artikelId ? (KENNISBANK.artikelen||[]).find(a=>a.id===stap.artikelId) : null;
+
+  let stapActie = '';
+  if(stap.type==='lezen'){
+    stapActie = `${artikel ? `<button class="btn sm" data-lp-open-artikel="${artikel.id}"><i class="ti ti-book" aria-hidden="true"></i> Lees artikel: ${escHtml(artikel.titel||'')}</button>` : (isAdmin() ? `<div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Nog geen artikel gekoppeld — kies er een (alleen zichtbaar voor beheerders):</div>
+      <div style="display:flex; gap:8px;">
+        <select id="lpArtikelSelect" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="">— kies artikel uit de bibliotheek —</option>
+          ${(KENNISBANK.artikelen||[]).map(a=>`<option value="${a.id}">${escHtml(a.titel||'')}</option>`).join('')}
+        </select>
+        <button class="btn sm" data-lp-koppel-artikel="${stap.id}">Koppelen</button>
+      </div>` : '')}
+      ${!stapKlaar ? `<button class="btn sm primary" data-lp-klaar="${stap.id}" style="margin-top:10px;">Gelezen, volgende →</button>` : ''}`;
+  } else if(stap.type==='bezoek'){
+    stapActie = `${!stapKlaar ? `<button class="btn sm primary" data-lp-ga-naar="${stap.doel}">Ga naar de pagina →</button>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:8px;"><i class="ti ti-refresh" aria-hidden="true"></i> Wordt automatisch afgevinkt zodra je de pagina bezoekt — kom daarna terug naar Opleiding.</div>` : ''}`;
+  } else if(stap.type==='doen'){
+    stapActie = `${!stapKlaar ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn sm primary" data-lp-ga-naar="loonheffing" data-lp-oefenklant="1">Ga naar Loonheffingen →</button>
+      <button class="btn sm ghost" data-lp-check="${stap.id}"><i class="ti ti-refresh" aria-hidden="true"></i> Controleer opdracht</button>
+    </div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:8px;"><i class="ti ti-refresh" aria-hidden="true"></i> Het dashboard controleert automatisch; de oefenklant wordt klaargezet als die er nog niet is.</div>` : ''}`;
+  } else if(stap.type==='vraag'){
+    const gekozen = STATE.lpAntwoord;
+    stapActie = `${!stapKlaar ? `<div style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+      ${(stap.opties||[]).map((o,i)=>`<label style="display:flex; align-items:flex-start; gap:8px; font-size:12.5px; padding:8px 12px; border:1px solid ${gekozen===i?'var(--primary)':'var(--border)'}; border-radius:8px; cursor:pointer; background:${gekozen===i?'var(--primary-bg)':'var(--card)'};">
+        <input type="radio" name="lpVraag" data-lp-antwoord="${i}" ${gekozen===i?'checked':''} style="margin-top:2px;"> ${escHtml(o)}
+      </label>`).join('')}
+    </div>
+    <button class="btn sm primary" data-lp-vraag-check="${stap.id}">Controleer antwoord</button>
+    <span id="lpVraagFout" style="font-size:12px; color:var(--red); margin-left:8px;"></span>` : `<div style="font-size:12.5px; color:var(--green);"><i class="ti ti-circle-check" aria-hidden="true"></i> Goed beantwoord: ${escHtml((stap.opties||[])[stap.juist]||'')}</div>`}`;
+  } else if(stap.type==='afronden'){
+    const allesKlaar = telling.klaar >= telling.totaal - 1; // alles behalve deze stap
+    stapActie = v.afgerond
+      ? `<div class="banner"><i class="ti ti-award" aria-hidden="true"></i> Opleiding afgerond op ${new Date(v.afgerond).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'})}. Veel succes!</div>`
+      : (allesKlaar
+        ? `<button class="btn primary" data-lp-afronden><i class="ti ti-award" aria-hidden="true"></i> Opleiding afronden</button>`
+        : `<div style="font-size:12.5px; color:var(--muted);">Nog ${telling.totaal - 1 - telling.klaar} stap(pen) te gaan voordat je kunt afronden — kijk links welke modules nog open staan.</div>`);
+  }
+
+  const vorigeKnop = (sIdx>0 || mIdx>0) ? `<button class="btn sm ghost" data-lp-nav="vorige">← Vorige</button>` : '';
+  const volgendeKnop = !(mIdx===pad.modules.length-1 && sIdx===module.stappen.length-1) ? `<button class="btn sm ghost" data-lp-nav="volgende">Volgende →</button>` : '';
+
+  return `
+  <div class="section" style="margin-bottom:16px;">
+    <div class="section-body pad" style="padding:14px 20px;">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div style="flex:1;">
+          <div style="font-weight:700; font-size:13.5px;">Jouw opleiding</div>
+          <div class="hint">${telling.klaar} van ${telling.totaal} stappen afgerond${v.afgerond?' · afgerond 🎉':''}</div>
+        </div>
+        <div style="flex:2; height:8px; background:var(--bg); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--primary); transition:width .3s;"></div></div>
+        <div style="font-weight:700; font-size:13px; width:40px; text-align:right;">${pct}%</div>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:280px 1fr; gap:14px; align-items:start;">
+    <div class="section"><div class="section-body pad" style="padding:10px;">${moduleLijst}</div></div>
+    <div class="section">
+      <div class="section-body pad">
+        <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">Module ${mIdx+1} · ${escHtml(module.titel)} · stap ${sIdx+1} van ${module.stappen.length}</div>
+        <div style="font-size:15px; font-weight:700; margin-bottom:10px;"><i class="ti ${typeInfo[0]}" style="font-size:16px;" aria-hidden="true"></i> ${escHtml(stap.titel)} ${stapKlaar?'<span style="color:var(--green); font-size:13px;">✓ afgerond</span>':''}</div>
+        ${stap.inhoud ? `<p style="font-size:13px; line-height:1.7; color:var(--text); margin:0 0 14px;">${escHtml(stap.inhoud)}</p>` : ''}
+        ${stapActie}
+        <div style="display:flex; gap:8px; margin-top:18px; padding-top:12px; border-top:1px solid var(--border);">
+          ${vorigeKnop}${volgendeKnop}
+          <span style="margin-left:auto; font-size:11px; color:var(--muted2); align-self:center;">${typeInfo[1]}</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 function kennisbankHTML(){
+  const tabs = `<div style="display:flex; gap:2px; border-bottom:1px solid var(--border); margin-bottom:16px;">
+    <button data-kb-tab="leerpad" style="padding:10px 16px; font-size:13px; font-weight:${STATE.kbTab!=='bibliotheek'?'700':'500'}; cursor:pointer; border:none; background:none; color:${STATE.kbTab!=='bibliotheek'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.kbTab!=='bibliotheek'?'var(--text)':'transparent'};"><i class="ti ti-route" aria-hidden="true"></i> Leerpad</button>
+    <button data-kb-tab="bibliotheek" style="padding:10px 16px; font-size:13px; font-weight:${STATE.kbTab==='bibliotheek'?'700':'500'}; cursor:pointer; border:none; background:none; color:${STATE.kbTab==='bibliotheek'?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${STATE.kbTab==='bibliotheek'?'var(--text)':'transparent'};"><i class="ti ti-books" aria-hidden="true"></i> Bibliotheek & beheer</button>
+  </div>`;
+  if(STATE.kbTab !== 'bibliotheek'){
+    return tabs + leerpadHTML();
+  }
   const admin = isAdmin();
   const catOpties = KENNISBANK.categorieen.map(c=>`<option value="${c.id}">${c.naam.replace(/</g,'&lt;')}</option>`).join('');
 
-  const aiBanner = `<div class="banner" style="display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap;">
+  const aiBanner = `${tabs}<div class="banner" style="display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap;">
     <span><i class="ti ti-sparkles" aria-hidden="true"></i> Snap je iets niet? Stel je vraag direct aan de AI-assistent — die kent de dashboarddata én (als het hier is vastgelegd) onze werkwijze.</span>
     <button class="btn sm primary" data-kb-open-ai><i class="ti ti-sparkles" aria-hidden="true"></i> Vraag het de AI-assistent</button>
   </div>`;
@@ -4325,6 +4546,8 @@ function migrateData(){
   // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
   if(!Array.isArray(INVENTARIS_ITEMS)) INVENTARIS_ITEMS = [];
   if(!Array.isArray(LH_MAAND_BANNERS)) LH_MAAND_BANNERS = [];
+  if(LEERPAD && typeof LEERPAD !== 'object') LEERPAD = null;
+  if(!LEERPAD_VOORTGANG || typeof LEERPAD_VOORTGANG !== 'object' || Array.isArray(LEERPAD_VOORTGANG)) LEERPAD_VOORTGANG = {};
   LH_MAAND_BANNERS = LH_MAAND_BANNERS.filter(b=>b && /^\d{4}-\d{2}$/.test(String(b.maand||'')) && String(b.tekst||'').trim());
   INVENTARIS_ITEMS.forEach(it=>{
     if(typeof it.naam !== 'string') it.naam = it.naam ? String(it.naam) : '';
@@ -5635,6 +5858,7 @@ function loonheffingKlantDetailHTML(k){
       </div>
     </div>
     <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Let op! Loon vandaag openen!</div>
+    ${(f.lh.maandNotities||[]).filter(n=>n.maand===lhBekekenMaand()).map(n=>`<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(n.tekst)}</div>`).join('')}
     ${overigeNotitieHTML}
     ${taakRows}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
@@ -6216,7 +6440,7 @@ function bijtellingBeheerHTML(){
 /* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
    Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
    localStorage (hoeft niet mee in de gedeelde sync). */
-const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','logboek','inventaris','opschonen'];
+const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','opleiding','logboek','inventaris','opschonen'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
@@ -6426,6 +6650,28 @@ function adminHTML(){
       </div>` : ''}
     </div>` : ''}
   </div>`;
+
+  blokken.opleiding = ()=>{
+    const namen = Object.keys(LEERPAD_VOORTGANG||{}).filter(e=>e!=='lokaal');
+    return `
+  <div class="section"${marge('opleiding')}>
+    ${kop('opleiding','Opleiding — voortgang leerpad')}
+    ${isOpen('opleiding') ? `<div class="section-body pad">
+      ${namen.length ? `<table><thead><tr><th>Medewerker</th><th>Voortgang</th><th>Status</th></tr></thead><tbody>
+        ${namen.map(email=>{
+          const t = leerpadTelling(email);
+          const v = LEERPAD_VOORTGANG[email];
+          const pct = t.totaal ? Math.round(t.klaar/t.totaal*100) : 0;
+          return `<tr>
+            <td>${escHtml(email)}</td>
+            <td style="min-width:180px;"><div style="display:flex; align-items:center; gap:8px;"><div style="flex:1; height:7px; background:var(--bg); border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--primary);"></div></div><span style="font-size:11.5px; color:var(--muted); width:70px;">${t.klaar}/${t.totaal} (${pct}%)</span></div></td>
+            <td>${v.afgerond ? `<span class="badge green"><span class="dot green"></span>Afgerond ${fmtDate(String(v.afgerond).slice(0,10))}</span>` : (v.gestart ? `<span class="badge amber"><span class="dot amber"></span>Bezig</span>` : `<span class="badge gray"><span class="dot gray"></span>Gestart</span>`)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>` : `<div class="empty-state" style="padding:16px; font-size:12.5px;">Nog niemand met het leerpad begonnen. Zodra een nieuwe collega de Opleiding-pagina opent en een stap afrondt, verschijnt de voortgang hier.</div>`}
+    </div>` : ''}
+  </div>`;
+  };
 
   blokken.opschonen = ()=>{
     const plan = OPSCHOON_PLAN;
@@ -8656,6 +8902,7 @@ function bindOnce(el, event, handler){
 }
 function attachHandlers(){
   try{ updateAppBadges(); }catch(e){}
+  try{ leerpadAutoChecks(); }catch(e){}
   document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{
     STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; STATE.editBh=null;
     render();
@@ -9450,6 +9697,85 @@ function attachHandlers(){
     STATE.lhNotitiesJaar = parseInt(el.value, 10);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  document.querySelectorAll('[data-kb-tab]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kbTab = el.getAttribute('data-kb-tab');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-module]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.lpModule = Number(el.getAttribute('data-lp-module')); STATE.lpStap = 0; STATE.lpAntwoord = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-nav]').forEach(el=>el.addEventListener('click', ()=>{
+    const pad = leerpadData();
+    const richting = el.getAttribute('data-lp-nav') === 'volgende' ? 1 : -1;
+    let m = STATE.lpModule||0, s = (STATE.lpStap||0) + richting;
+    if(s < 0){ m = Math.max(0, m-1); s = pad.modules[m].stappen.length - 1; }
+    else if(s >= pad.modules[m].stappen.length){ m = Math.min(pad.modules.length-1, m+1); s = 0; }
+    STATE.lpModule = m; STATE.lpStap = s; STATE.lpAntwoord = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-klaar]').forEach(el=>el.addEventListener('click', ()=>{
+    leerpadMarkeerKlaar(el.getAttribute('data-lp-klaar'));
+    const pad = leerpadData(); const m = STATE.lpModule||0;
+    if((STATE.lpStap||0) < pad.modules[m].stappen.length - 1) STATE.lpStap = (STATE.lpStap||0) + 1;
+    else if(m < pad.modules.length - 1){ STATE.lpModule = m+1; STATE.lpStap = 0; }
+    STATE.lpAntwoord = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-ga-naar]').forEach(el=>el.addEventListener('click', ()=>{
+    if(el.getAttribute('data-lp-oefenklant')) leerpadZorgOefenklant();
+    STATE.view = el.getAttribute('data-lp-ga-naar');
+    render();
+  }));
+  document.querySelectorAll('[data-lp-check]').forEach(el=>el.addEventListener('click', ()=>{
+    const pad = leerpadData();
+    let stap = null;
+    pad.modules.forEach(m=>m.stappen.forEach(s=>{ if(s.id===el.getAttribute('data-lp-check')) stap = s; }));
+    if(stap && leerpadCheckDoen(stap)){ leerpadMarkeerKlaar(stap.id); }
+    else toast('Nog niet gelukt — vink eerst een taak af bij "Oefenklant B.V." op de Loonheffingen-pagina.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-antwoord]').forEach(el=>el.addEventListener('change', ()=>{
+    STATE.lpAntwoord = Number(el.getAttribute('data-lp-antwoord'));
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-vraag-check]').forEach(el=>el.addEventListener('click', ()=>{
+    const pad = leerpadData();
+    let stap = null;
+    pad.modules.forEach(m=>m.stappen.forEach(s=>{ if(s.id===el.getAttribute('data-lp-vraag-check')) stap = s; }));
+    if(!stap) return;
+    if(STATE.lpAntwoord === null || STATE.lpAntwoord === undefined){
+      const f = document.getElementById('lpVraagFout'); if(f) f.textContent = 'Kies eerst een antwoord.';
+      return;
+    }
+    if(STATE.lpAntwoord === stap.juist){ leerpadMarkeerKlaar(stap.id); STATE.lpAntwoord = null; }
+    else { const f = document.getElementById('lpVraagFout'); if(f) f.textContent = 'Niet helemaal — probeer nog eens.'; return; }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-koppel-artikel]').forEach(el=>el.addEventListener('click', ()=>{
+    const sel = document.getElementById('lpArtikelSelect');
+    if(!sel || !sel.value) return;
+    if(!LEERPAD) LEERPAD = { artikelKoppeling:{} };
+    if(!LEERPAD.artikelKoppeling) LEERPAD.artikelKoppeling = {};
+    LEERPAD.artikelKoppeling[el.getAttribute('data-lp-koppel-artikel')] = sel.value;
+    logActiviteit('Leerpad: artikel gekoppeld aan stap');
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lp-open-artikel]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.kbTab = 'bibliotheek'; STATE.kbOpenArtikel = el.getAttribute('data-lp-open-artikel');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  const lpAfronden = document.querySelector('[data-lp-afronden]');
+  if(lpAfronden) lpAfronden.addEventListener('click', ()=>{
+    const v = leerpadVoortgangVan();
+    leerpadData().modules.forEach(m=>m.stappen.forEach(s=>{ if(s.type==='afronden') v.klaar[s.id] = true; }));
+    v.afgerond = new Date().toISOString();
+    logActiviteit('🎓 Leerpad-opleiding volledig afgerond');
+    persistMeta();
+    toast('Gefeliciteerd — opleiding afgerond! 🎉');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
   document.querySelectorAll('[data-lh-voortgang]').forEach(el=>el.addEventListener('click', (e)=>{
     e.stopPropagation();
     const [sleutel, stand] = el.getAttribute('data-lh-voortgang').split('|');
