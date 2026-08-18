@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.7';
+const APP_VERSION = '2026.08.18.8';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1751,7 +1751,7 @@ function statusOf(entry){
   if(entry.status==='ingediend') return {key:'ingediend'};
   const dd = daysDiff(entry.datum);
   if(dd<=7) return {key:'actie', dagen:dd};
-  if(dd<=30) return {key:'nadert', dagen:dd};
+  if(dd<=14) return {key:'nadert', dagen:dd};
   return {key:'schema', dagen:dd};
 }
 const STATUS_META = {
@@ -4530,7 +4530,7 @@ function dashboardHTML(){
         <i class="ti ti-clock" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
       </div>
       <div class="kpi-value">${cnt.nadert}</div>
-      <div class="kpi-sub" style="color:var(--amber)">Binnen 8–30 dagen</div>
+      <div class="kpi-sub" style="color:var(--amber)">Binnen 8–14 dagen</div>
     </div>
     <div class="kpi-card green">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
