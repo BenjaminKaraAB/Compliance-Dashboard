@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.3';
+const APP_VERSION = '2026.08.18.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5925,7 +5925,7 @@ function adminHTML(){
   <div class="section"${marge('opschonen')}>
     ${kop('opschonen','Klantenlijst opschonen')}
     ${isOpen('opschonen') ? `<div class="section-body pad">
-      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Staan er duplicaten in de klantenlijst (bijv. door meerdere imports)? Kies hieronder de actuele AdministratieBox-export (CSV/Excel). Je ziet eerst precies wat er gaat gebeuren; pas na jouw akkoord wordt de lijst gelijkgetrokken met de export. Duplicaten worden samengevoegd — het record met loonheffing- en dossiergegevens blijft altijd leidend, zodat daar niets van verloren gaat. Klanten die niet in de export staan worden nooit verwijderd; die blijven gewoon in de lijst.</p>
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Staan er duplicaten in de klantenlijst (bijv. door meerdere imports)? Kies hieronder de actuele AdministratieBox-export (CSV/Excel). Je ziet eerst precies wat er gaat gebeuren; pas na jouw akkoord wordt de lijst gelijkgetrokken met de export. De regel: alle klanten uit de export blijven staan + alle handmatig toegevoegde klanten. Duplicaten worden samengevoegd — het record met loonheffing- en dossiergegevens blijft altijd leidend. Import-restanten die niet meer in de export staan worden verwijderd; je ziet ze eerst bij naam in het voorbeeld. Een klant met loonheffing-gegevens wordt nooit verwijderd.</p>
       <label class="btn sm" style="cursor:pointer;"><i class="ti ti-file-search" aria-hidden="true"></i> Kies export-bestand<input type="file" id="opschoonFileInput" accept=".csv,.xlsx,.xls" style="display:none;"></label>
       <div id="opschoonResultaat" style="margin-top:12px;">
       ${plan ? `
@@ -5934,12 +5934,14 @@ function adminHTML(){
           Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records.<br>
           → <b>${plan.dubbeleRecords}</b> duplicaat-records worden samengevoegd met hun origineel (${plan.dupGroepen.length} klanten hebben duplicaten)<br>
           → <b>${plan.nieuwUitExport.length}</b> export-klanten staan nog niet in het dashboard en worden aangemaakt<br>
-          → <b>${plan.beschermd.length}</b> klanten staan niet in de export en blijven <b>gewoon staan</b> (er wordt niets verwijderd behalve duplicaten)<br>
-          <b>Optelsom na opschoning: ${plan.groepen.size} gematcht + ${plan.nieuwUitExport.length} nieuw + ${plan.beschermd.length} eigen klanten = ${plan.groepen.size + plan.nieuwUitExport.length + plan.beschermd.length} klanten</b><br>
+          → <b>${plan.beschermd.length}</b> handmatig toegevoegde klanten (en evt. loonheffinglijst-klanten) blijven <b>staan</b><br>
+          → <b>${plan.teVerwijderen.length}</b> import-restanten (niet meer in de export, niet handmatig, geen loonheffing) worden <b>verwijderd</b><br>
+          <b>Optelsom na opschoning: ${plan.groepen.size} uit export gematcht + ${plan.nieuwUitExport.length} nieuw uit export + ${plan.beschermd.length} handmatig = ${plan.groepen.size + plan.nieuwUitExport.length + plan.beschermd.length} klanten</b><br>
           Vóór het uitvoeren wordt automatisch een backup-bestand gedownload.
         </div>
         ${plan.dupGroepen.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Voorbeelden van duplicaten: ${plan.dupGroepen.slice(0,5).map(g=>`${g.csv.naam} (${g.records.length}×)`).join(' · ')}${plan.dupGroepen.length>5?` · en ${plan.dupGroepen.length-5} meer`:''}</div>` : ''}
-        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;"><b>Niet in de export (blijven staan, controleer of dit jouw handmatige klanten zijn):</b><br>${plan.beschermd.slice(0,40).map(k=>k.naam).join(' · ')}${plan.beschermd.length>40?` · en ${plan.beschermd.length-40} meer`:''}</div>` : ''}
+        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;"><b>Handmatig toegevoegde klanten (blijven staan):</b><br>${plan.beschermd.slice(0,40).map(k=>k.naam).join(' · ')}${plan.beschermd.length>40?` · en ${plan.beschermd.length-40} meer`:''}</div>` : ''}
+        ${plan.teVerwijderen.length ? `<div style="font-size:11.5px; color:var(--red); margin-top:6px;"><b>Worden verwijderd (import-restanten, niet meer in de export):</b><br>${plan.teVerwijderen.slice(0,40).map(k=>k.naam).join(' · ')}${plan.teVerwijderen.length>40?` · en ${plan.teVerwijderen.length-40} meer`:''}</div>` : ''}
         ${plan.nieuwUitExport.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Nieuw aan te maken uit export: ${plan.nieuwUitExport.slice(0,10).map(c=>c.naam).join(' · ')}${plan.nieuwUitExport.length>10?` · en ${plan.nieuwUitExport.length-10} meer`:''}</div>` : ''}
         <div style="display:flex; gap:8px; margin-top:12px;">
           <button class="btn sm primary" data-opschoon-uitvoeren>Opschoning uitvoeren</button>
@@ -8415,7 +8417,7 @@ function attachHandlers(){
   if(opschoonGo) opschoonGo.addEventListener('click', ()=>{
     if(!OPSCHOON_PLAN) return;
     const p = OPSCHOON_PLAN;
-    if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd. Er wordt niets anders verwijderd; loonheffing- en dossiergegevens blijven behouden. Er wordt eerst een backup-bestand gedownload. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
+    if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd en ${p.teVerwijderen.length} import-restanten verwijderd. Handmatige klanten en loonheffing-gegevens blijven behouden. Er wordt eerst een backup-bestand gedownload. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
     try{
       const backup = JSON.stringify({ ts:new Date().toISOString(), klanten:RAW_KLANTEN, store:STORE, autos:AUTOS });
       const blob = new Blob([backup], {type:'application/json'});
@@ -9354,16 +9356,17 @@ function maakOpschoonPlan(rows){
       dupGroepen.push(g);
     }
   });
-  // Klanten die niet in de export staan worden NOOIT verwijderd — het kunnen legitieme klanten
-  // zijn die (nog) niet in AdministratieBox staan of niet mee-geëxporteerd worden. Alleen echte
-  // duplicaten van export-klanten worden samengevoegd.
-  // Export-klanten die nog helemaal niet in het dashboard staan, worden aangemaakt zodat de
-  // lijst na afloop exact de export dekt.
+  // De regel: klanten uit de export blijven + handmatig toegevoegde klanten blijven.
+  // Handmatig toegevoegd = geen klantnummer/import-Id (alleen imports zetten extId).
+  // Import-restanten (wel een extId, maar niet meer in de export) worden verwijderd.
+  // Veiligheidsslot: een klant met loonheffing-gegevens wordt nooit verwijderd.
+  const beschermd = nietInExport.filter(k=> !k.extId || k.doetLoonaangifte);
+  const teVerwijderen = nietInExport.filter(k=> k.extId && !k.doetLoonaangifte);
   const nieuwUitExport = csvKlanten.filter(c=>{
     const sleutel = c.nummer || normalizeKlantNaam(c.naam);
     return !groepen.has(sleutel);
   });
-  return { csvKlanten, groepen, dupGroepen, teVerwijderen: [], beschermd: nietInExport, nieuwUitExport,
+  return { csvKlanten, groepen, dupGroepen, teVerwijderen, beschermd, nieuwUitExport,
     dubbeleRecords: dupGroepen.reduce((s,g)=>s+g.records.length-1, 0) };
 }
 function voegDossierSamen(keeperId, dupId){
@@ -9440,7 +9443,7 @@ function voerOpschoningUit(){
     STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
     verslag.nieuwAangemaakt = (verslag.nieuwAangemaakt||0)+1;
   });
-  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.nieuwAangemaakt?`, ${verslag.nieuwAangemaakt} nieuw aangemaakt uit export`:''}${verslag.beschermd?`, ${verslag.beschermd} niet-export-klanten behouden`:''}`);
+  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.verwijderd} verwijderd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.nieuwAangemaakt?`, ${verslag.nieuwAangemaakt} nieuw aangemaakt uit export`:''}${verslag.beschermd?`, ${verslag.beschermd} handmatige klanten behouden`:''}`);
   migrateData();
   persistMeta(); persist();
   OPSCHOON_PLAN = null;
