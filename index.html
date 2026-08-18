@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.10';
+const APP_VERSION = '2026.08.18.11';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -6355,6 +6355,24 @@ function adminHTML(){
         <button class="btn sm primary" data-bulk-deadline-toepassen>Deadline instellen</button>
       </div>
       <div id="bulkDlResultaat" style="margin-top:10px;"></div>
+      <div style="border-top:1px solid var(--border); margin:18px 0 14px;"></div>
+      <h4 style="margin:0 0 8px; font-size:13px;">Bulk-maandnotitie Loonheffingen</h4>
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Zet bij een hele groep loonheffing-klanten dezelfde notitie voor een specifieke maand (verschijnt met een ⭐ in de Loonheffingen-tabel zodra die maand in beeld is). Klanten die exact deze notitie al hebben, worden overgeslagen.</p>
+      <div class="field-row"><label>Maand</label>
+        <select id="bulkLhnMaand" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          ${(function(){ const opts=[]; const d=new Date(); d.setDate(1); for(let i=0;i<24;i++){ const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; opts.push(`<option value="${key}">${maandLabelVanKey(key)}</option>`); d.setMonth(d.getMonth()+1);} return opts.join(''); })()}
+        </select></div>
+      <div class="field-row"><label>Notitie</label><input type="text" id="bulkLhnTekst" placeholder="bv. WHK premies aanpassen!"></div>
+      <div class="field-row"><label>Voor wie</label>
+        <select id="bulkLhnDoelgroep" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="geen">Alleen geen-DGA klanten</option>
+          <option value="dga">Alleen DGA-klanten</option>
+          <option value="beide">Alle loonheffing-klanten</option>
+        </select></div>
+      <div style="margin-top:10px;">
+        <button class="btn sm primary" data-bulk-lhnotitie-toepassen>Notitie plaatsen</button>
+      </div>
+      <div id="bulkLhnResultaat" style="margin-top:10px;"></div>
     </div>` : ''}
   </div>`;
 
@@ -8902,6 +8920,19 @@ function attachHandlers(){
     if(box) box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> Deadline ingesteld voor <b>${verslag.ingesteld}</b> klanten${verslag.overgeslagenBestaand?`, ${verslag.overgeslagenBestaand} overgeslagen (had al een deadline)`:''}${verslag.overgeslagenNvt?`, ${verslag.overgeslagenNvt} n.v.t. (geen VPB-plicht)`:''}.</div>`;
     toast(`Bulk-deadline ingesteld voor ${verslag.ingesteld} klanten.`);
   });
+  const bulkLhnBtn = document.querySelector('[data-bulk-lhnotitie-toepassen]');
+  if(bulkLhnBtn) bulkLhnBtn.addEventListener('click', ()=>{
+    const maand = document.getElementById('bulkLhnMaand').value;
+    const tekst = document.getElementById('bulkLhnTekst').value.trim();
+    const doelgroep = document.getElementById('bulkLhnDoelgroep').value;
+    const box = document.getElementById('bulkLhnResultaat');
+    if(!tekst){ if(box) box.innerHTML = '<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">Vul eerst een notitietekst in.</div>'; return; }
+    const doelTekst = doelgroep==='geen' ? 'alle geen-DGA klanten' : (doelgroep==='dga' ? 'alle DGA-klanten' : 'ALLE loonheffing-klanten');
+    if(!confirm(`Notitie "${tekst}" plaatsen voor ${maandLabelVanKey(maand)} bij ${doelTekst}?`)) return;
+    const verslag = bulkLhMaandnotitie({ maand, tekst, doelgroep });
+    if(box) box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> Notitie geplaatst bij <b>${verslag.geplaatst}</b> klanten${verslag.overgeslagenDubbel?` (${verslag.overgeslagenDubbel} hadden hem al)`:''}.</div>`;
+    toast(`Maandnotitie geplaatst bij ${verslag.geplaatst} klanten.`);
+  });
   const opschoonInput = document.getElementById('opschoonFileInput');
   if(opschoonInput) opschoonInput.addEventListener('change', ()=>{
     const file = opschoonInput.files[0]; if(!file) return;
@@ -9813,6 +9844,30 @@ let OPSCHOON_PLAN = null;
 /* Bulk-deadlines (admin): stel in één keer een deadline + herhaling in voor een hele groep
    klanten. Werkt op zowel klant.dl als STORE.dl (effDL leest uit STORE). VPB/JR wordt
    automatisch overgeslagen bij rechtsvormen zonder VPB-plicht. */
+/* Bulk-maandnotitie Loonheffingen: zet in één keer dezelfde maand-specifieke notitie bij een
+   hele groep loonheffing-klanten (bijv. "WHK premies aanpassen!" voor januari). Idempotent:
+   een klant die exact deze notitie voor die maand al heeft, wordt overgeslagen. */
+function bulkLhMaandnotitie(opts){
+  const { maand, tekst, doelgroep } = opts;
+  const verslag = { geplaatst:0, overgeslagenDubbel:0 };
+  const schoon = String(tekst||'').trim();
+  if(!/^\d{4}-\d{2}$/.test(String(maand||'')) || !schoon) return verslag;
+  RAW_KLANTEN.forEach(k=>{
+    if(!k.doetLoonaangifte) return;
+    if(doelgroep==='geen' && k.heeftDga) return;
+    if(doelgroep==='dga' && !k.heeftDga) return;
+    const f = STORE[k.id];
+    if(!f || !f.lh) return;
+    if(!Array.isArray(f.lh.maandNotities)) f.lh.maandNotities = [];
+    if(f.lh.maandNotities.some(n=>n.maand===maand && String(n.tekst).trim()===schoon)){ verslag.overgeslagenDubbel++; return; }
+    f.lh.maandNotities.push({ id:'mn'+Date.now()+Math.floor(Math.random()*100000), maand, tekst: schoon });
+    verslag.geplaatst++;
+  });
+  const doelTekst = doelgroep==='geen' ? 'geen-DGA' : (doelgroep==='dga' ? 'DGA' : 'alle');
+  logActiviteit(`Bulk-maandnotitie geplaatst voor ${maandLabelVanKey(maand)} bij ${verslag.geplaatst} ${doelTekst}-loonheffingklanten: "${schoon}"`);
+  persistMeta(); persist();
+  return verslag;
+}
 function bulkDeadlineToepassen(opts){
   const { type, datumIso, herhaling, doelgroep, overschrijven } = opts;
   const verslag = { ingesteld:0, overgeslagenBestaand:0, overgeslagenNvt:0 };
