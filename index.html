@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.1';
+const APP_VERSION = '2026.08.18.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5925,7 +5925,7 @@ function adminHTML(){
   <div class="section"${marge('opschonen')}>
     ${kop('opschonen','Klantenlijst opschonen')}
     ${isOpen('opschonen') ? `<div class="section-body pad">
-      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Staan er duplicaten in de klantenlijst (bijv. door meerdere imports)? Kies hieronder de actuele AdministratieBox-export (CSV/Excel). Je ziet eerst precies wat er gaat gebeuren; pas na jouw akkoord wordt de lijst gelijkgetrokken met de export. Duplicaten worden samengevoegd — het record met loonheffing- en dossiergegevens blijft altijd leidend, zodat daar niets van verloren gaat. Klanten die niet in de export staan maar wél ingevulde gegevens hebben, worden nooit automatisch verwijderd.</p>
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Staan er duplicaten in de klantenlijst (bijv. door meerdere imports)? Kies hieronder de actuele AdministratieBox-export (CSV/Excel). Je ziet eerst precies wat er gaat gebeuren; pas na jouw akkoord wordt de lijst gelijkgetrokken met de export. Duplicaten worden samengevoegd — het record met loonheffing- en dossiergegevens blijft altijd leidend, zodat daar niets van verloren gaat. Klanten die niet in de export staan worden nooit verwijderd; die blijven gewoon in de lijst.</p>
       <label class="btn sm" style="cursor:pointer;"><i class="ti ti-file-search" aria-hidden="true"></i> Kies export-bestand<input type="file" id="opschoonFileInput" accept=".csv,.xlsx,.xls" style="display:none;"></label>
       <div id="opschoonResultaat" style="margin-top:12px;">
       ${plan ? `
@@ -5933,12 +5933,12 @@ function adminHTML(){
           <b>Voorbeeld van de opschoning</b><br>
           Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records.<br>
           → <b>${plan.dubbeleRecords}</b> duplicaat-records worden samengevoegd met hun origineel (${plan.dupGroepen.length} klanten hebben duplicaten)<br>
-          → <b>${plan.teVerwijderen.length}</b> records zonder ingevulde gegevens die niet in de export staan worden verwijderd<br>
-          → <b>${plan.beschermd.length}</b> records niet in de export maar mét ingevulde gegevens (o.a. loonheffing) worden <b>behouden</b><br>
-          → daarna: <b>${plan.groepen.size + plan.beschermd.length}</b> klanten over, allemaal met het juiste klantnummer uit de export
+          → <b>${plan.beschermd.length}</b> klanten staan niet in de export en blijven <b>gewoon staan</b> (er wordt niets verwijderd behalve duplicaten)<br>
+          → daarna: <b>${plan.groepen.size + plan.beschermd.length}</b> klanten over; export-klanten krijgen het juiste klantnummer<br>
+          Vóór het uitvoeren wordt automatisch een backup-bestand gedownload.
         </div>
         ${plan.dupGroepen.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Voorbeelden van duplicaten: ${plan.dupGroepen.slice(0,5).map(g=>`${g.csv.naam} (${g.records.length}×)`).join(' · ')}${plan.dupGroepen.length>5?` · en ${plan.dupGroepen.length-5} meer`:''}</div>` : ''}
-        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Behouden wegens gegevens: ${plan.beschermd.slice(0,5).map(k=>k.naam).join(' · ')}${plan.beschermd.length>5?` · en ${plan.beschermd.length-5} meer`:''}</div>` : ''}
+        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Niet in de export (blijven staan): ${plan.beschermd.slice(0,5).map(k=>k.naam).join(' · ')}${plan.beschermd.length>5?` · en ${plan.beschermd.length-5} meer`:''}</div>` : ''}
         <div style="display:flex; gap:8px; margin-top:12px;">
           <button class="btn sm primary" data-opschoon-uitvoeren>Opschoning uitvoeren</button>
           <button class="btn sm ghost" data-opschoon-annuleren>Annuleren</button>
@@ -8413,7 +8413,16 @@ function attachHandlers(){
   if(opschoonGo) opschoonGo.addEventListener('click', ()=>{
     if(!OPSCHOON_PLAN) return;
     const p = OPSCHOON_PLAN;
-    if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd en ${p.teVerwijderen.length} lege records verwijderd. Loonheffing- en dossiergegevens blijven behouden. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
+    if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd. Er wordt niets anders verwijderd; loonheffing- en dossiergegevens blijven behouden. Er wordt eerst een backup-bestand gedownload. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
+    try{
+      const backup = JSON.stringify({ ts:new Date().toISOString(), klanten:RAW_KLANTEN, store:STORE, autos:AUTOS });
+      const blob = new Blob([backup], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `dashboard-backup-voor-opschoning-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    }catch(err){ console.error('Backup maken mislukt:', err); }
     const verslag = voerOpschoningUit();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
     if(verslag) toast(`Opschoning klaar: ${verslag.samengevoegd} samengevoegd, ${verslag.verwijderd} verwijderd, ${verslag.bijgewerkt} bijgewerkt. Nu ${RAW_KLANTEN.length} klanten.`);
@@ -9343,9 +9352,10 @@ function maakOpschoonPlan(rows){
       dupGroepen.push(g);
     }
   });
-  const teVerwijderen = []; const beschermd = [];
-  nietInExport.forEach(k=>{ (klantDossierScore(k) >= 300 ? beschermd : teVerwijderen).push(k); });
-  return { csvKlanten, groepen, dupGroepen, teVerwijderen, beschermd,
+  // Klanten die niet in de export staan worden NOOIT verwijderd — het kunnen legitieme klanten
+  // zijn die (nog) niet in AdministratieBox staan of niet mee-geëxporteerd worden. Alleen echte
+  // duplicaten van export-klanten worden samengevoegd.
+  return { csvKlanten, groepen, dupGroepen, teVerwijderen: [], beschermd: nietInExport,
     dubbeleRecords: dupGroepen.reduce((s,g)=>s+g.records.length-1, 0) };
 }
 function voegDossierSamen(keeperId, dupId){
@@ -9411,7 +9421,7 @@ function voerOpschoningUit(){
     if(c.vorm) k.vorm = c.vorm;
     verslag.bijgewerkt++;
   });
-  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.verwijderd} niet-actuele klanten verwijderd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.beschermd?`, ${verslag.beschermd} behouden wegens ingevulde gegevens`:''}`);
+  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.beschermd?`, ${verslag.beschermd} niet-export-klanten behouden`:''}`);
   migrateData();
   persistMeta(); persist();
   OPSCHOON_PLAN = null;
