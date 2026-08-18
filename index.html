@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.11';
+const APP_VERSION = '2026.08.18.12';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5665,6 +5665,28 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     if(snap) afgerond.push({k, snap});
   });
   if(!open.length && !afgerond.length){
+    // Geen lopende periodes in deze maand (bijv. een toekomstige maand) — maar er kunnen wél
+    // notities voor deze maand klaarstaan. Die tonen we hier, zodat controleren mogelijk is.
+    const metNotitie = list.map(k=>{
+      const f = STORE[k.id];
+      const n = f && f.lh && Array.isArray(f.lh.maandNotities) ? f.lh.maandNotities.filter(x=>x.maand===bekeken) : [];
+      return n.length ? {k, notities:n} : null;
+    }).filter(Boolean).sort((a,b)=>a.k.naam.localeCompare(b.k.naam,'nl'));
+    if(metNotitie.length){
+      return `<div class="section" style="margin-bottom:18px;">
+        <div class="section-head"><h3>${titel} — ${maandLabelVanKey(bekeken)}</h3><span class="hint">nog geen lopende periodes · ${metNotitie.length} klant(en) met een notitie voor deze maand</span></div>
+        <div class="section-body">
+          <table>
+            <thead><tr><th>Nr.</th><th>Werkgever</th><th>⭐ Notitie voor ${maandLabelVanKey(bekeken)}</th></tr></thead>
+            <tbody>${metNotitie.map(({k, notities})=>`<tr>
+              <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${k.extId||'—'}</td>
+              <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+              <td>${notities.map(n=>escHtml(n.tekst)).join('<br>')}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
     return `<div class="section" style="margin-bottom:18px;">
       <div class="section-head"><h3>${titel} — ${maandLabelVanKey(bekeken)}</h3><span class="hint">0 klant(en)</span></div>
       <div class="section-body pad"><div class="empty-state" style="padding:20px; font-size:12.5px;">Geen klanten in deze maand.</div></div>
