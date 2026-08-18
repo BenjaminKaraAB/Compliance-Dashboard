@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.17.15';
+const APP_VERSION = '2026.08.18.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5783,7 +5783,7 @@ function bijtellingBeheerHTML(){
 /* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
    Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
    localStorage (hoeft niet mee in de gedeelde sync). */
-const ADMIN_SECTIES = ['bevoegdheid','documenten','logboek','inventaris'];
+const ADMIN_SECTIES = ['bevoegdheid','documenten','logboek','inventaris','opschonen'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
@@ -5917,6 +5917,35 @@ function adminHTML(){
       </tbody></table>
     </div>
   </div>`).join('') : `<div class="section" style="margin-top:14px;"><div class="empty-state">${filter==='in_bezit' ? 'Niets dat momenteel als "in bezit" geregistreerd staat.' : 'Nog geen items toegevoegd.'}</div></div>`}` : ''}`,
+  };
+
+  blokken.opschonen = ()=>{
+    const plan = OPSCHOON_PLAN;
+    return `
+  <div class="section"${marge('opschonen')}>
+    ${kop('opschonen','Klantenlijst opschonen')}
+    ${isOpen('opschonen') ? `<div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Staan er duplicaten in de klantenlijst (bijv. door meerdere imports)? Kies hieronder de actuele AdministratieBox-export (CSV/Excel). Je ziet eerst precies wat er gaat gebeuren; pas na jouw akkoord wordt de lijst gelijkgetrokken met de export. Duplicaten worden samengevoegd — het record met loonheffing- en dossiergegevens blijft altijd leidend, zodat daar niets van verloren gaat. Klanten die niet in de export staan maar wél ingevulde gegevens hebben, worden nooit automatisch verwijderd.</p>
+      <label class="btn sm" style="cursor:pointer;"><i class="ti ti-file-search" aria-hidden="true"></i> Kies export-bestand<input type="file" id="opschoonFileInput" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+      <div id="opschoonResultaat" style="margin-top:12px;">
+      ${plan ? `
+        <div class="banner">
+          <b>Voorbeeld van de opschoning</b><br>
+          Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records.<br>
+          → <b>${plan.dubbeleRecords}</b> duplicaat-records worden samengevoegd met hun origineel (${plan.dupGroepen.length} klanten hebben duplicaten)<br>
+          → <b>${plan.teVerwijderen.length}</b> records zonder ingevulde gegevens die niet in de export staan worden verwijderd<br>
+          → <b>${plan.beschermd.length}</b> records niet in de export maar mét ingevulde gegevens (o.a. loonheffing) worden <b>behouden</b><br>
+          → daarna: <b>${plan.groepen.size + plan.beschermd.length}</b> klanten over, allemaal met het juiste klantnummer uit de export
+        </div>
+        ${plan.dupGroepen.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Voorbeelden van duplicaten: ${plan.dupGroepen.slice(0,5).map(g=>`${g.csv.naam} (${g.records.length}×)`).join(' · ')}${plan.dupGroepen.length>5?` · en ${plan.dupGroepen.length-5} meer`:''}</div>` : ''}
+        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Behouden wegens gegevens: ${plan.beschermd.slice(0,5).map(k=>k.naam).join(' · ')}${plan.beschermd.length>5?` · en ${plan.beschermd.length-5} meer`:''}</div>` : ''}
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button class="btn sm primary" data-opschoon-uitvoeren>Opschoning uitvoeren</button>
+          <button class="btn sm ghost" data-opschoon-annuleren>Annuleren</button>
+        </div>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
   };
 
   return `
@@ -8367,6 +8396,30 @@ function attachHandlers(){
     toast(`"${klant.naam}" gemarkeerd als gecontroleerd.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  const opschoonInput = document.getElementById('opschoonFileInput');
+  if(opschoonInput) opschoonInput.addEventListener('change', ()=>{
+    const file = opschoonInput.files[0]; if(!file) return;
+    const box = document.getElementById('opschoonResultaat');
+    if(box) box.innerHTML = `<div class="banner">Bezig met inlezen van "${file.name}"…</div>`;
+    readTabularFile(file, (rows, err)=>{
+      if(err){ toast(err); if(box) box.innerHTML=''; return; }
+      if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(box) box.innerHTML=''; return; }
+      OPSCHOON_PLAN = maakOpschoonPlan(rows);
+      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    });
+    opschoonInput.value = '';
+  });
+  const opschoonGo = document.querySelector('[data-opschoon-uitvoeren]');
+  if(opschoonGo) opschoonGo.addEventListener('click', ()=>{
+    if(!OPSCHOON_PLAN) return;
+    const p = OPSCHOON_PLAN;
+    if(!confirm(`Weet je het zeker? ${p.dubbeleRecords} duplicaten worden samengevoegd en ${p.teVerwijderen.length} lege records verwijderd. Loonheffing- en dossiergegevens blijven behouden. Dit wordt ook naar SharePoint gesynchroniseerd.`)) return;
+    const verslag = voerOpschoningUit();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    if(verslag) toast(`Opschoning klaar: ${verslag.samengevoegd} samengevoegd, ${verslag.verwijderd} verwijderd, ${verslag.bijgewerkt} bijgewerkt. Nu ${RAW_KLANTEN.length} klanten.`);
+  });
+  const opschoonStop = document.querySelector('[data-opschoon-annuleren]');
+  if(opschoonStop) opschoonStop.addEventListener('click', ()=>{ OPSCHOON_PLAN = null; document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); });
   document.querySelectorAll('[data-admin-sectie-toggle]').forEach(el=>el.addEventListener('click',(e)=>{
     if(e && e.target && e.target.closest && e.target.closest('[data-geen-toggle]')) return;
     const key = el.getAttribute('data-admin-sectie-toggle');
@@ -9220,6 +9273,149 @@ async function handleLhKlantenImport(e){
     const msg = `<div class="banner" style="border-color:var(--red); color:var(--red);"><i class="ti ti-alert-circle" aria-hidden="true"></i> Fout bij inlezen: ${((err&&err.message)||err)}</div>`;
     if(boxErr) boxErr.innerHTML = msg; else alert('Fout bij inlezen van het Excel-bestand: '+((err&&err.message)||err));
   }
+}
+/* ============== KLANTENLIJST OPSCHONEN (admin) ==============
+   Herstelt een klantenlijst met duplicaten aan de hand van een AdministratieBox-export als
+   waarheidsbron. Duplicaten worden samengevoegd (het record met de meeste dossier-/loonheffing-
+   gegevens blijft leidend en verliest niets), klanten die niet in de export staan worden alleen
+   verwijderd als hun dossier leeg is — records met loonheffing- of andere ingevulde gegevens
+   worden nooit stilletjes weggegooid. Werkt in twee stappen: eerst een voorbeeld, dan pas uitvoeren. */
+let OPSCHOON_PLAN = null;
+function klantDossierScore(k){
+  const f = STORE[k.id];
+  let score = 0;
+  if(k.doetLoonaangifte) score += 5000;
+  if(k.heeftDga) score += 500;
+  if(f){
+    try{
+      const lh = f.lh || {};
+      if(Array.isArray(lh.taken) && lh.taken.some(t=>t && t.done)) score += 5000;
+      if(Array.isArray(lh.log) && lh.log.length) score += lh.log.length * 100;
+      if(lh.volgendeMaandNotitie) score += 200;
+      if(Array.isArray(f.items) && f.items.length) score += f.items.length * 50;
+      if(f.notities) score += 200;
+      if(Array.isArray(f.log) && f.log.length) score += f.log.length * 20;
+      ['akkoordLog','vpbAkkoordLog','fiscaleEenheidLog','betalingsuitstelLog','arbeidsovereenkomstDgaLog','managementovereenkomstDgaLog'].forEach(veld=>{
+        if(Array.isArray(f[veld]) && f[veld].length) score += f[veld].length * 100;
+      });
+      ['OB','VPB','LH','JR'].forEach(t=>{
+        const e = f.dl && f.dl[t];
+        if(e && !e.na && e.datum) score += 100;
+        if(e && e.status === 'ingediend') score += 100;
+      });
+      score += Math.min(2000, Math.round(JSON.stringify(f).length / 50));
+    }catch(err){}
+  }
+  if(AUTOS.some(a=>a.klant===k.id)) score += 300;
+  return score;
+}
+function maakOpschoonPlan(rows){
+  const csvKlanten = [];
+  rows.forEach(row=>{
+    const naam = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
+    const nummer = (findField(row,['Klantnummer'])||'').trim();
+    if(naam) csvKlanten.push({ naam, nummer,
+      kvk:(findField(row,['KvK nummer','KVK nummer','Kvk nummer'])||'').trim(),
+      contact:(findField(row,['Contactpersoon'])||findField(row,['Voornaam'])||'').trim(),
+      email:(findField(row,['E-mail','Email'])||'').trim(),
+      tel:(findField(row,['Telefoon'])||'').trim(),
+      vorm:(findField(row,['Rechtsvorm'])||'').trim() });
+  });
+  const opNummer = new Map(); const opNaam = new Map();
+  csvKlanten.forEach(c=>{
+    if(c.nummer) opNummer.set(c.nummer, c);
+    const n = normalizeKlantNaam(c.naam);
+    if(n) opNaam.set(n, c);
+  });
+  const groepen = new Map(); // csv-sleutel -> {csv, records:[]}
+  const nietInExport = [];
+  RAW_KLANTEN.forEach(k=>{
+    let csv = (k.extId && opNummer.get(String(k.extId).trim())) || opNaam.get(normalizeKlantNaam(k.naam)) || null;
+    if(!csv){ nietInExport.push(k); return; }
+    const sleutel = csv.nummer || normalizeKlantNaam(csv.naam);
+    if(!groepen.has(sleutel)) groepen.set(sleutel, { csv, records: [] });
+    groepen.get(sleutel).records.push(k);
+  });
+  const dupGroepen = [];
+  groepen.forEach(g=>{
+    if(g.records.length > 1){
+      g.records.sort((a,b)=>klantDossierScore(b)-klantDossierScore(a));
+      dupGroepen.push(g);
+    }
+  });
+  const teVerwijderen = []; const beschermd = [];
+  nietInExport.forEach(k=>{ (klantDossierScore(k) >= 300 ? beschermd : teVerwijderen).push(k); });
+  return { csvKlanten, groepen, dupGroepen, teVerwijderen, beschermd,
+    dubbeleRecords: dupGroepen.reduce((s,g)=>s+g.records.length-1, 0) };
+}
+function voegDossierSamen(keeperId, dupId){
+  const K = STORE[keeperId]; const D = STORE[dupId];
+  if(!K || !D) return;
+  const keeperKlant = RAW_KLANTEN.find(k=>k.id===keeperId);
+  const dupKlant = RAW_KLANTEN.find(k=>k.id===dupId);
+  if(keeperKlant && dupKlant && !keeperKlant.doetLoonaangifte && dupKlant.doetLoonaangifte){
+    keeperKlant.doetLoonaangifte = true;
+    keeperKlant.heeftDga = dupKlant.heeftDga;
+    keeperKlant.staatOpHold = dupKlant.staatOpHold;
+    keeperKlant.opHoldReden = dupKlant.opHoldReden;
+    keeperKlant.salarisdossierWerknemer = dupKlant.salarisdossierWerknemer;
+    if(D.lh) K.lh = JSON.parse(JSON.stringify(D.lh));
+  }
+  if(Array.isArray(D.items) && D.items.length){
+    const bestaandeNamen = new Set((K.items||[]).map(i=>i.naam));
+    D.items.forEach(i=>{ if(!bestaandeNamen.has(i.naam)) (K.items = K.items||[]).push(i); });
+  }
+  if(!K.notities && D.notities) K.notities = D.notities;
+  if(Array.isArray(D.log) && D.log.length) K.log = (K.log||[]).concat(D.log).slice(-200);
+  ['akkoordLog','vpbAkkoordLog','fiscaleEenheidLog','betalingsuitstelLog','arbeidsovereenkomstDgaLog','managementovereenkomstDgaLog','afspraken'].forEach(veld=>{
+    if(Array.isArray(D[veld]) && D[veld].length) K[veld] = (Array.isArray(K[veld])?K[veld]:[]).concat(D[veld]);
+  });
+  ['OB','VPB','LH','JR'].forEach(t=>{
+    const ke = K.dl && K.dl[t]; const de = D.dl && D.dl[t];
+    if(de && !de.na && de.datum && (!ke || ke.na || !ke.datum)){ if(!K.dl) K.dl = {}; K.dl[t] = JSON.parse(JSON.stringify(de)); if(keeperKlant && keeperKlant.dl) keeperKlant.dl[t] = JSON.parse(JSON.stringify(de)); }
+  });
+  if((!K.saldo || K.saldo===0) && D.saldo){ K.saldo = D.saldo; K.saldoDebet = D.saldoDebet; K.saldoCredit = D.saldoCredit; }
+  if((!K.txn || K.txn===0) && D.txn) K.txn = D.txn;
+  AUTOS.forEach(a=>{ if(a.klant===dupId) a.klant = keeperId; });
+}
+function voerOpschoningUit(){
+  const plan = OPSCHOON_PLAN;
+  if(!plan) return null;
+  const verslag = { samengevoegd:0, verwijderd:0, bijgewerkt:0, beschermd: plan.beschermd.length };
+  plan.dupGroepen.forEach(g=>{
+    const keeper = g.records[0];
+    g.records.slice(1).forEach(dup=>{
+      voegDossierSamen(keeper.id, dup.id);
+      const idx = RAW_KLANTEN.findIndex(k=>k.id===dup.id);
+      if(idx!==-1) RAW_KLANTEN.splice(idx,1);
+      delete STORE[dup.id];
+      verslag.samengevoegd++;
+    });
+  });
+  plan.teVerwijderen.forEach(k=>{
+    const idx = RAW_KLANTEN.findIndex(x=>x.id===k.id);
+    if(idx!==-1) RAW_KLANTEN.splice(idx,1);
+    delete STORE[k.id];
+    verslag.verwijderd++;
+  });
+  plan.groepen.forEach(g=>{
+    const k = RAW_KLANTEN.find(x=>x.id===g.records[0].id);
+    if(!k) return;
+    const c = g.csv;
+    k.naam = c.naam;
+    if(c.nummer) k.extId = c.nummer;
+    if(c.kvk) k.kvk = c.kvk;
+    if(c.contact) k.contact = c.contact;
+    if(c.email) k.email = c.email;
+    if(c.tel) k.tel = c.tel;
+    if(c.vorm) k.vorm = c.vorm;
+    verslag.bijgewerkt++;
+  });
+  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.verwijderd} niet-actuele klanten verwijderd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.beschermd?`, ${verslag.beschermd} behouden wegens ingevulde gegevens`:''}`);
+  migrateData();
+  persistMeta(); persist();
+  OPSCHOON_PLAN = null;
+  return verslag;
 }
 function handleKlantenCSVUpload(e){
   const file = e.target.files[0]; if(!file) return;
