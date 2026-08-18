@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.2';
+const APP_VERSION = '2026.08.18.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5933,12 +5933,14 @@ function adminHTML(){
           <b>Voorbeeld van de opschoning</b><br>
           Export bevat <b>${plan.csvKlanten.length}</b> klanten · dashboard heeft nu <b>${RAW_KLANTEN.length}</b> records.<br>
           → <b>${plan.dubbeleRecords}</b> duplicaat-records worden samengevoegd met hun origineel (${plan.dupGroepen.length} klanten hebben duplicaten)<br>
+          → <b>${plan.nieuwUitExport.length}</b> export-klanten staan nog niet in het dashboard en worden aangemaakt<br>
           → <b>${plan.beschermd.length}</b> klanten staan niet in de export en blijven <b>gewoon staan</b> (er wordt niets verwijderd behalve duplicaten)<br>
-          → daarna: <b>${plan.groepen.size + plan.beschermd.length}</b> klanten over; export-klanten krijgen het juiste klantnummer<br>
+          <b>Optelsom na opschoning: ${plan.groepen.size} gematcht + ${plan.nieuwUitExport.length} nieuw + ${plan.beschermd.length} eigen klanten = ${plan.groepen.size + plan.nieuwUitExport.length + plan.beschermd.length} klanten</b><br>
           Vóór het uitvoeren wordt automatisch een backup-bestand gedownload.
         </div>
         ${plan.dupGroepen.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:8px;">Voorbeelden van duplicaten: ${plan.dupGroepen.slice(0,5).map(g=>`${g.csv.naam} (${g.records.length}×)`).join(' · ')}${plan.dupGroepen.length>5?` · en ${plan.dupGroepen.length-5} meer`:''}</div>` : ''}
-        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Niet in de export (blijven staan): ${plan.beschermd.slice(0,5).map(k=>k.naam).join(' · ')}${plan.beschermd.length>5?` · en ${plan.beschermd.length-5} meer`:''}</div>` : ''}
+        ${plan.beschermd.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;"><b>Niet in de export (blijven staan, controleer of dit jouw handmatige klanten zijn):</b><br>${plan.beschermd.slice(0,40).map(k=>k.naam).join(' · ')}${plan.beschermd.length>40?` · en ${plan.beschermd.length-40} meer`:''}</div>` : ''}
+        ${plan.nieuwUitExport.length ? `<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Nieuw aan te maken uit export: ${plan.nieuwUitExport.slice(0,10).map(c=>c.naam).join(' · ')}${plan.nieuwUitExport.length>10?` · en ${plan.nieuwUitExport.length-10} meer`:''}</div>` : ''}
         <div style="display:flex; gap:8px; margin-top:12px;">
           <button class="btn sm primary" data-opschoon-uitvoeren>Opschoning uitvoeren</button>
           <button class="btn sm ghost" data-opschoon-annuleren>Annuleren</button>
@@ -9355,7 +9357,13 @@ function maakOpschoonPlan(rows){
   // Klanten die niet in de export staan worden NOOIT verwijderd — het kunnen legitieme klanten
   // zijn die (nog) niet in AdministratieBox staan of niet mee-geëxporteerd worden. Alleen echte
   // duplicaten van export-klanten worden samengevoegd.
-  return { csvKlanten, groepen, dupGroepen, teVerwijderen: [], beschermd: nietInExport,
+  // Export-klanten die nog helemaal niet in het dashboard staan, worden aangemaakt zodat de
+  // lijst na afloop exact de export dekt.
+  const nieuwUitExport = csvKlanten.filter(c=>{
+    const sleutel = c.nummer || normalizeKlantNaam(c.naam);
+    return !groepen.has(sleutel);
+  });
+  return { csvKlanten, groepen, dupGroepen, teVerwijderen: [], beschermd: nietInExport, nieuwUitExport,
     dubbeleRecords: dupGroepen.reduce((s,g)=>s+g.records.length-1, 0) };
 }
 function voegDossierSamen(keeperId, dupId){
@@ -9421,7 +9429,18 @@ function voerOpschoningUit(){
     if(c.vorm) k.vorm = c.vorm;
     verslag.bijgewerkt++;
   });
-  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.beschermd?`, ${verslag.beschermd} niet-export-klanten behouden`:''}`);
+  (plan.nieuwUitExport||[]).forEach(c=>{
+    const id = nextId(RAW_KLANTEN,'k');
+    const klant = { id, naam:c.naam, vorm:c.vorm||'Onbekend', bh: (BOEKHOUDERS[0]&&BOEKHOUDERS[0].id)||'', kvk:c.kvk, contact:c.contact, email:c.email, tel:c.tel,
+      doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', salarisdossierWerknemer:true, extId:c.nummer,
+      kvkLaatsteControle:null, ib: defaultIbData(), vpb: defaultVpbData(), fiscaleEenheid: defaultFiscaleEenheid(),
+      betalingsuitstel: defaultBetalingsuitstel(), arbeidsovereenkomstDga: defaultArbeidsovereenkomstDga(),
+      managementovereenkomstDga: defaultManagementovereenkomstDga(), dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] } };
+    RAW_KLANTEN.push(klant);
+    STORE[id] = { dl:JSON.parse(JSON.stringify(klant.dl)), saldo:0, saldoDebet:0, saldoCredit:0, txn:0, sync:new Date().toISOString().slice(0,10), items:[], kanalen:['email'], dagen1:7, dagen2:14, log:[], notities:'', akkoordLog:[], vpbAkkoordLog:[], fiscaleEenheidLog:[], betalingsuitstelLog:[], arbeidsovereenkomstDgaLog:[], managementovereenkomstDgaLog:[], lh:{taken:nieuwLhTaken(false), log:[], volgendeMaandNotitie:''} };
+    verslag.nieuwAangemaakt = (verslag.nieuwAangemaakt||0)+1;
+  });
+  logActiviteit(`Klantenlijst opgeschoond: ${verslag.samengevoegd} duplicaten samengevoegd, ${verslag.bijgewerkt} bijgewerkt uit export${verslag.nieuwAangemaakt?`, ${verslag.nieuwAangemaakt} nieuw aangemaakt uit export`:''}${verslag.beschermd?`, ${verslag.beschermd} niet-export-klanten behouden`:''}`);
   migrateData();
   persistMeta(); persist();
   OPSCHOON_PLAN = null;
