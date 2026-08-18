@@ -486,6 +486,36 @@
   #cmdkHost kbd{font-family:ui-monospace,monospace; background:var(--card); border:1px solid var(--border); padding:1px 5px; border-radius:4px; font-size:10.5px; margin-right:4px;}
 
   @media (max-width:1100px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} .dash-tegels{grid-template-columns:repeat(2,1fr);} .bh-grid{grid-template-columns:repeat(2,1fr);} }
+
+/* ===== Teams-replica (msteams-pagina) ===== */
+.tm-wrap{display:flex; height:560px; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--card);}
+.tm-rail{width:64px; background:#444791; display:flex; flex-direction:column; align-items:center; padding-top:10px; gap:2px; flex-shrink:0;}
+.tm-rail-item{width:52px; padding:7px 0 5px; border-radius:8px; text-align:center; cursor:pointer; color:#c7c9f0; font-size:9.5px; line-height:1.3; border:none; background:none;}
+.tm-rail-item i{font-size:19px; display:block; margin-bottom:1px;}
+.tm-rail-item.is-actief{color:#fff; background:rgba(255,255,255,.14);}
+.tm-rail-item:hover{color:#fff;}
+.tm-lijst{width:270px; border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; background:var(--bg);}
+.tm-item{padding:9px 12px; cursor:pointer; display:flex; gap:9px; align-items:center; border-left:3px solid transparent;}
+.tm-item:hover{background:var(--card);}
+.tm-item.is-actief{background:var(--card); border-left-color:#5B5FC7;}
+.tm-avatar{position:relative; flex-shrink:0;}
+.tm-avatar .cirkel{width:30px; height:30px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+.tm-presence{position:absolute; bottom:-1px; right:-1px; width:10px; height:10px; border-radius:50%; border:2px solid var(--bg);}
+.tm-dag{text-align:center; font-size:10.5px; color:var(--muted2); margin:10px 0 4px; display:flex; align-items:center; gap:10px;}
+.tm-dag::before,.tm-dag::after{content:''; flex:1; height:1px; background:var(--border);}
+.tm-bubbel{max-width:70%; padding:7px 12px; border-radius:6px; font-size:12.5px; line-height:1.5; background:var(--card); border:1px solid var(--border); align-self:flex-start; position:relative;}
+.tm-bubbel.is-eigen{background:#E8EBFA; border-color:#dfe3f7; color:#242424; align-self:flex-end;}
+html[data-theme="dark"] .tm-bubbel.is-eigen{background:#3d3f78; border-color:#4a4d8f; color:#f1f5f9;}
+.tm-mention{background:#E8EBFA; color:#4F52B2; border-radius:4px; padding:0 3px; font-weight:600;}
+html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
+.tm-reactie{display:inline-flex; align-items:center; gap:3px; border:1px solid var(--border); background:var(--card); border-radius:10px; padding:0 7px; font-size:10.5px; margin-top:3px;}
+.tm-compose{display:flex; gap:8px; align-items:flex-end; padding:10px 14px; border-top:1px solid var(--border); position:relative;}
+.tm-compose input{flex:1; padding:9px 12px; border:1px solid var(--border); border-radius:6px; font-size:12.5px; background:var(--card); color:var(--text);}
+.tm-emoji-grid{position:absolute; bottom:52px; right:56px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(6,1fr); gap:4px; box-shadow:0 6px 24px rgba(0,0,0,.12); z-index:30;}
+.tm-emoji-grid button{border:none; background:none; font-size:18px; cursor:pointer; padding:3px; border-radius:6px;}
+.tm-emoji-grid button:hover{background:var(--bg);}
+.app-teller{position:absolute; top:4px; right:6px; background:#C4314B; color:#fff; font-size:9px; font-weight:700; border-radius:8px; padding:0 4px; min-width:14px; text-align:center; line-height:14px;}
+.nav-app-teller{margin-left:auto; background:#C4314B; color:#fff; font-size:10px; font-weight:700; border-radius:9px; padding:1px 6px;}
 </style>
 </head>
 <body>
@@ -499,7 +529,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.8';
+const APP_VERSION = '2026.08.18.10';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1978,7 +2008,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2054,6 +2084,8 @@ function render(){
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
           <button class="btn sm ai-launch-btn" id="aiToggleBtn" title="AI-assistent" aria-label="AI-assistent" style="padding:6px 10px;"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
           <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen" style="padding:6px 10px;"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          <button class="btn sm ghost" id="chatTopBtn" data-top-app="msteams" title="Teams-chat" aria-label="Teams-chat" style="padding:6px 10px; position:relative;"><i class="ti ti-message-circle" aria-hidden="true"></i><span id="topTellerChat" class="app-teller" style="display:none;"></span></button>
+          <button class="btn sm ghost" id="mailTopBtn" data-top-app="outlook" title="Outlook" aria-label="Outlook" style="padding:6px 10px; position:relative;"><i class="ti ti-mail" aria-hidden="true"></i><span id="topTellerMail" class="app-teller" style="display:none;"></span></button>
           <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="padding:6px 10px; position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
           <div class="today-pill"><i class="ti ti-calendar" aria-hidden="true"></i> ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
         </div>
@@ -3088,7 +3120,125 @@ function msteamsChatUrl(emails, bericht){
    Polling elke 15s (Teams-embedding in een iframe blokkeert Microsoft; dit is de werkbare weg).
    Bij ontbrekende toestemming (eerste keer na deze update) toont de pagina een "Verbind met
    Teams"-knop die de interactieve Microsoft-toestemmingsvraag opent. */
-const MSCHAT = { chats:null, laden:false, fout:null, actieveChat:null, berichten:{}, berichtenLaden:false, laatstVerverst:null, timerGestart:false };
+const MSCHAT = { chats:null, laden:false, fout:null, actieveChat:null, berichten:{}, berichtenLaden:false, laatstVerverst:null, timerGestart:false,
+  zoek:'', railTab:'chats', presence:{}, presenceStatus:null, emojiOpen:false, nieuweChatOpen:false,
+  kanalen:null, kanaalStatus:null, actiefKanaal:null, kanaalBerichten:{}, meldingenGevraagd:false, vorigeOngelezen:{} };
+/* Presence (aanwezigheid): kleuren zoals de echte Teams-app. Vereist de Graph-permissie
+   Presence.Read.All — is die er (nog) niet, dan degraderen we stil naar grijze bolletjes. */
+const TM_PRESENCE_KLEUR = { Available:'#6BB700', AvailableIdle:'#6BB700', Busy:'#C4314B', BusyIdle:'#C4314B', DoNotDisturb:'#C4314B', InACall:'#C4314B', InAMeeting:'#C4314B', Presenting:'#C4314B', Away:'#FFAA44', BeRightBack:'#FFAA44', Offline:'#8A8886', PresenceUnknown:'#8A8886' };
+const TM_PRESENCE_LABEL = { Available:'Beschikbaar', Busy:'Bezet', DoNotDisturb:'Niet storen', InACall:'In gesprek', InAMeeting:'In vergadering', Presenting:'Presenteert', Away:'Afwezig', BeRightBack:'Zo terug', Offline:'Offline', PresenceUnknown:'Onbekend' };
+function tmPresenceKleur(userId){
+  const p = MSCHAT.presence[userId];
+  return (p && TM_PRESENCE_KLEUR[p.availability]) || '#8A8886';
+}
+function tmPresenceLabel(userId){
+  const p = MSCHAT.presence[userId];
+  return (p && (TM_PRESENCE_LABEL[p.availability] || p.availability)) || '';
+}
+async function mschatLaadPresence(){
+  if(MSCHAT.presenceStatus === 'geen-permissie' || !MSCHAT.chats) return;
+  try{
+    const ids = new Set();
+    MSCHAT.chats.forEach(c=>(c.members||[]).forEach(m=>{ if(m.userId) ids.add(m.userId); }));
+    if(!ids.size) return;
+    const res = await graphFetch('https://graph.microsoft.com/v1.0/communications/getPresencesByUserId', {
+      method:'POST', body: JSON.stringify({ ids: Array.from(ids).slice(0, 80) })
+    }, false);
+    (res.value||[]).forEach(p=>{ MSCHAT.presence[p.id] = p; });
+    MSCHAT.presenceStatus = 'ok';
+  }catch(e){
+    // 403/consent: permissie ontbreekt in de Azure app-registratie — stil degraderen.
+    MSCHAT.presenceStatus = 'geen-permissie';
+  }
+}
+/* Berichttekst renderen met behoud van @mentions als highlight-chip. */
+function tmRenderBericht(m){
+  let html = String((m.body && m.body.content)||'');
+  const mentions = [];
+  html = html.replace(/<at[^>]*>([\s\S]*?)<\/at>/gi, (_, naam)=>{ mentions.push(naam); return `\u0001${mentions.length-1}\u0001`; });
+  let tekst = mschatStripHtml(html);
+  const heeftAfbeelding = /<img/i.test(String((m.body && m.body.content)||''));
+  tekst = mschatEsc(tekst).replace(/\u0001(\d+)\u0001/g, (_, i)=>`<span class="tm-mention">@${mschatEsc(mschatStripHtml(mentions[Number(i)]||''))}</span>`);
+  if(heeftAfbeelding) tekst += `${tekst?'<br>':''}<span style="color:var(--muted); font-size:11px;"><i class="ti ti-photo" aria-hidden="true"></i> afbeelding — open in Teams om te bekijken</span>`;
+  return tekst;
+}
+const TM_REACTIE_EMOJI = { like:'👍', heart:'❤️', laugh:'😆', surprised:'😮', sad:'😢', angry:'😠' };
+function tmReactiesHTML(m){
+  const r = m.reactions || [];
+  if(!r.length) return '';
+  const telling = {};
+  r.forEach(x=>{ const e = TM_REACTIE_EMOJI[x.reactionType] || '👍'; telling[e] = (telling[e]||0)+1; });
+  return '<div>' + Object.entries(telling).map(([e,n])=>`<span class="tm-reactie">${e} ${n}</span>`).join(' ') + '</div>';
+}
+function tmDagLabel(iso){
+  const d = new Date(iso); const nu = new Date();
+  const gisteren = new Date(); gisteren.setDate(nu.getDate()-1);
+  if(d.toDateString()===nu.toDateString()) return 'Vandaag';
+  if(d.toDateString()===gisteren.toDateString()) return 'Gisteren';
+  return d.toLocaleDateString('nl-NL',{weekday:'long', day:'numeric', month:'long'});
+}
+function tmOngelezenTotaal(){
+  return (MSCHAT.chats||[]).filter(c=>mschatIsOngelezen(c)).length;
+}
+function tmMailOngelezen(){
+  return (MSMAIL.mails||[]).filter(m=>!m.isRead).length;
+}
+/* Browsermelding bij nieuw chatbericht (alleen als de gebruiker dat heeft toegestaan). */
+function tmMeldNieuweBerichten(){
+  try{
+    if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    (MSCHAT.chats||[]).forEach(c=>{
+      const laatste = c.lastMessagePreview && c.lastMessagePreview.createdDateTime;
+      if(!laatste || !mschatIsOngelezen(c)) return;
+      const vorig = MSCHAT.vorigeOngelezen[c.id];
+      if(vorig === laatste) return;
+      MSCHAT.vorigeOngelezen[c.id] = laatste;
+      if(vorig === undefined) return; // eerste keer: niets melden, alleen registreren
+      const van = (c.lastMessagePreview.from && c.lastMessagePreview.from.user && c.lastMessagePreview.from.user.displayName) || mschatTitel(c);
+      if(van && mschatEigenNaam() && van.toLowerCase()===mschatEigenNaam().toLowerCase()) return;
+      new Notification(`${van} — Teams`, { body: mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content).slice(0,120), silent:false });
+    });
+  }catch(e){}
+}
+/* Badges in sidebar + tabbladtitel, vanaf elke pagina actueel. */
+function updateAppBadges(){
+  try{
+    const chatN = tmOngelezenTotaal();
+    const mailN = tmMailOngelezen();
+    const zet = (nav, n)=>{
+      const el = document.querySelector(`[data-nav="${nav}"]`);
+      if(!el) return;
+      let b = el.querySelector('.nav-app-teller');
+      if(n > 0){
+        if(!b){ b = document.createElement('span'); b.className = 'nav-app-teller'; el.appendChild(b); }
+        b.textContent = n > 9 ? '9+' : String(n);
+      } else if(b) b.remove();
+    };
+    zet('msteams', chatN); zet('outlook', mailN);
+    ['topTellerChat','topTellerMail'].forEach((id, i)=>{
+      const el = document.getElementById(id);
+      if(el){ const n = i===0?chatN:mailN; el.style.display = n>0?'':'none'; el.textContent = n>9?'9+':String(n); }
+    });
+    const totaal = chatN + mailN;
+    const basisTitel = 'Compliance Dashboard';
+    document.title = totaal > 0 ? `(${totaal}) ${basisTitel}` : basisTitel;
+  }catch(e){}
+}
+/* Globale achtergrond-poll: chats + inbox stil verversen zodat badges overal kloppen. */
+let tmGlobalePollGestart = false;
+function tmStartGlobalePoll(){
+  if(tmGlobalePollGestart) return;
+  tmGlobalePollGestart = true;
+  setInterval(async ()=>{
+    if(!SYNC.account) return;
+    try{
+      if(MSCHAT.chats && !MSCHAT.laden && STATE.view!=='msteams'){ await mschatLaadChats(false); }
+      if(MSMAIL.mails && !MSMAIL.laden && STATE.view!=='outlook'){ await msmailLaadInbox(false); }
+      tmMeldNieuweBerichten();
+      updateAppBadges();
+    }catch(e){}
+  }, 60000);
+}
 function mschatEigenNaam(){ return (SYNC.account && (SYNC.account.name||'')) || ''; }
 function mschatStripHtml(html){
   const zonderTags = String(html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
@@ -3141,6 +3291,9 @@ async function mschatInit(allowInteractive){
   try{
     await mschatLaadChats(allowInteractive);
     if(MSCHAT.actieveChat) await mschatLaadBerichten(MSCHAT.actieveChat, false).catch(()=>{});
+    mschatLaadPresence().catch(()=>{});
+    tmMeldNieuweBerichten();
+    updateAppBadges();
   }catch(e){
     MSCHAT.fout = e.message || 'Kon Teams niet bereiken.';
   }
@@ -3156,6 +3309,9 @@ function mschatStartPolling(){
     try{
       await mschatLaadChats(false);
       if(MSCHAT.actieveChat) await mschatLaadBerichten(MSCHAT.actieveChat, false);
+      mschatLaadPresence().catch(()=>{});
+      tmMeldNieuweBerichten();
+      updateAppBadges();
       const inputEl = document.getElementById('mschatInput');
       const invoer = inputEl ? inputEl.value : '';
       const berichtEl = document.getElementById('msteamsBericht');
@@ -3169,6 +3325,148 @@ function mschatStartPolling(){
       }
     }catch(e){}
   }, 15000);
+}
+function tmChatlijstHTML(){
+  const eigenNaam = mschatEigenNaam();
+  const zoek = (MSCHAT.zoek||'').toLowerCase();
+  let chats = MSCHAT.chats || [];
+  if(zoek) chats = chats.filter(c=>{
+    const titel = mschatTitel(c).toLowerCase();
+    const preview = c.lastMessagePreview ? mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content).toLowerCase() : '';
+    return titel.includes(zoek) || preview.includes(zoek);
+  });
+  return chats.slice(0, 30).map(c=>{
+    const actief = MSCHAT.actieveChat === c.id;
+    const titel = mschatTitel(c);
+    const preview = c.lastMessagePreview ? mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content) : '';
+    const previewVan = c.lastMessagePreview && c.lastMessagePreview.from && c.lastMessagePreview.from.user && c.lastMessagePreview.from.user.displayName;
+    const eigenPreview = previewVan && eigenNaam && previewVan.toLowerCase()===eigenNaam.toLowerCase();
+    const ongelezen = mschatIsOngelezen(c);
+    const ander = (c.members||[]).find(m=>m.displayName && m.displayName.toLowerCase()!==eigenNaam.toLowerCase());
+    const presenceKleur = c.chatType==='oneOnOne' && ander && ander.userId ? tmPresenceKleur(ander.userId) : null;
+    const tijd = c.lastMessagePreview ? mschatTijd(c.lastMessagePreview.createdDateTime).split(' ')[0] : '';
+    return `<div class="tm-item ${actief?'is-actief':''}" data-mschat-open="${c.id}">
+      <span class="tm-avatar">
+        <span class="cirkel" style="background:${boekhouderKleurVoorNaam(titel)||'#5B5FC7'};">${mschatEsc(initialenVoor(titel))}</span>
+        ${presenceKleur ? `<span class="tm-presence" style="background:${presenceKleur};" title="${mschatEsc(tmPresenceLabel(ander.userId))}"></span>` : ''}
+      </span>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; justify-content:space-between; gap:6px;">
+          <span style="font-size:12.5px; font-weight:${ongelezen?'700':'500'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(titel)}</span>
+          <span style="font-size:10px; color:var(--muted2); flex-shrink:0;">${mschatEsc(tijd)}</span>
+        </div>
+        <div style="font-size:11px; color:${ongelezen?'var(--text)':'var(--muted2)'}; font-weight:${ongelezen?'600':'400'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${eigenPreview?'Jij: ':''}${mschatEsc(preview.slice(0,55))}</div>
+      </div>
+      ${ongelezen?'<span style="width:8px; height:8px; border-radius:50%; background:#5B5FC7; flex-shrink:0;"></span>':''}
+    </div>`;
+  }).join('') || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen chats gevonden.</div>';
+}
+function tmGesprekHTML(){
+  const eigenNaam = mschatEigenNaam();
+  const actieveChat = MSCHAT.actieveChat ? (MSCHAT.chats||[]).find(c=>c.id===MSCHAT.actieveChat) : null;
+  if(!actieveChat){
+    return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg); gap:8px;">
+      <i class="ti ti-messages" style="font-size:32px;" aria-hidden="true"></i>Kies links een chat om te lezen en te reageren.</div>`;
+  }
+  const titel = mschatTitel(actieveChat);
+  const ander = (actieveChat.members||[]).find(m=>m.displayName && m.displayName.toLowerCase()!==eigenNaam.toLowerCase());
+  const presenceKleur = actieveChat.chatType==='oneOnOne' && ander && ander.userId ? tmPresenceKleur(ander.userId) : null;
+  const presenceTekst = actieveChat.chatType==='oneOnOne' && ander && ander.userId ? tmPresenceLabel(ander.userId) : `${(actieveChat.members||[]).length} leden`;
+  const isAanwezigheidschat = /aanwezig/i.test(actieveChat.topic||'');
+  const msgs = MSCHAT.berichten[actieveChat.id] || [];
+  let vorigeDag = '';
+  const bubbels = msgs.map(m=>{
+    const van = (m.from && m.from.user && m.from.user.displayName) || 'Onbekend';
+    const eigen = eigenNaam && van.toLowerCase() === eigenNaam.toLowerCase();
+    const inhoud = tmRenderBericht(m);
+    if(!inhoud) return '';
+    const dag = new Date(m.createdDateTime).toDateString();
+    const dagScheider = dag !== vorigeDag ? `<div class="tm-dag">${tmDagLabel(m.createdDateTime)}</div>` : '';
+    vorigeDag = dag;
+    const tijd = new Date(m.createdDateTime).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'});
+    const naamRegel = eigen ? '' : `<div style="font-size:10.5px; color:var(--muted2); margin-bottom:2px;">${mschatEsc(van.split(' ')[0])} · ${tijd}</div>`;
+    const eigenTijd = eigen ? `<div style="font-size:10px; color:var(--muted2); text-align:right; margin-top:2px;">${tijd}</div>` : '';
+    const avatar = eigen ? '' : `<span class="tm-avatar" style="align-self:flex-end;"><span class="cirkel" style="width:24px; height:24px; font-size:9.5px; background:${boekhouderKleurVoorNaam(van)||'#5B5FC7'};">${mschatEsc(initialenVoor(van))}</span></span>`;
+    return `${dagScheider}<div style="display:flex; gap:8px; ${eigen?'flex-direction:row-reverse;':''} align-items:flex-end;">
+      ${avatar}
+      <div style="max-width:70%; display:flex; flex-direction:column; ${eigen?'align-items:flex-end;':''}">
+        ${naamRegel}
+        <div class="tm-bubbel ${eigen?'is-eigen':''}" style="max-width:100%;">${inhoud}</div>
+        ${tmReactiesHTML(m)}${eigenTijd}
+      </div>
+    </div>`;
+  }).join('');
+  const emojiGrid = MSCHAT.emojiOpen ? `<div class="tm-emoji-grid">${['👍','❤️','😂','🎉','👌','🙏','😉','😢','🔥','💪','☕','👋'].map(e=>`<button data-tm-emoji="${e}">${e}</button>`).join('')}</div>` : '';
+  return `
+    <div style="padding:11px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;">
+      <span class="tm-avatar">
+        <span class="cirkel" style="background:${boekhouderKleurVoorNaam(titel)||'#5B5FC7'};">${mschatEsc(initialenVoor(titel))}</span>
+        ${presenceKleur?`<span class="tm-presence" style="background:${presenceKleur}; border-color:var(--card);"></span>`:''}
+      </span>
+      <div style="min-width:0;">
+        <div style="font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(titel)}</div>
+        <div style="font-size:10.5px; color:var(--muted2);">${mschatEsc(presenceTekst||'')}</div>
+      </div>
+      ${isAanwezigheidschat ? `<button class="btn sm" data-tm-goedemorgen style="margin-left:auto; background:#E8EBFA; color:#4F52B2; border:none;"><i class="ti ti-hand-stop" aria-hidden="true"></i> Zeg goedemorgen</button>` : ''}
+      <a class="btn sm ghost" style="${isAanwezigheidschat?'':'margin-left:auto;'} font-size:11px; flex-shrink:0;" href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent((actieveChat.members||[]).map(m=>m.email||'').filter(Boolean).join(','))}" target="_blank" rel="noopener">Open in Teams ↗</a>
+    </div>
+    <div id="mschatBerichten" style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:9px; background:var(--bg); overflow-y:auto;">
+      ${MSCHAT.berichtenLaden && !msgs.length ? '<div style="color:var(--muted2); font-size:12px;">Berichten laden…</div>' : (bubbels || '<div style="color:var(--muted2); font-size:12px;">Nog geen berichten in deze chat.</div>')}
+    </div>
+    <div class="tm-compose">
+      ${emojiGrid}
+      <input id="mschatInput" placeholder="Typ een bericht…">
+      <button class="btn sm ghost" data-tm-emoji-toggle title="Emoji" style="font-size:16px; padding:8px 10px;"><i class="ti ti-mood-smile" aria-hidden="true"></i></button>
+      <button data-mschat-verstuur title="Versturen" style="background:#5B5FC7; color:#fff; border:none; border-radius:6px; padding:9px 13px; cursor:pointer;"><i class="ti ti-send" aria-hidden="true"></i></button>
+    </div>`;
+}
+function tmKanalenHTML(){
+  if(MSCHAT.kanaalStatus === 'geen-permissie'){
+    return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:24px; text-align:center; background:var(--bg);">
+      <i class="ti ti-lock" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="font-size:12.5px; color:var(--muted); max-width:380px; line-height:1.6;">Voor teamkanalen zijn twee extra Graph-permissies nodig in de Azure app-registratie: <code>Team.ReadBasic.All</code> en <code>ChannelMessage.Read.All</code> (delegated). Voeg ze toe zoals destijds met Mail.Send en klik daarna hieronder.</div>
+      <button class="btn sm primary" data-tm-kanalen-laden>Opnieuw proberen</button>
+    </div>`;
+  }
+  if(!MSCHAT.kanalen){
+    return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; background:var(--bg);">
+      ${MSCHAT.kanaalStatus==='laden' ? '<i class="ti ti-loader-2" style="font-size:22px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12px; color:var(--muted);">Kanalen ophalen…</div>' : `<i class="ti ti-users-group" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i><button class="btn sm primary" data-tm-kanalen-laden>Teamkanalen laden</button>`}
+    </div>`;
+  }
+  const lijst = MSCHAT.kanalen.map(kn=>`<div class="tm-item ${MSCHAT.actiefKanaal===kn.sleutel?'is-actief':''}" data-tm-kanaal-open="${kn.sleutel}">
+      <span style="font-size:15px; color:var(--muted);">#</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12.5px; font-weight:500;">${mschatEsc(kn.kanaalNaam)}</div>
+        <div style="font-size:10.5px; color:var(--muted2);">${mschatEsc(kn.teamNaam)}</div>
+      </div>
+    </div>`).join('') || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen kanalen gevonden.</div>';
+  const actief = MSCHAT.actiefKanaal ? MSCHAT.kanalen.find(kn=>kn.sleutel===MSCHAT.actiefKanaal) : null;
+  let rechts;
+  if(!actief){
+    rechts = '<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg);">Kies een kanaal om berichten te lezen.</div>';
+  } else {
+    const msgs = MSCHAT.kanaalBerichten[actief.sleutel] || [];
+    let vorigeDag = '';
+    const bubbels = msgs.map(m=>{
+      const van = (m.from && m.from.user && m.from.user.displayName) || 'Onbekend';
+      const inhoud = tmRenderBericht(m);
+      if(!inhoud) return '';
+      const dag = new Date(m.createdDateTime).toDateString();
+      const scheider = dag !== vorigeDag ? `<div class="tm-dag">${tmDagLabel(m.createdDateTime)}</div>` : '';
+      vorigeDag = dag;
+      return `${scheider}<div style="display:flex; gap:8px; align-items:flex-end;">
+        <span class="tm-avatar" style="align-self:flex-end;"><span class="cirkel" style="width:24px; height:24px; font-size:9.5px; background:${boekhouderKleurVoorNaam(van)||'#5B5FC7'};">${mschatEsc(initialenVoor(van))}</span></span>
+        <div style="max-width:70%;"><div style="font-size:10.5px; color:var(--muted2); margin-bottom:2px;">${mschatEsc(van.split(' ')[0])} · ${new Date(m.createdDateTime).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div class="tm-bubbel">${inhoud}</div>${tmReactiesHTML(m)}</div>
+      </div>`;
+    }).join('');
+    rechts = `<div style="padding:11px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:700;"># ${mschatEsc(actief.kanaalNaam)} <span style="font-weight:400; color:var(--muted2); font-size:11px;">· ${mschatEsc(actief.teamNaam)} · alleen-lezen</span></div>
+      <div style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:9px; background:var(--bg); overflow-y:auto;">${bubbels || '<div style="color:var(--muted2); font-size:12px;">Nog geen berichten.</div>'}</div>`;
+  }
+  return `<div style="display:flex; flex:1; min-height:0;">
+    <div class="tm-lijst" style="height:auto;">${lijst}</div>
+    <div style="flex:1; display:flex; flex-direction:column; min-width:0;">${rechts}</div>
+  </div>`;
 }
 function mschatHTML(){
   if(!SYNC.account) return '';
@@ -3187,60 +3485,35 @@ function mschatHTML(){
         : '<i class="ti ti-brand-teams" style="font-size:26px; color:var(--muted);" aria-hidden="true"></i><div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Verbind eenmalig met Teams om je chats hier te zien.</div><button class="btn primary" data-mschat-verbind style="margin-top:12px;"><i class="ti ti-plug-connected" aria-hidden="true"></i> Verbind met Teams</button>'}
     </div></div>`;
   }
-  const eigenNaam = mschatEigenNaam();
-  const chatRijen = MSCHAT.chats.slice(0, 20).map(c=>{
-    const actief = MSCHAT.actieveChat === c.id;
-    const titel = mschatTitel(c);
-    const preview = c.lastMessagePreview ? mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content) : '';
-    const ongelezen = mschatIsOngelezen(c);
-    return `<div data-mschat-open="${c.id}" style="padding:10px 14px; cursor:pointer; ${actief?'background:var(--primary-bg); border-left:3px solid var(--primary);':'border-left:3px solid transparent;'}">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="width:26px; height:26px; border-radius:50%; background:${boekhouderKleurVoorNaam(titel)||'var(--muted2)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0;">${mschatEsc(initialenVoor(titel))}</span>
-        <div style="flex:1; min-width:0;">
-          <div style="font-size:12px; font-weight:${ongelezen?'700':'600'};">${mschatEsc(titel)}</div>
-          <div style="font-size:10.5px; color:${ongelezen?'var(--text)':'var(--muted2)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(preview.slice(0,60))}</div>
+  const eigenEmail = (SYNC.account && SYNC.account.username || '').toLowerCase();
+  const collegas = BOEKHOUDERS.filter(b=>b && b.email && b.email.trim() && b.email.trim().toLowerCase() !== eigenEmail).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  const nieuweChatMenu = MSCHAT.nieuweChatOpen ? `<div style="position:absolute; top:40px; left:10px; right:10px; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,.14); z-index:30; max-height:220px; overflow-y:auto;">
+      ${collegas.map(b=>`<div class="tm-item" data-tm-nieuwe-chat="${b.email.replace(/"/g,'&quot;')}"><span class="tm-avatar"><span class="cirkel" style="width:24px; height:24px; font-size:9.5px; background:${b.kleur||'#5B5FC7'};">${initialenVoor(b.naam)}</span></span><span style="font-size:12.5px;">${mschatEsc(b.naam)}</span></div>`).join('') || '<div style="padding:12px; font-size:12px; color:var(--muted2);">Geen collega-e-mailadressen bekend.</div>'}
+    </div>` : '';
+  const railTab = MSCHAT.railTab || 'chats';
+  const middenEnRechts = railTab === 'kanalen'
+    ? tmKanalenHTML()
+    : `<div class="tm-lijst" style="position:relative;">
+        <div style="padding:10px 12px; display:flex; gap:6px; align-items:center; border-bottom:1px solid var(--border);">
+          <input id="tmZoek" placeholder="Zoeken…" value="${mschatEsc(MSCHAT.zoek||'')}" style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:14px; font-size:11.5px; background:var(--card); color:var(--text);">
+          <button class="btn sm ghost" data-tm-nieuwe-chat-toggle title="Nieuwe chat" style="padding:5px 8px;"><i class="ti ti-edit" aria-hidden="true"></i></button>
         </div>
-        ${ongelezen?'<span style="width:7px; height:7px; border-radius:50%; background:var(--primary); flex-shrink:0;"></span>':''}
+        ${nieuweChatMenu}
+        <div style="flex:1; overflow-y:auto;">${tmChatlijstHTML()}</div>
       </div>
-    </div>`;
-  }).join('');
-  const actieveChat = MSCHAT.actieveChat ? MSCHAT.chats.find(c=>c.id===MSCHAT.actieveChat) : null;
-  let gesprekHtml;
-  if(!actieveChat){
-    gesprekHtml = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted2); font-size:12.5px; background:var(--bg);">Kies links een chat om te lezen en te reageren.</div>`;
-  } else {
-    const titel = mschatTitel(actieveChat);
-    const msgs = MSCHAT.berichten[actieveChat.id] || [];
-    const bubbels = msgs.map(m=>{
-      const van = (m.from && m.from.user && m.from.user.displayName) || 'Onbekend';
-      const eigen = eigenNaam && van.toLowerCase() === eigenNaam.toLowerCase();
-      const tekst = mschatStripHtml(m.body && m.body.content);
-      if(!tekst) return '';
-      return `<div style="align-self:${eigen?'flex-end':'flex-start'}; max-width:72%; background:${eigen?'#131417':'var(--card)'}; color:${eigen?'#fff':'var(--text)'}; border:${eigen?'none':'1px solid var(--border)'}; border-radius:${eigen?'10px 10px 3px 10px':'10px 10px 10px 3px'}; padding:8px 12px; font-size:12.5px;">
-        ${mschatEsc(tekst)}
-        <div style="font-size:10px; color:${eigen?'rgba(255,255,255,.6)':'var(--muted2)'}; margin-top:3px;">${eigen?'Jij':mschatEsc(van.split(' ')[0])} · ${mschatTijd(m.createdDateTime)}</div>
-      </div>`;
-    }).join('');
-    gesprekHtml = `
-      <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px;">
-        <span style="width:28px; height:28px; border-radius:50%; background:${boekhouderKleurVoorNaam(titel)||'var(--muted2)'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;">${mschatEsc(initialenVoor(titel))}</span>
-        <span style="font-size:13px; font-weight:600;">${mschatEsc(titel)}</span>
-        <a class="btn sm ghost" style="margin-left:auto; font-size:11px;" href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent((actieveChat.members||[]).map(m=>m.email||'').filter(Boolean).join(','))}" target="_blank" rel="noopener">Open in Teams ↗</a>
-      </div>
-      <div id="mschatBerichten" style="flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; background:var(--bg); overflow-y:auto;">
-        ${MSCHAT.berichtenLaden && !msgs.length ? '<div style="color:var(--muted2); font-size:12px;">Berichten laden…</div>' : (bubbels || '<div style="color:var(--muted2); font-size:12px;">Nog geen berichten in deze chat.</div>')}
-      </div>
-      <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px;">
-        <input id="mschatInput" style="flex:1; padding:9px 12px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;" placeholder="Typ een bericht…">
-        <button class="btn primary sm" data-mschat-verstuur style="padding:9px 16px;">Versturen</button>
-      </div>`;
-  }
+      <div style="flex:1; display:flex; flex-direction:column; min-width:0;">${tmGesprekHTML()}</div>`;
   const ververst = MSCHAT.laatstVerverst ? Math.round((Date.now()-MSCHAT.laatstVerverst)/1000) : null;
+  const presenceHint = MSCHAT.presenceStatus === 'geen-permissie' ? ` · aanwezigheid vereist Presence.Read.All in Azure` : '';
   return `<div class="section" style="margin-bottom:16px;">
-    <div class="section-head"><h3>Chats</h3><span class="hint">${ververst!==null ? `ververst ${ververst}s geleden · elke 15s automatisch` : ''}</span></div>
-    <div style="display:flex; height:440px;">
-      <div style="width:230px; border-right:1px solid var(--border); overflow-y:auto; flex-shrink:0;">${chatRijen || '<div style="padding:16px; font-size:12px; color:var(--muted2);">Geen chats gevonden.</div>'}</div>
-      <div style="flex:1; display:flex; flex-direction:column; min-width:0;">${gesprekHtml}</div>
+    <div class="section-head"><h3>Teams</h3><span class="hint">${ververst!==null ? `ververst ${ververst}s geleden · elke 15s automatisch` : ''}${presenceHint}</span></div>
+    <div class="tm-wrap">
+      <div class="tm-rail">
+        <button class="tm-rail-item ${railTab==='chats'?'is-actief':''}" data-tm-rail="chats"><i class="ti ti-message-circle" aria-hidden="true"></i>Chat${tmOngelezenTotaal()?`<span style="display:inline-block; background:#C4314B; color:#fff; font-size:8.5px; border-radius:7px; padding:0 4px; margin-left:2px;">${tmOngelezenTotaal()}</span>`:''}</button>
+        <button class="tm-rail-item ${railTab==='kanalen'?'is-actief':''}" data-tm-rail="kanalen"><i class="ti ti-users-group" aria-hidden="true"></i>Teams</button>
+        <a class="tm-rail-item" href="https://teams.microsoft.com/l/meeting/new" target="_blank" rel="noopener" style="text-decoration:none;"><i class="ti ti-calendar" aria-hidden="true"></i>Agenda</a>
+        <a class="tm-rail-item" href="https://teams.microsoft.com" target="_blank" rel="noopener" style="text-decoration:none; margin-top:auto; margin-bottom:10px;"><i class="ti ti-external-link" aria-hidden="true"></i>Teams</a>
+      </div>
+      ${middenEnRechts}
     </div>
   </div>`;
 }
@@ -3263,6 +3536,57 @@ async function mschatVerstuur(){
     toast('Versturen mislukt: ' + (e.message||'onbekende fout'));
     if(input) input.value = tekst;
   }
+}
+async function tmLaadKanalen(){
+  MSCHAT.kanaalStatus = 'laden';
+  if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+  try{
+    const teamsRes = await graphFetch('https://graph.microsoft.com/v1.0/me/joinedTeams', {}, false);
+    const kanalen = [];
+    for(const team of (teamsRes.value||[]).slice(0, 8)){
+      try{
+        const kRes = await graphFetch(`https://graph.microsoft.com/v1.0/teams/${team.id}/channels`, {}, false);
+        (kRes.value||[]).forEach(kn=>kanalen.push({ sleutel:`${team.id}|${kn.id}`, teamId:team.id, kanaalId:kn.id, teamNaam:team.displayName||'', kanaalNaam:kn.displayName||'' }));
+      }catch(e){}
+    }
+    MSCHAT.kanalen = kanalen;
+    MSCHAT.kanaalStatus = 'ok';
+  }catch(e){
+    MSCHAT.kanaalStatus = 'geen-permissie';
+  }
+  if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+async function tmLaadKanaalBerichten(sleutel){
+  const kn = (MSCHAT.kanalen||[]).find(x=>x.sleutel===sleutel);
+  if(!kn) return;
+  try{
+    const res = await graphFetch(`https://graph.microsoft.com/v1.0/teams/${kn.teamId}/channels/${kn.kanaalId}/messages?$top=25`, {}, false);
+    const msgs = (res.value||[]).filter(m=>m.messageType==='message' && !m.deletedDateTime);
+    msgs.reverse();
+    MSCHAT.kanaalBerichten[sleutel] = msgs;
+  }catch(e){
+    MSCHAT.kanaalBerichten[sleutel] = [];
+  }
+  if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+async function tmStartNieuweChat(email){
+  MSCHAT.nieuweChatOpen = false;
+  try{
+    const eigen = SYNC.account.username;
+    const res = await graphFetch('https://graph.microsoft.com/v1.0/chats', {
+      method:'POST',
+      body: JSON.stringify({ chatType:'oneOnOne', members: [
+        { '@odata.type':'#microsoft.graph.aadUserConversationMember', roles:['owner'], 'user@odata.bind':`https://graph.microsoft.com/v1.0/users('${eigen}')` },
+        { '@odata.type':'#microsoft.graph.aadUserConversationMember', roles:['owner'], 'user@odata.bind':`https://graph.microsoft.com/v1.0/users('${email}')` },
+      ]})
+    }, true);
+    await mschatLaadChats(false);
+    MSCHAT.actieveChat = res.id;
+    await mschatLaadBerichten(res.id, false).catch(()=>{});
+  }catch(e){
+    toast('Chat starten mislukt: ' + (e.message||'onbekende fout'));
+  }
+  if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
 }
 function msteamsHTML(){
   const eigenEmail = (SYNC.account && SYNC.account.username || '').toLowerCase();
@@ -3353,6 +3677,52 @@ function msteamsBindHandlers(){
       const box = document.getElementById('mschatBerichten'); if(box) box.scrollTop = box.scrollHeight;
     }
   }));
+  document.querySelectorAll('[data-tm-rail]').forEach(el=>el.addEventListener('click', ()=>{
+    MSCHAT.railTab = el.getAttribute('data-tm-rail');
+    if(MSCHAT.railTab==='kanalen' && !MSCHAT.kanalen && MSCHAT.kanaalStatus!=='laden' && MSCHAT.kanaalStatus!=='geen-permissie'){ tmLaadKanalen(); return; }
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-tm-kanalen-laden]').forEach(el=>el.addEventListener('click', ()=>{ MSCHAT.kanaalStatus = null; tmLaadKanalen(); }));
+  document.querySelectorAll('[data-tm-kanaal-open]').forEach(el=>el.addEventListener('click', ()=>{
+    MSCHAT.actiefKanaal = el.getAttribute('data-tm-kanaal-open');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    if(!MSCHAT.kanaalBerichten[MSCHAT.actiefKanaal]) tmLaadKanaalBerichten(MSCHAT.actiefKanaal);
+  }));
+  const tmZoekEl = document.getElementById('tmZoek');
+  if(tmZoekEl) tmZoekEl.addEventListener('input', ()=>{
+    MSCHAT.zoek = tmZoekEl.value;
+    const pos = tmZoekEl.selectionStart;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const nieuwEl = document.getElementById('tmZoek');
+    if(nieuwEl){ nieuwEl.focus(); try{ nieuwEl.setSelectionRange(pos,pos); }catch(e){} }
+  });
+  const tmNieuweChatBtn = document.querySelector('[data-tm-nieuwe-chat-toggle]');
+  if(tmNieuweChatBtn) tmNieuweChatBtn.addEventListener('click', ()=>{
+    MSCHAT.nieuweChatOpen = !MSCHAT.nieuweChatOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
+  document.querySelectorAll('[data-tm-nieuwe-chat]').forEach(el=>el.addEventListener('click', ()=>tmStartNieuweChat(el.getAttribute('data-tm-nieuwe-chat'))));
+  const tmEmojiToggle = document.querySelector('[data-tm-emoji-toggle]');
+  if(tmEmojiToggle) tmEmojiToggle.addEventListener('click', ()=>{
+    MSCHAT.emojiOpen = !MSCHAT.emojiOpen;
+    const invoer = document.getElementById('mschatInput'); const waarde = invoer ? invoer.value : '';
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    const nieuwInvoer = document.getElementById('mschatInput'); if(nieuwInvoer) nieuwInvoer.value = waarde;
+  });
+  document.querySelectorAll('[data-tm-emoji]').forEach(el=>el.addEventListener('click', ()=>{
+    const invoer = document.getElementById('mschatInput');
+    if(invoer){ invoer.value += el.getAttribute('data-tm-emoji'); invoer.focus(); }
+  }));
+  const tmGoedemorgen = document.querySelector('[data-tm-goedemorgen]');
+  if(tmGoedemorgen) tmGoedemorgen.addEventListener('click', ()=>{
+    const invoer = document.getElementById('mschatInput');
+    if(invoer){ invoer.value = 'Goedemorgen allemaal! 👋'; invoer.focus(); }
+  });
+  // Browsermeldingen: eenmalig toestemming vragen zodra de gebruiker de Teams-pagina echt gebruikt
+  if(!MSCHAT.meldingenGevraagd && typeof Notification !== 'undefined' && Notification.permission === 'default'){
+    MSCHAT.meldingenGevraagd = true;
+    try{ Notification.requestPermission().catch(()=>{}); }catch(e){}
+  }
   const verstuurKnop = document.querySelector('[data-mschat-verstuur]');
   if(verstuurKnop) verstuurKnop.addEventListener('click', ()=>mschatVerstuur());
   const chatInput = document.getElementById('mschatInput');
@@ -5303,7 +5673,35 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
   open.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
   afgerond.sort((a,b)=>a.k.naam.localeCompare(b.k.naam,'nl'));
 
-  const openRijen = open.map((k,i)=>{
+  // Voortgangsfilter per tabel: alle / niets afgevinkt / bezig / alles klaar
+  const groepSleutel = String(titel||'').toLowerCase().replace(/[^a-z]+/g,'');
+  const voortgangVan = (k)=>{
+    const f = syncLhTaken(k);
+    const taken = f.lh.taken || [];
+    const done = taken.filter(t=>t && t.done).length;
+    if(!taken.length) return 'niets';
+    if(done === 0) return 'niets';
+    if(done === taken.length) return 'klaar';
+    return 'bezig';
+  };
+  const voortgangPerKlant = new Map(open.map(k=>[k.id, voortgangVan(k)]));
+  const telling = { alle: open.length, niets: 0, bezig: 0, klaar: 0 };
+  voortgangPerKlant.forEach(v=>telling[v]++);
+  const actieveFilter = (STATE.lhVoortgangFilter||{})[groepSleutel] || 'alle';
+  const zichtbaarOpen = actieveFilter === 'alle' ? open : open.filter(k=>voortgangPerKlant.get(k.id) === actieveFilter);
+  const zichtbaarAfgerond = (actieveFilter === 'alle' || actieveFilter === 'klaar') ? afgerond : [];
+  const chip = (stand, label, kleurBg, kleurTxt)=>{
+    const actief = actieveFilter === stand;
+    return `<button data-lh-voortgang="${groepSleutel}|${stand}" style="padding:4px 11px; border-radius:16px; font-size:11.5px; cursor:pointer; border:1px solid ${actief?(kleurTxt||'var(--text)'):'var(--border)'}; background:${actief?(kleurBg||'var(--bg)'):'transparent'}; color:${actief?(kleurTxt||'var(--text)'):'var(--muted)'}; font-weight:${actief?'700':'500'};">${label} <span style="opacity:.75;">${telling[stand]}</span></button>`;
+  };
+  const filterChips = `<div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
+    ${chip('alle','Alle')}
+    ${chip('niets','Nog niets afgevinkt','var(--red-bg)','var(--red)')}
+    ${chip('bezig','Bezig','var(--amber-bg)','#854f0b')}
+    ${chip('klaar','Alles klaar','var(--green-bg)','var(--green)')}
+  </div>`;
+
+  const openRijen = zichtbaarOpen.map((k,i)=>{
     const f = syncLhTaken(k);
     const lhEntry = effDL(k,'LH');
     const periodesDitJaar = (f.lh.log||[]).filter(l=>l.actie==='periode-afgerond' && l.ts && new Date(l.ts).getFullYear()===jaarNu).length;
@@ -5330,7 +5728,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
   }).join('');
 
   // Afgeronde klanten van deze maand: read-only rij uit de snapshot, met terugdraai-knop.
-  const afgerondRijen = afgerond.map(({k, snap}, i)=>{
+  const afgerondRijen = zichtbaarAfgerond.map(({k, snap}, i)=>{
     const taakCellen = takenDef.map(def=>{
       const st = (snap.taken||[]).find(x=>x.naam===def.naam);
       if(!st) return `<td style="text-align:center; color:var(--muted2);" title="${def.naam.replace(/"/g,'&quot;')} — niet van toepassing voor deze klant">—</td>`;
@@ -5357,16 +5755,20 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
   const hintDelen = [];
   if(open.length) hintDelen.push(`${open.length} open`);
   if(afgerond.length) hintDelen.push(`${afgerond.length} afgerond`);
+  const leegFilterRij = (!openRijen && !afgerondRijen) ? `<tr><td colspan="${kolomAantal}" style="text-align:center; padding:20px; color:var(--muted2); font-size:12.5px;">Geen klanten in deze stand — pas het filter hierboven aan.</td></tr>` : '';
   return `<div class="section" style="margin-bottom:18px;">
-    <div class="section-head">
-      <h3>${titel} — ${maandLabelVanKey(bekeken)}</h3>
-      <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken · ${hintDelen.join(' · ')}</span>
+    <div class="section-head" style="flex-wrap:wrap; gap:8px;">
+      <div>
+        <h3>${titel} — ${maandLabelVanKey(bekeken)}</h3>
+        <span class="hint">Klik op een klant voor aantekeningen en het afvinken van taken · ${hintDelen.join(' · ')}</span>
+      </div>
+      ${filterChips}
     </div>
     <div style="padding:12px 20px 0; font-size:11px; color:var(--muted); line-height:1.8;">${taakLegenda}</div>
     <div class="section-body" style="overflow-x:auto;">
       <table>
         <thead><tr><th>Nr.</th><th>Werkgever</th>${taakHeaders}<th style="text-align:center;">Periodes ${jaarNu}</th><th>Volgende deadline</th></tr></thead>
-        <tbody>${openRijen}${afgerondRijen}</tbody>
+        <tbody>${openRijen}${afgerondRijen}${leegFilterRij}</tbody>
       </table>
     </div>
   </div>`;
@@ -8184,6 +8586,7 @@ function bindOnce(el, event, handler){
   el.addEventListener(event, handler);
 }
 function attachHandlers(){
+  try{ updateAppBadges(); }catch(e){}
   document.querySelectorAll('[data-nav]').forEach(el=>bindOnce(el, 'click', ()=>{
     STATE.view = el.getAttribute('data-nav'); STATE.bhFilter=''; STATE.statusFilter=''; STATE.showAddKlant=false; STATE.showAddBh=false; STATE.showAddTeam=false; STATE.showAddAuto=false; STATE.editAuto=null; STATE.editBh=null;
     render();
@@ -8313,6 +8716,50 @@ function attachHandlers(){
   }));
   const themeToggleBtn = document.getElementById('themeToggleBtn');
   if(themeToggleBtn){ updateThemeButton(); bindOnce(themeToggleBtn, 'click', toggleTheme); }
+  document.querySelectorAll('[data-top-app]').forEach(btn=>bindOnce(btn, 'click', (e)=>{
+    e.stopPropagation();
+    const doel = btn.getAttribute('data-top-app');
+    const bestaand = document.getElementById('tmMiniPaneel');
+    if(bestaand){ const was = bestaand.getAttribute('data-soort'); bestaand.remove(); if(was===doel) return; }
+    const rect = btn.getBoundingClientRect();
+    const paneel = document.createElement('div');
+    paneel.id = 'tmMiniPaneel'; paneel.setAttribute('data-soort', doel);
+    paneel.style.cssText = `position:fixed; top:${rect.bottom+8}px; right:${Math.max(10, window.innerWidth-rect.right-40)}px; width:330px; max-height:420px; overflow-y:auto; background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:0 10px 34px rgba(0,0,0,.16); z-index:900;`;
+    let items = '';
+    if(doel==='msteams'){
+      items = (MSCHAT.chats||[]).slice(0,6).map(c=>{
+        const titel = mschatTitel(c);
+        const preview = c.lastMessagePreview ? mschatStripHtml(c.lastMessagePreview.body && c.lastMessagePreview.body.content) : '';
+        const dik = mschatIsOngelezen(c);
+        return `<div data-mini-chat="${c.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);">
+          <div style="font-size:12.5px; font-weight:${dik?'700':'500'};">${mschatEsc(titel)}</div>
+          <div style="font-size:11px; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(preview.slice(0,60))}</div>
+        </div>`;
+      }).join('') || '<div style="padding:16px; font-size:12px; color:var(--muted2);">' + (SYNC.account ? 'Nog geen chats geladen.' : 'Log eerst in met Microsoft.') + '</div>';
+    } else {
+      items = (MSMAIL.mails||[]).slice(0,6).map(m=>{
+        const van = (m.from && m.from.emailAddress && m.from.emailAddress.name) || '';
+        return `<div data-mini-mail="${m.id}" style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between;"><span style="font-size:12.5px; font-weight:${m.isRead?'500':'700'};">${mschatEsc(van)}</span><span style="font-size:10.5px; color:var(--muted2);">${mschatTijd(m.receivedDateTime).split(' ')[0]}</span></div>
+          <div style="font-size:11px; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${mschatEsc(m.subject||'')}</div>
+        </div>`;
+      }).join('') || '<div style="padding:16px; font-size:12px; color:var(--muted2);">' + (SYNC.account ? 'Nog geen mail geladen.' : 'Log eerst in met Microsoft.') + '</div>';
+    }
+    paneel.innerHTML = items + `<div data-mini-alles style="padding:10px 14px; cursor:pointer; text-align:center; font-size:12px; color:var(--primary-dark); font-weight:600;">Alles bekijken →</div>`;
+    document.body.appendChild(paneel);
+    const sluit = ()=>{ paneel.remove(); document.removeEventListener('click', sluit); };
+    setTimeout(()=>document.addEventListener('click', sluit), 0);
+    paneel.addEventListener('click', (ev)=>{
+      const chatEl = ev.target.closest ? ev.target.closest('[data-mini-chat]') : null;
+      const mailEl = ev.target.closest ? ev.target.closest('[data-mini-mail]') : null;
+      if(chatEl){ MSCHAT.actieveChat = chatEl.getAttribute('data-mini-chat'); STATE.view='msteams'; }
+      else if(mailEl){ MSMAIL.actieveMail = mailEl.getAttribute('data-mini-mail'); MSMAIL.compose = null; msmailLaadDetail(MSMAIL.actieveMail).catch(()=>{}); STATE.view='outlook'; }
+      else if(ev.target.closest && ev.target.closest('[data-mini-alles]')){ STATE.view = doel; }
+      else return;
+      sluit(); render();
+      if(chatEl){ mschatLaadBerichten(MSCHAT.actieveChat, false).then(()=>{ if(STATE.view==='msteams'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); } }).catch(()=>{}); }
+    });
+  }));
   const notifToggleBtn = document.getElementById('notifToggleBtn');
   if(notifToggleBtn){ updateNotifDot(); bindOnce(notifToggleBtn, 'click', (e)=>{ e.stopPropagation(); if(NOTIF_STATE.open) notifSluiten(); else notifOpen(); }); }
   const aiToggleBtn = document.getElementById('aiToggleBtn');
@@ -8891,6 +9338,13 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-lh-notities-jaar]').forEach(el=>el.addEventListener('change', ()=>{
     STATE.lhNotitiesJaar = parseInt(el.value, 10);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-lh-voortgang]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const [sleutel, stand] = el.getAttribute('data-lh-voortgang').split('|');
+    if(!STATE.lhVoortgangFilter) STATE.lhVoortgangFilter = {};
+    STATE.lhVoortgangFilter[sleutel] = stand;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-lh-toggle-detail]').forEach(el=>el.addEventListener('click', (e)=>{
@@ -10099,6 +10553,15 @@ try{ render(); }catch(e){
 }
 if(SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
 try{ if(rdwHercheckAutoNodig()) rdwHercheckAutoUitvoeren(); }catch(e){ console.error('RDW auto-hercheck controle mislukt:', e); }
+// Teams & Outlook automatisch mee laden zodra er een Microsoft-login is (stil, nooit een popup):
+// badges en mini-panelen werken dan overal, zonder eerst de app-pagina's te hoeven openen.
+try{
+  if(SYNC.account){
+    if(!MSCHAT.chats && !MSCHAT.laden) mschatInit(false);
+    if(!MSMAIL.mails && !MSMAIL.laden && typeof msmailInit === 'function') msmailInit(false);
+  }
+  tmStartGlobalePoll();
+}catch(e){ console.error('Apps auto-verbinden mislukt:', e); }
 setInterval(()=>{
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
     try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }
