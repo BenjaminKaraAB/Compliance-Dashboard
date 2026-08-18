@@ -499,7 +499,7 @@
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.6';
+const APP_VERSION = '2026.08.18.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5319,8 +5319,8 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     }).join('');
     const ster = notitieDezeMaand ? `<span title="Notitie voor ${maandLabelVanKey(bekeken)}" style='margin-right:4px;'>⭐</span>` : (anderMaandNotities ? `<span title="Notitie klaargezet voor een andere maand" style='margin-right:4px; opacity:.45;'>⭐</span>` : '');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:var(--bg);':''}">
-      <td style="color:var(--muted);">${expanded?'▾':'▸'} ${i+1}</td>
-      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}${k.extId?' · Nr. '+k.extId:''}</div></td>
+      <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${expanded?'▾':'▸'} ${k.extId||'—'}</td>
+      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
@@ -5340,8 +5340,8 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     }).join('');
     const afgerondDatum = snap.afgerondOp ? new Date(snap.afgerondOp).toLocaleDateString('nl-NL',{day:'numeric', month:'short'}) : '';
     return `<tr style="opacity:.75;">
-      <td style="color:var(--muted);">${open.length + i + 1}</td>
-      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}${k.extId?' · Nr. '+k.extId:''}</div></td>
+      <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${k.extId||'—'}</td>
+      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
       ${taakCellen}
       <td colspan="2">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -5783,7 +5783,7 @@ function bijtellingBeheerHTML(){
 /* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
    Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
    localStorage (hoeft niet mee in de gedeelde sync). */
-const ADMIN_SECTIES = ['bevoegdheid','documenten','logboek','inventaris','opschonen'];
+const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','logboek','inventaris','opschonen'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
@@ -5918,6 +5918,43 @@ function adminHTML(){
     </div>
   </div>`).join('') : `<div class="section" style="margin-top:14px;"><div class="empty-state">${filter==='in_bezit' ? 'Niets dat momenteel als "in bezit" geregistreerd staat.' : 'Nog geen items toegevoegd.'}</div></div>`}` : ''}`,
   };
+
+  blokken.deadlines = ()=>`
+  <div class="section"${marge('deadlines')}>
+    ${kop('deadlines','Bulk-deadlines instellen')}
+    ${isOpen('deadlines') ? `<div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Stel in één keer een deadline in voor alle klanten (of alleen de loonheffinglijst). Standaard worden alleen klanten ingevuld die voor die belastingsoort nog géén deadline hebben — kies "ook overschrijven" om bestaande deadlines te vervangen (let op: een "ingediend"-markering gaat dan terug naar open). VPB en Jaarrekening slaan rechtsvormen zonder VPB-plicht automatisch over.</p>
+      <div class="field-row"><label>Belastingsoort</label>
+        <select id="bulkDlType" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="OB">Omzetbelasting (OB)</option>
+          <option value="VPB">Vennootschapsbelasting (VPB)</option>
+          <option value="LH">Loonheffing (LH)</option>
+          <option value="JR">Jaarrekening (JR/JA)</option>
+        </select></div>
+      <div class="field-row"><label>Deadline</label><input type="text" id="bulkDlDatum" placeholder="DD-MM-JJJJ"></div>
+      <div class="field-row"><label>Herhaling</label>
+        <select id="bulkDlHerhaling" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="geen">Geen herhaling</option>
+          <option value="maandelijks">Maandelijks</option>
+          <option value="kwartaal">Per kwartaal</option>
+          <option value="jaarlijks">Jaarlijks</option>
+        </select></div>
+      <div class="field-row"><label>Voor wie</label>
+        <select id="bulkDlDoelgroep" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="alle">Alle klanten</option>
+          <option value="loonheffing">Alleen loonheffinglijst-klanten</option>
+        </select></div>
+      <div class="field-row"><label>Bestaande</label>
+        <select id="bulkDlModus" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
+          <option value="alleen_leeg">Alleen invullen waar nog geen deadline staat</option>
+          <option value="overschrijven">Ook bestaande deadlines overschrijven</option>
+        </select></div>
+      <div style="margin-top:10px;">
+        <button class="btn sm primary" data-bulk-deadline-toepassen>Deadline instellen</button>
+      </div>
+      <div id="bulkDlResultaat" style="margin-top:10px;"></div>
+    </div>` : ''}
+  </div>`;
 
   blokken.opschonen = ()=>{
     const plan = OPSCHOON_PLAN;
@@ -8400,6 +8437,24 @@ function attachHandlers(){
     toast(`"${klant.naam}" gemarkeerd als gecontroleerd.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
+  const bulkDlBtn = document.querySelector('[data-bulk-deadline-toepassen]');
+  if(bulkDlBtn) bulkDlBtn.addEventListener('click', ()=>{
+    const type = document.getElementById('bulkDlType').value;
+    const datumIso = invoerNaarDatum(document.getElementById('bulkDlDatum').value.trim());
+    const herhaling = document.getElementById('bulkDlHerhaling').value;
+    const doelgroep = document.getElementById('bulkDlDoelgroep').value;
+    const overschrijven = document.getElementById('bulkDlModus').value === 'overschrijven';
+    const box = document.getElementById('bulkDlResultaat');
+    if(!datumIso || !/^\d{4}-\d{2}-\d{2}$/.test(datumIso)){
+      if(box) box.innerHTML = '<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">Vul een geldige datum in (DD-MM-JJJJ).</div>';
+      return;
+    }
+    const doelTekst = doelgroep==='loonheffing' ? 'alle loonheffinglijst-klanten' : 'ALLE klanten';
+    if(!confirm(`Deadline ${TYPE_LABEL[type]} instellen op ${fmtDate(datumIso)} (herhaling: ${herhaling}) voor ${doelTekst}?${overschrijven?' Bestaande deadlines en "ingediend"-markeringen worden hierbij vervangen!':''}`)) return;
+    const verslag = bulkDeadlineToepassen({ type, datumIso, herhaling, doelgroep, overschrijven });
+    if(box) box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> Deadline ingesteld voor <b>${verslag.ingesteld}</b> klanten${verslag.overgeslagenBestaand?`, ${verslag.overgeslagenBestaand} overgeslagen (had al een deadline)`:''}${verslag.overgeslagenNvt?`, ${verslag.overgeslagenNvt} n.v.t. (geen VPB-plicht)`:''}.</div>`;
+    toast(`Bulk-deadline ingesteld voor ${verslag.ingesteld} klanten.`);
+  });
   const opschoonInput = document.getElementById('opschoonFileInput');
   if(opschoonInput) opschoonInput.addEventListener('change', ()=>{
     const file = opschoonInput.files[0]; if(!file) return;
@@ -9301,6 +9356,32 @@ async function handleLhKlantenImport(e){
    verwijderd als hun dossier leeg is — records met loonheffing- of andere ingevulde gegevens
    worden nooit stilletjes weggegooid. Werkt in twee stappen: eerst een voorbeeld, dan pas uitvoeren. */
 let OPSCHOON_PLAN = null;
+/* Bulk-deadlines (admin): stel in één keer een deadline + herhaling in voor een hele groep
+   klanten. Werkt op zowel klant.dl als STORE.dl (effDL leest uit STORE). VPB/JR wordt
+   automatisch overgeslagen bij rechtsvormen zonder VPB-plicht. */
+function bulkDeadlineToepassen(opts){
+  const { type, datumIso, herhaling, doelgroep, overschrijven } = opts;
+  const verslag = { ingesteld:0, overgeslagenBestaand:0, overgeslagenNvt:0 };
+  if(!['OB','VPB','LH','JR'].includes(type) || !datumIso) return verslag;
+  RAW_KLANTEN.forEach(k=>{
+    if(doelgroep==='loonheffing' && !k.doetLoonaangifte) return;
+    if((type==='VPB' || type==='JR') && GEEN_VPB_VORMEN.includes(k.vorm)){ verslag.overgeslagenNvt++; return; }
+    const f = STORE[k.id];
+    if(!f) return;
+    const bestaand = f.dl && f.dl[type];
+    const heeftAl = bestaand && !bestaand.na && bestaand.datum;
+    if(heeftAl && !overschrijven){ verslag.overgeslagenBestaand++; return; }
+    const entry = { datum: datumIso, status:'open', herhaling: herhaling||'geen' };
+    if(!f.dl) f.dl = {};
+    f.dl[type] = Object.assign({}, entry);
+    if(!k.dl) k.dl = {};
+    k.dl[type] = Object.assign({}, entry);
+    verslag.ingesteld++;
+  });
+  logActiviteit(`Bulk-deadline ingesteld: ${TYPE_LABEL[type]} op ${fmtDate(datumIso)} (${herhaling||'geen'} herhaling) voor ${verslag.ingesteld} klanten${verslag.overgeslagenBestaand?`, ${verslag.overgeslagenBestaand} overgeslagen (had al een deadline)`:''}`);
+  persistMeta(); persist();
+  return verslag;
+}
 function klantDossierScore(k){
   const f = STORE[k.id];
   let score = 0;
