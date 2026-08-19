@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.12';
+const APP_VERSION = '2026.08.19.13';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -635,6 +635,9 @@ let RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
 /* Maand-specifieke waarschuwingsbanners op de Loonheffingen-pagina (zoals "Let op! Loon vandaag openen!",
    maar dan voor één gekozen maand). Beheerd via de Admin-pagina, gedeeld via sync. */
 let LH_MAAND_BANNERS = [];
+/* Agenda op de Overzicht-pagina: handmatige punten + afvink/toewijs-status van automatisch
+   herkende punten (deadlines, toekomstige klanten, maandmeldingen, auto's). Gesynct via SharePoint. */
+let AGENDA = { punten: [], afgevinkt: {}, toewijzing: {} };
 /* Leerpad (Opleiding): vaste route voor nieuwe medewerkers. LEERPAD bevat aanpassingen op de
    standaardroute (artikel-koppelingen); LEERPAD_VOORTGANG houdt per medewerker (e-mail) bij
    welke stappen klaar zijn. Beide gesynchroniseerd zodat de admin voortgang kan volgen. */
@@ -717,6 +720,7 @@ function loadMeta(){
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
       if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
       if(parsed.lhMaandBanners && parsed.lhMaandBanners.length) LH_MAAND_BANNERS = parsed.lhMaandBanners;
+      if(parsed.agenda) AGENDA = Object.assign({punten:[], afgevinkt:{}, toewijzing:{}}, parsed.agenda);
       if(parsed.notionCfg && typeof parsed.notionCfg==='object') NOTION_CFG = Object.assign({workerUrl:''}, parsed.notionCfg);
       if(parsed.leerpad) LEERPAD = parsed.leerpad;
       if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
@@ -726,7 +730,7 @@ function loadMeta(){
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1570,7 +1574,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, agenda: AGENDA, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1664,11 +1668,12 @@ async function fetchRemoteAndMerge(showFeedback){
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         LH_MAAND_BANNERS = json.lhMaandBanners && json.lhMaandBanners.length ? json.lhMaandBanners : LH_MAAND_BANNERS;
+        AGENDA = json.agenda ? Object.assign({punten:[], afgevinkt:{}, toewijzing:{}}, json.agenda) : AGENDA;
         NOTION_CFG = json.notionCfg && typeof json.notionCfg==='object' ? Object.assign({workerUrl:''}, json.notionCfg) : NOTION_CFG;
         LEERPAD = json.leerpad || LEERPAD;
         LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -4777,6 +4782,14 @@ function migrateData(){
   if(LEERPAD && typeof LEERPAD !== 'object') LEERPAD = null;
   if(!LEERPAD_VOORTGANG || typeof LEERPAD_VOORTGANG !== 'object' || Array.isArray(LEERPAD_VOORTGANG)) LEERPAD_VOORTGANG = {};
   LH_MAAND_BANNERS = LH_MAAND_BANNERS.filter(b=>b && /^\d{4}-\d{2}$/.test(String(b.maand||'')) && String(b.tekst||'').trim());
+  if(!AGENDA || typeof AGENDA!=='object') AGENDA = {punten:[], afgevinkt:{}, toewijzing:{}};
+  if(!Array.isArray(AGENDA.punten)) AGENDA.punten = [];
+  if(!AGENDA.afgevinkt || typeof AGENDA.afgevinkt!=='object') AGENDA.afgevinkt = {};
+  if(!AGENDA.toewijzing || typeof AGENDA.toewijzing!=='object') AGENDA.toewijzing = {};
+  AGENDA.punten = AGENDA.punten.filter(p=>p && p.id && p.datum && String(p.tekst||'').trim());
+  const agGrens = Date.now() - 120*86400000;
+  Object.keys(AGENDA.afgevinkt).forEach(s=>{ const a = AGENDA.afgevinkt[s]; if(!a || (a.ts && a.ts < agGrens)) delete AGENDA.afgevinkt[s]; });
+  AGENDA.punten = AGENDA.punten.filter(p=>{ const dd = daysDiff(p.datum); return !(p.klaar && dd!==null && !isNaN(dd) && dd < -120); });
   INVENTARIS_ITEMS.forEach(it=>{
     if(typeof it.naam !== 'string') it.naam = it.naam ? String(it.naam) : '';
     if(typeof it.omschrijving !== 'string') it.omschrijving = '';
@@ -5284,6 +5297,195 @@ async function verstuurWeekoverzicht(rows, klantenGefilterd, cnt){
     toast('Weekoverzicht verstuurd naar ' + mail);
   }catch(e){ toast('Versturen mislukt: ' + ((e&&e.message)||'onbekende fout')); }
 }
+/* ============================= AGENDA (Overzicht) =============================
+   Automatische agenda naast de begroeting. Herkent zelf wat er moet gebeuren uit de
+   bestaande data (deadlines, toekomstige klanten met startdatum, maandmeldingen en
+   -notities bij loonheffing, auto-verkoopdata) en combineert dat met handmatige
+   agendapunten. Elk punt is afvinkbaar en toewijsbaar aan een medewerker (boekhouder);
+   het filter "Alleen ik" toont punten van je eigen klanten plus expliciete toewijzingen.
+   De toewijzing is bewust generiek opgezet (key → medewerker-id) zodat hier later
+   functie-/taakprofielen per medewerker aan gekoppeld kunnen worden vanuit Admin. */
+function agendaIsoVandaag(){ return TODAY.getFullYear()+'-'+String(TODAY.getMonth()+1).padStart(2,'0')+'-'+String(TODAY.getDate()).padStart(2,'0'); }
+function mijnBoekhouderId(){
+  const mail = String(huidigeGebruikerEmail()||'').toLowerCase();
+  if(!mail || mail==='niet ingelogd') return null;
+  const b = BOEKHOUDERS.find(x=>String(x.email||'').toLowerCase()===mail);
+  return b ? b.id : null;
+}
+const AGENDA_BRON_META = {
+  deadline:   {label:'deadline',          bg:'#FCEBEB', fg:'#791F1F'},
+  toekomst:   {label:'toekomstige klant', bg:'#E6F1FB', fg:'#0C447C'},
+  loonheffing:{label:'loonheffing',       bg:'#EEEDFE', fg:'#3C3489'},
+  auto:       {label:'autolijst',         bg:'#FAEEDA', fg:'#633806'},
+  handmatig:  {label:'handmatig',         bg:'#F1EFE8', fg:'#444441'},
+};
+function agendaAutoPunten(horizon, alleenBh){
+  const punten = [];
+  const magKlant = k => !alleenBh || (k && k.bh===alleenBh);
+  const inVenster = (iso, terug)=>{ const dd = daysDiff(iso); return dd!==null && !isNaN(dd) && dd >= -(terug===undefined?60:terug) && dd <= horizon; };
+  const vandaagIso = agendaIsoVandaag();
+  const huidigeMaand = vandaagIso.slice(0,7);
+
+  // 1. Deadlines — per klant, of samengevat als veel klanten dezelfde deadline delen
+  const perGroep = new Map();
+  allDeadlineRows().forEach(r=>{
+    if(r.st.key==='ingediend' || r.st.key==='na') return;
+    if(!magKlant(r.klant)) return;
+    const iso = r.entry && r.entry.datum;
+    if(!iso || !inVenster(iso)) return;
+    const g = `${r.type}|${iso}`;
+    if(!perGroep.has(g)) perGroep.set(g, []);
+    perGroep.get(g).push(r);
+  });
+  perGroep.forEach((rs, g)=>{
+    const type = g.split('|')[0], iso = g.split('|')[1];
+    const typeLabel = TYPE_LABEL[type] || type;
+    if(rs.length > 3){
+      punten.push({ key:`dlg|${type}|${iso}`, datum: iso, bron:'deadline', tekst:`${typeLabel}: ${rs.length} klanten`, nav:'klanten' });
+    } else {
+      rs.forEach(r=>punten.push({ key:`dl|${r.klant.id}|${type}|${iso}`, datum: iso, bron:'deadline', tekst:`${typeLabel} — ${r.klant.naam}`, klantId:r.klant.id }));
+    }
+  });
+
+  // 2. Toekomstige klanten met startdatum
+  RAW_KLANTEN.forEach(k=>{
+    if(!k.toekomstigeKlant || !k.toekomstDatum || !magKlant(k)) return;
+    if(!inVenster(k.toekomstDatum, 365)) return;
+    punten.push({ key:`tk|${k.id}|${k.toekomstDatum}`, datum:k.toekomstDatum, bron:'toekomst', klantId:k.id,
+      tekst:`Toekomstige klant ${k.naam} actief maken — loonheffing/werknemer(s) opvoeren${k.toekomstNotitie ? ` (${String(k.toekomstNotitie).slice(0,80)})` : ''}` });
+  });
+
+  // 3. Maandmeldingen (banners) bij loonheffing — huidige maand blijft op "vandaag" staan tot afgevinkt
+  (LH_MAAND_BANNERS||[]).forEach(b=>{
+    if(!b || String(b.maand) < huidigeMaand) return;
+    const datum = b.maand===huidigeMaand ? vandaagIso : b.maand+'-01';
+    const dd = daysDiff(datum);
+    if(dd===null || isNaN(dd) || dd > horizon) return;
+    punten.push({ key:`lb|${b.id}`, datum, bron:'loonheffing', tekst:`${b.tekst} (maandmelding ${maandLabelVanKey(b.maand)})`, nav:'loonheffing' });
+  });
+
+  // 4. Maandnotities (bijv. WHK-actie) — samengevat per maand + tekst
+  const perNotitie = new Map();
+  RAW_KLANTEN.forEach(k=>{
+    if(!magKlant(k)) return;
+    const f = STORE[k.id];
+    (((f||{}).lh||{}).maandNotities||[]).forEach(n=>{
+      if(!n || String(n.maand) < huidigeMaand) return;
+      const sleutel = `${n.maand}|${String(n.tekst||'').trim().toLowerCase()}`;
+      if(!perNotitie.has(sleutel)) perNotitie.set(sleutel, {maand:n.maand, tekst:String(n.tekst||'').trim(), n:0});
+      perNotitie.get(sleutel).n++;
+    });
+  });
+  perNotitie.forEach(x=>{
+    if(!x.tekst) return;
+    const datum = x.maand===huidigeMaand ? vandaagIso : x.maand+'-01';
+    const dd = daysDiff(datum);
+    if(dd===null || isNaN(dd) || dd > horizon) return;
+    punten.push({ key:`mn|${x.maand}|${x.tekst.toLowerCase().slice(0,40)}`, datum, bron:'loonheffing', tekst:`${x.tekst} — ${x.n} klant(en) (maandnotitie ${maandLabelVanKey(x.maand)})`, nav:'loonheffing' });
+  });
+
+  // 5. Auto's met een verkoopdatum die eraan komt of net verstreken is
+  AUTOS.forEach(a=>{
+    if(!a || !a.verkoopdatum) return;
+    const k = RAW_KLANTEN.find(x=>x.id===a.klant);
+    if(alleenBh && !magKlant(k)) return;
+    if(!inVenster(a.verkoopdatum, 30)) return;
+    punten.push({ key:`av|${a.id}|${a.verkoopdatum}`, datum:a.verkoopdatum, bron:'auto', nav:'autolijst',
+      tekst:`Auto ${(a.merk||'')+' '+(a.kenteken||'')} verkocht per ${fmtDate(a.verkoopdatum)}${k ? ` (${k.naam})` : ''} — autolijst bijwerken` });
+  });
+  return punten;
+}
+function agendaPunten(){
+  if(STATE.agendaFilter===undefined){ try{ STATE.agendaFilter = localStorage.getItem('cd_agenda_filter')||'iedereen'; }catch(e){ STATE.agendaFilter='iedereen'; } }
+  const horizon = STATE.agendaHorizon || 14;
+  const mijn = mijnBoekhouderId();
+  const alleenIk = STATE.agendaFilter==='mij';
+  const items = agendaAutoPunten(horizon, alleenIk ? (mijn||'__geen__') : null);
+  (AGENDA.punten||[]).forEach(p=>{
+    if(!p || !p.datum) return;
+    const dd = daysDiff(p.datum);
+    if(dd===null || isNaN(dd) || dd > horizon || dd < -60) return;
+    items.push({ key:`hp|${p.id}`, datum:p.datum, bron:'handmatig', tekst:p.tekst, handmatig:p });
+  });
+  items.forEach(it=>{
+    it.toegewezen = it.handmatig ? (it.handmatig.toegewezen||null) : (AGENDA.toewijzing[it.key]||null);
+    const af = it.handmatig ? (it.handmatig.klaar ? {door:it.handmatig.klaarDoor, ts:it.handmatig.klaarTs} : null) : (AGENDA.afgevinkt[it.key]||null);
+    it.klaar = !!af; it.klaarDoor = af ? af.door : null;
+  });
+  let lijst = items;
+  if(alleenIk) lijst = lijst.filter(it=> it.handmatig ? it.toegewezen===mijn : (!it.toegewezen || it.toegewezen===mijn));
+  lijst = lijst.filter(it=>{ const dd = daysDiff(it.datum); return !(it.klaar && dd!==null && dd<0); });
+  lijst.sort((a,b)=> a.datum===b.datum ? (a.klaar===b.klaar ? String(a.tekst).localeCompare(String(b.tekst),'nl') : (a.klaar?1:-1)) : (a.datum<b.datum?-1:1));
+  return lijst;
+}
+function agendaDagLabel(iso){
+  const dd = daysDiff(iso);
+  if(dd===0) return 'Vandaag';
+  if(dd===1) return 'Morgen';
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d)) return iso;
+  return `${NL_DAGEN[d.getDay()][0].toUpperCase()}${NL_DAGEN[d.getDay()].slice(1)} ${d.getDate()} ${NL_MAANDEN[d.getMonth()]}${d.getFullYear()!==TODAY.getFullYear() ? ' '+d.getFullYear() : ''}`;
+}
+function agendaItemHTML(it){
+  const meta = AGENDA_BRON_META[it.bron] || AGENDA_BRON_META.handmatig;
+  const wie = it.toegewezen ? bh(it.toegewezen) : null;
+  const initialen = wie ? wie.naam.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase() : '';
+  const wieOpties = ['<option value="">— toewijzen —</option>'].concat(BOEKHOUDERS.map(b=>`<option value="${b.id}" ${it.toegewezen===b.id?'selected':''}>${b.naam}</option>`)).join('');
+  const klikbaar = it.klantId || it.nav;
+  return `<div class="agenda-item ${it.klaar?'is-klaar':''}" style="display:flex; align-items:center; gap:8px; padding:6px 9px; border:1px solid var(--border); border-radius:8px;">
+    <button class="btn sm ghost" data-agenda-vink="${it.key}" title="${it.klaar ? `Afgevinkt door ${it.klaarDoor||'onbekend'} — klik om terug te zetten` : 'Afvinken'}" aria-label="Afvinken" style="padding:2px 5px; flex-shrink:0;">
+      <i class="ti ${it.klaar?'ti-square-check':'ti-square'}" style="font-size:16px; ${it.klaar?'color:var(--green);':''}" aria-hidden="true"></i>
+    </button>
+    <span style="flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; ${it.klaar?'text-decoration:line-through; color:var(--muted);':''} ${klikbaar?'cursor:pointer;':''}"
+      ${it.klantId?`data-agenda-open="${it.klantId}" title="Klantpaneel openen"`:''} ${!it.klantId && it.nav?`data-agenda-nav="${it.nav}" title="Naar de betreffende pagina"`:''}>${String(it.tekst).replace(/</g,'&lt;')}</span>
+    ${wie ? `<span title="Toegewezen aan ${wie.naam}" style="width:20px; height:20px; border-radius:50%; background:${wie.kleur||'#9ca3af'}22; color:var(--text); border:1px solid ${wie.kleur||'#9ca3af'}; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${initialen}</span>` : ''}
+    <select data-agenda-toewijs="${it.key}" title="Toewijzen aan een medewerker" style="width:${wie?'18px':'92px'}; padding:3px 2px; border:1px solid var(--border); border-radius:6px; font-size:10.5px; color:var(--muted); flex-shrink:0;">${wieOpties}</select>
+    <span style="font-size:9.5px; background:${meta.bg}; color:${meta.fg}; border-radius:10px; padding:2px 8px; white-space:nowrap; flex-shrink:0;">${meta.label}</span>
+    ${it.handmatig ? `<button class="btn sm ghost" data-agenda-del="${it.handmatig.id}" title="Agendapunt verwijderen" aria-label="Verwijderen" style="padding:2px 5px; flex-shrink:0;"><i class="ti ti-trash" style="font-size:13px; color:var(--muted2);" aria-hidden="true"></i></button>` : ''}
+  </div>`;
+}
+function agendaHTML(){
+  const lijst = agendaPunten();
+  const horizon = STATE.agendaHorizon || 14;
+  const mijn = mijnBoekhouderId();
+  const achterstallig = lijst.filter(it=>daysDiff(it.datum) < 0);
+  const komend = lijst.filter(it=>daysDiff(it.datum) >= 0);
+  const perDag = new Map();
+  komend.forEach(it=>{ if(!perDag.has(it.datum)) perDag.set(it.datum, []); perDag.get(it.datum).push(it); });
+  const wieOpties = ['<option value="">Niet toegewezen</option>'].concat(BOEKHOUDERS.map(b=>`<option value="${b.id}">${b.naam}</option>`)).join('');
+  const nieuwForm = STATE.agendaNieuw ? `
+    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px; border:1px dashed var(--border); border-radius:8px; margin-bottom:10px;">
+      <input type="date" id="agendaNieuwDatum" value="${agendaIsoVandaag()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+      <input type="text" id="agendaNieuwTekst" placeholder="Wat moet er gebeuren?" maxlength="300" style="flex:1; min-width:160px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+      <select id="agendaNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>
+      <button class="btn sm primary" data-agenda-opslaan>Opslaan</button>
+      <button class="btn sm ghost" data-agenda-nieuw>Annuleren</button>
+    </div>` : '';
+  const dagenHtml = Array.from(perDag.entries()).map(([iso, its])=>`
+    <p style="margin:10px 0 5px; font-size:11px; font-weight:600; color:var(--muted);">${agendaDagLabel(iso)} · ${fmtDate(iso)}</p>
+    <div style="display:flex; flex-direction:column; gap:5px;">${its.map(agendaItemHTML).join('')}</div>`).join('');
+  return `
+  <div class="section" style="margin-bottom:16px;">
+    <div class="section-head" style="flex-wrap:wrap; gap:8px;">
+      <h3 style="display:flex; align-items:center; gap:8px;"><i class="ti ti-calendar" aria-hidden="true"></i> Agenda <span class="hint" style="font-weight:400;">komende ${horizon} dagen · herkent zelf deadlines, toekomstige klanten, maandmeldingen en auto-verkoopdata</span></h3>
+      <div style="display:flex; gap:6px; align-items:center; margin-left:auto;">
+        <select id="agendaFilterSel" title="${mijn ? 'Alleen ik = jouw klanten + wat aan jou is toegewezen' : 'Je e-mailadres is (nog) niet aan een boekhouder gekoppeld — Alleen ik toont dan alleen expliciete toewijzingen'}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="iedereen" ${STATE.agendaFilter!=='mij'?'selected':''}>Iedereen</option>
+          <option value="mij" ${STATE.agendaFilter==='mij'?'selected':''}>Alleen ik</option>
+        </select>
+        <button class="btn sm ghost" data-agenda-horizon>${horizon===14 ? 'Verder kijken (90 dgn)' : 'Terug naar 14 dgn'}</button>
+        <button class="btn sm primary" data-agenda-nieuw><i class="ti ti-plus" aria-hidden="true"></i> Agendapunt</button>
+      </div>
+    </div>
+    <div class="section-body">
+      ${nieuwForm}
+      ${achterstallig.length ? `
+        <p style="margin:0 0 5px; font-size:11px; font-weight:600; color:var(--red);">Achterstallig (${achterstallig.length})</p>
+        <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:4px;">${achterstallig.map(agendaItemHTML).join('')}</div>` : ''}
+      ${dagenHtml || (!achterstallig.length ? `<p style="font-size:12.5px; color:var(--muted); margin:0;"><i class="ti ti-check" aria-hidden="true"></i> Geen agendapunten in de komende ${horizon} dagen${STATE.agendaFilter==='mij' ? ' voor jou' : ''}.</p>` : '')}
+    </div>
+  </div>`;
+}
 function dashboardHTML(){
   const teamFilter = STATE.dashboardTeamFilter;
   const klantInTeam = (k)=>{ if(!teamFilter) return true; const b = bh(k.bh); return !!(b && b.team===teamFilter); };
@@ -5327,6 +5529,7 @@ function dashboardHTML(){
 
   return `
   ${heroHTML}
+  ${agendaHTML()}
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
     <label style="font-size:12.5px; color:var(--muted);">Weergave</label>
     <select id="filterTeamDashboard" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
@@ -6280,17 +6483,20 @@ function loonheffingToekomstHTML(){
       <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm||''}${k.extId?' · Nr. '+k.extId:''}</div></td>
       <td>${bh(k.bh).naam}</td>
       <td>${notitieCel}</td>
+      <td style="white-space:nowrap;">${bewerkbaar
+        ? `<input type="date" data-toekomst-datum="${k.id}" value="${k.toekomstDatum||''}" title="Startdatum — verschijnt automatisch als agendapunt op het Overzicht" style="padding:5px 7px; border:1px solid var(--border); border-radius:6px; font-size:11.5px;">`
+        : `<span style="font-size:12px;">${k.toekomstDatum ? fmtDate(k.toekomstDatum) : '—'}</span>`}</td>
       <td style="text-align:right; white-space:nowrap;">${bewerkbaar ? `<button class="btn sm" data-toekomst-actief="${k.id}" title="Vinkje uitzetten — klant verschijnt in de gewone lijsten">Nu actief maken</button>` : ''}</td>
     </tr>`;
   }).join('');
   return `<div class="section" style="margin-bottom:18px;">
     <div class="section-head">
       <h3>Toekomstige klanten</h3>
-      <span class="hint">Klanten die binnenkort bij ons komen — nog zonder taken of deadlines · ${list.length} klant(en)</span>
+      <span class="hint">Klanten die binnenkort bij ons komen — nog zonder taken of deadlines · met startdatum verschijnen ze automatisch in de agenda op het Overzicht · ${list.length} klant(en)</span>
     </div>
     <div class="section-body">
       <table>
-        <thead><tr><th>Werkgever</th><th>Boekhouder</th><th>Notitie</th><th></th></tr></thead>
+        <thead><tr><th>Werkgever</th><th>Boekhouder</th><th>Notitie</th><th>Startdatum</th><th></th></tr></thead>
         <tbody>${rijen}</tbody>
       </table>
     </div>
@@ -9416,6 +9622,70 @@ function attachHandlers(){
   }));
   const filterTeamDashboard = document.getElementById('filterTeamDashboard');
   if(filterTeamDashboard) filterTeamDashboard.addEventListener('change', e=>{ STATE.dashboardTeamFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  // ── Agenda-handlers (Overzicht) ──
+  const herteken = ()=>{ document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); };
+  const agendaFilterSel = document.getElementById('agendaFilterSel');
+  if(agendaFilterSel) agendaFilterSel.addEventListener('change', ()=>{
+    STATE.agendaFilter = agendaFilterSel.value;
+    try{ localStorage.setItem('cd_agenda_filter', agendaFilterSel.value); }catch(e){}
+    herteken();
+  });
+  document.querySelectorAll('[data-agenda-horizon]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.agendaHorizon = (STATE.agendaHorizon||14)===14 ? 90 : 14;
+    herteken();
+  }));
+  document.querySelectorAll('[data-agenda-nieuw]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.agendaNieuw = !STATE.agendaNieuw;
+    herteken();
+    const veld = document.getElementById('agendaNieuwTekst');
+    if(veld) veld.focus();
+  }));
+  document.querySelectorAll('[data-agenda-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const datum = (document.getElementById('agendaNieuwDatum')||{}).value || '';
+    const tekst = ((document.getElementById('agendaNieuwTekst')||{}).value || '').trim();
+    const wie = (document.getElementById('agendaNieuwWie')||{}).value || '';
+    if(!datum || !tekst){ toast('Vul een datum en omschrijving in.'); return; }
+    AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum, tekst: tekst.slice(0,300), toegewezen: wie||null, klaar:false, door: huidigeGebruiker(), ts: Date.now() });
+    STATE.agendaNieuw = false;
+    logActiviteit(`Agendapunt toegevoegd (${fmtDate(datum)}): "${tekst.slice(0,60)}"`);
+    persistMeta();
+    herteken();
+  }));
+  document.querySelectorAll('[data-agenda-vink]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.getAttribute('data-agenda-vink');
+    if(key.startsWith('hp|')){
+      const p = AGENDA.punten.find(x=>'hp|'+x.id===key);
+      if(p){ p.klaar = !p.klaar; p.klaarDoor = p.klaar ? huidigeGebruiker() : null; p.klaarTs = p.klaar ? Date.now() : null; }
+    } else {
+      if(AGENDA.afgevinkt[key]) delete AGENDA.afgevinkt[key];
+      else AGENDA.afgevinkt[key] = { door: huidigeGebruiker(), ts: Date.now() };
+    }
+    persistMeta();
+    herteken();
+  }));
+  document.querySelectorAll('[data-agenda-del]').forEach(el=>el.addEventListener('click', ()=>{
+    const idx = AGENDA.punten.findIndex(x=>x.id===el.getAttribute('data-agenda-del'));
+    if(idx>-1){
+      logActiviteit(`Agendapunt verwijderd: "${String(AGENDA.punten[idx].tekst).slice(0,60)}"`);
+      AGENDA.punten.splice(idx,1);
+      persistMeta();
+      herteken();
+    }
+  }));
+  document.querySelectorAll('[data-agenda-toewijs]').forEach(el=>el.addEventListener('change', ()=>{
+    const key = el.getAttribute('data-agenda-toewijs');
+    const val = el.value || null;
+    if(key.startsWith('hp|')){
+      const p = AGENDA.punten.find(x=>'hp|'+x.id===key);
+      if(p) p.toegewezen = val;
+    } else {
+      if(val) AGENDA.toewijzing[key] = val; else delete AGENDA.toewijzing[key];
+    }
+    persistMeta();
+    herteken();
+  }));
+  document.querySelectorAll('[data-agenda-open]').forEach(el=>el.addEventListener('click', ()=>openPanel(el.getAttribute('data-agenda-open'))));
+  document.querySelectorAll('[data-agenda-nav]').forEach(el=>el.addEventListener('click', ()=>{ STATE.view = el.getAttribute('data-agenda-nav'); document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); }));
   const heroBulkBtn = document.querySelector('[data-hero-bulk-herinnering]');
   if(heroBulkBtn) heroBulkBtn.addEventListener('click', async ()=>{
     const teamFilter = STATE.dashboardTeamFilter;
@@ -9887,6 +10157,15 @@ function attachHandlers(){
     STATE.lhEditNote = null;
     persistMeta();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-toekomst-datum]').forEach(el=>el.addEventListener('change',()=>{
+    if(!magLhBewerken()) return;
+    const klant = RAW_KLANTEN.find(k=>k.id===el.getAttribute('data-toekomst-datum'));
+    if(!klant) return;
+    klant.toekomstDatum = el.value || '';
+    logActiviteit(klant.toekomstDatum ? `Startdatum toekomstige klant "${klant.naam}": ${fmtDate(klant.toekomstDatum)}` : `Startdatum toekomstige klant "${klant.naam}" verwijderd`);
+    persistMeta();
+    toast(klant.toekomstDatum ? 'Startdatum opgeslagen — staat nu in de agenda op het Overzicht.' : 'Startdatum verwijderd.');
   }));
   document.querySelectorAll('[data-toekomst-actief]').forEach(el=>el.addEventListener('click',()=>{
     if(!magLhBewerken()) return;
