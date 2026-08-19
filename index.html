@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.2';
+const APP_VERSION = '2026.08.19.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -645,7 +645,7 @@ let LEERPAD_VOORTGANG = {};
    alles wat met de integratie gedeeld is verschijnt automatisch. Alleen de worker-URL
    wordt gedeeld via sync. */
 let NOTION_CFG = { workerUrl:'' };
-const NOTION_APP = { paginas:null, laden:false, fout:null, actief:null, blokken:{}, blokkenLaden:false, pad:[], titels:{} };
+const NOTION_APP = { paginas:null, laden:false, fout:null, actief:null, blokken:{}, blokkenLaden:false, pad:[], titels:{}, databases:{} };
 let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -4204,6 +4204,45 @@ async function notionBlokkenLaden(paginaId){
   }
   if(STATE.view==='notion'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
 }
+async function notionDatabaseLaden(dbId){
+  if(NOTION_APP.databases[dbId]) return;
+  NOTION_APP.databases[dbId] = 'laden';
+  try{
+    const data = await notionWorkerFetch('/database/' + dbId);
+    NOTION_APP.databases[dbId] = data;
+  }catch(e){
+    NOTION_APP.databases[dbId] = { fout: e.message || 'Kon database niet laden.' };
+  }
+  if(STATE.view==='notion'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function notionDatabaseHTML(b){
+  const d = b[b.type] || {};
+  const data = NOTION_APP.databases[b.id];
+  const kop = `<div style="display:flex; align-items:center; gap:8px; margin:14px 0 6px;">
+    <span style="font-weight:700; font-size:14.5px;">${escHtml(d.title || (data && data.titel) || 'Database')}</span>
+    <a href="https://www.notion.so/${String(b.id).replace(/-/g,'')}" target="_blank" rel="noopener" title="Open in Notion" style="color:var(--muted2); font-size:12px;"><i class="ti ti-external-link" aria-hidden="true"></i></a>
+  </div>`;
+  if(!data || data === 'laden'){
+    return `<div data-notion-database="${b.id}">${kop}<div style="color:var(--muted2); font-size:12.5px; padding:8px 0;"><i class="ti ti-loader-2" aria-hidden="true"></i> Tabel laden…</div></div>`;
+  }
+  if(data.fout){
+    return `<div data-notion-database="${b.id}">${kop}<div style="color:var(--muted); font-size:12.5px;">${escHtml(data.fout)}</div></div>`;
+  }
+  if(!data.rijen || !data.rijen.length){
+    return `<div data-notion-database="${b.id}">${kop}<div style="color:var(--muted2); font-size:12.5px;">Nog geen items.</div></div>`;
+  }
+  return `<div data-notion-database="${b.id}">${kop}
+  <div style="overflow-x:auto; margin-bottom:10px;">
+  <table style="border-collapse:collapse; width:100%;">
+    <thead><tr>${data.kolommen.map(k=>`<th style="border:1px solid var(--border); background:var(--bg); padding:6px 12px; font-size:12px; text-align:left; font-weight:600; color:var(--muted); white-space:nowrap;">${escHtml(k)}</th>`).join('')}</tr></thead>
+    <tbody>${data.rijen.map(r=>`<tr>${data.kolommen.map((k,i)=>{
+      const w = escHtml(r.cellen[k]||'');
+      return `<td style="border:1px solid var(--border); padding:6px 12px; font-size:12.5px;">${i===0 ? `<span data-notion-subpagina="${r.id}" data-notion-subtitel="${w}" style="cursor:pointer; font-weight:500; text-decoration:underline; text-decoration-color:var(--border);">${w||'Naamloos'}</span>` : w}</td>`;
+    }).join('')}</tr>`).join('')}</tbody>
+  </table></div>
+  ${data.meerKolommen ? '<div style="font-size:11px; color:var(--muted2); margin-top:-4px; margin-bottom:8px;">Niet alle kolommen worden getoond — open in Notion voor de volledige tabel.</div>' : ''}
+  </div>`;
+}
 function notionRichText(rt){
   return (rt||[]).map(t=>{
     let s = escHtml(t.plain_text||'');
@@ -4260,7 +4299,7 @@ function notionBlokHTML(b, nummer){
     case 'column_list': return kinderenLijst ? `<div style="display:flex; gap:24px; margin:6px 0;">${kinderenLijst.map(k=>notionBlokHTML(k)).join('')}</div>` : '';
     case 'column': return `<div style="flex:1; min-width:0;">${kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : ''}</div>`;
     case 'child_page': return `<div style="margin:2px 0; padding:2px 0; line-height:1.65;"><span data-notion-subpagina="${b.id}" data-notion-subtitel="${escHtml(d.title||'Subpagina')}" style="cursor:pointer;">${b.icoon ? escHtml(b.icoon)+' ' : '<i class="ti ti-file-text" aria-hidden="true" style="color:var(--muted);"></i> '}<span style="text-decoration:underline; text-decoration-color:var(--border); font-weight:500;">${escHtml(d.title||'Subpagina')}</span></span></div>`;
-    case 'child_database': return `<div style="margin:3px 0; color:var(--muted); font-size:13px;"><i class="ti ti-table" aria-hidden="true"></i> ${escHtml(d.title||'Database')} <span style="font-size:11px; color:var(--muted2);">(databases open je in Notion)</span></div>`;
+    case 'child_database': return notionDatabaseHTML(b);
     case 'synced_block': return kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : '';
     case 'table': return kinderenLijst ? `<table style="margin:8px 0; border-collapse:collapse;"><tbody>${kinderenLijst.map((r,ri)=>{
       const cellen = (r.table_row && r.table_row.cells) || [];
@@ -9880,6 +9919,11 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   if(STATE.view==='notion' && NOTION_CFG.workerUrl && !NOTION_APP.paginas && !NOTION_APP.laden && !NOTION_APP.fout && SYNC.account){ notionAppLaden(); }
+  if(STATE.view==='notion'){
+    document.querySelectorAll('[data-notion-database]').forEach((el, i)=>{
+      if(i < 6){ const id = el.getAttribute('data-notion-database'); if(!NOTION_APP.databases[id]) notionDatabaseLaden(id); }
+    });
+  }
   document.querySelectorAll('[data-notion-open]').forEach(el=>el.addEventListener('click', ()=>{
     NOTION_APP.actief = el.getAttribute('data-notion-open');
     NOTION_APP.pad = [];
