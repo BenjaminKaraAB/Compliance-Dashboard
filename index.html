@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.15';
+const APP_VERSION = '2026.08.19.16';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -6398,7 +6398,7 @@ function loonheffingKlantDetailHTML(k){
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
-        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${k.email ? ' · '+k.email : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
+        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${(k.lhEmail||k.email) ? ' · '+(k.lhEmail||k.email)+(k.lhEmail ? ' <span style="font-size:9px; background:var(--primary-bg); color:var(--primary-dark); border-radius:8px; padding:1px 6px; vertical-align:1px;" title="Apart e-mailadres voor loonheffing — het algemene adres staat in de klantenlijst">LH</span>' : '') : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
         ${maandNotitiesHTML}
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap;">
@@ -9070,6 +9070,8 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="editKlantKvk" value="${klant.kvk||''}"></div>
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
+      ${magLhBewerken() ? `<div class="field-row"><label>E-mail loonheffing</label><input type="text" id="editKlantLhEmail" value="${klant.lhEmail||''}" placeholder="alleen als dit afwijkt van het algemene adres"></div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:-4px; margin-bottom:6px;">Optioneel: wordt alléén getoond op de Loonheffingen-pagina. Leeg laten = overal het algemene e-mailadres. (Dit veld is alleen zichtbaar voor medewerkers met loonheffing-rechten.)</div>` : ''}
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
     </div></div>
     <div class="panel-section"><div class="panel-section-head"><i class="ti ti-calendar-event" aria-hidden="true"></i><span class="t">Deadlines</span></div><div class="inner">
@@ -9384,6 +9386,8 @@ function attachEditKlantHandlers(klant){
     klant.extId = document.getElementById('editKlantExtId').value.trim();
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
+    const lhEmailVeld = document.getElementById('editKlantLhEmail');
+    if(lhEmailVeld) klant.lhEmail = lhEmailVeld.value.trim();
     klant.tel = document.getElementById('editKlantTel').value.trim();
 
     const f = STORE[klant.id];
