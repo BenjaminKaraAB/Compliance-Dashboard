@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.1';
+const APP_VERSION = '2026.08.19.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -645,7 +645,7 @@ let LEERPAD_VOORTGANG = {};
    alles wat met de integratie gedeeld is verschijnt automatisch. Alleen de worker-URL
    wordt gedeeld via sync. */
 let NOTION_CFG = { workerUrl:'' };
-const NOTION_APP = { paginas:null, laden:false, fout:null, actief:null, blokken:{}, blokkenLaden:false };
+const NOTION_APP = { paginas:null, laden:false, fout:null, actief:null, blokken:{}, blokkenLaden:false, pad:[], titels:{} };
 let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -4257,9 +4257,9 @@ function notionBlokHTML(b, nummer){
       const u = (d.external&&d.external.url) || (d.file&&d.file.url) || d.url || '';
       return u ? `<div style="margin:6px 0;"><a href="${escHtml(u)}" target="_blank" rel="noopener" style="color:var(--primary-dark); font-size:13px;"><i class="ti ti-external-link" aria-hidden="true"></i> ${escHtml(u.length>70?u.slice(0,70)+'…':u)}</a></div>` : '';
     }
-    case 'column_list': return kinderenLijst ? `<div style="display:flex; gap:28px; margin:6px 0; flex-wrap:wrap;">${kinderenLijst.map(k=>notionBlokHTML(k)).join('')}</div>` : '';
-    case 'column': return `<div style="flex:1; min-width:220px;">${kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : ''}</div>`;
-    case 'child_page': return `<div style="margin:3px 0; padding:2px 0; line-height:1.65;"><i class="ti ti-file-text" aria-hidden="true"></i> <a href="https://www.notion.so/${String(b.id).replace(/-/g,'')}" target="_blank" rel="noopener" style="color:var(--text); text-decoration:underline; text-decoration-color:var(--border);">${escHtml(d.title||'Subpagina')}</a></div>`;
+    case 'column_list': return kinderenLijst ? `<div style="display:flex; gap:24px; margin:6px 0;">${kinderenLijst.map(k=>notionBlokHTML(k)).join('')}</div>` : '';
+    case 'column': return `<div style="flex:1; min-width:0;">${kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : ''}</div>`;
+    case 'child_page': return `<div style="margin:2px 0; padding:2px 0; line-height:1.65;"><span data-notion-subpagina="${b.id}" data-notion-subtitel="${escHtml(d.title||'Subpagina')}" style="cursor:pointer;">${b.icoon ? escHtml(b.icoon)+' ' : '<i class="ti ti-file-text" aria-hidden="true" style="color:var(--muted);"></i> '}<span style="text-decoration:underline; text-decoration-color:var(--border); font-weight:500;">${escHtml(d.title||'Subpagina')}</span></span></div>`;
     case 'child_database': return `<div style="margin:3px 0; color:var(--muted); font-size:13px;"><i class="ti ti-table" aria-hidden="true"></i> ${escHtml(d.title||'Database')} <span style="font-size:11px; color:var(--muted2);">(databases open je in Notion)</span></div>`;
     case 'synced_block': return kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : '';
     case 'table': return kinderenLijst ? `<table style="margin:8px 0; border-collapse:collapse;"><tbody>${kinderenLijst.map((r,ri)=>{
@@ -4320,9 +4320,18 @@ function notionHTML(){
       <button class="btn sm" data-notion-vernieuw style="margin-top:12px;"><i class="ti ti-refresh" aria-hidden="true"></i> Vernieuwen</button>
     </div></div>${beheer}`;
   }
-  const actiefId = NOTION_APP.actief || NOTION_APP.paginas[0].id;
-  const actief = NOTION_APP.paginas.find(p=>p.id===actiefId) || NOTION_APP.paginas[0];
-  const tabsHtml = NOTION_APP.paginas.map(p=>`<button data-notion-open="${p.id}" style="padding:10px 16px; font-size:13px; font-weight:${p.id===actief.id?'700':'500'}; cursor:pointer; border:none; background:none; color:${p.id===actief.id?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${p.id===actief.id?'var(--text)':'transparent'};">${escHtml(p.titel)}</button>`).join('');
+  const hoofdPaginas = (function(){
+    const top = NOTION_APP.paginas.filter(p=>p.ouder === 'workspace');
+    return (top.length ? top : NOTION_APP.paginas).slice(0, 10);
+  })();
+  const actiefId = NOTION_APP.actief || (hoofdPaginas[0] && hoofdPaginas[0].id) || NOTION_APP.paginas[0].id;
+  const actief = NOTION_APP.paginas.find(p=>p.id===actiefId)
+    || { id: actiefId, titel: NOTION_APP.titels[actiefId] || 'Pagina' };
+  const inTabs = hoofdPaginas.some(p=>p.id===actief.id);
+  const terugKnop = !inTabs && NOTION_APP.pad.length
+    ? `<button data-notion-terug style="padding:10px 14px; font-size:13px; cursor:pointer; border:none; background:none; color:var(--muted);">← ${escHtml((NOTION_APP.pad[NOTION_APP.pad.length-1]||{}).titel||'Terug')}</button>` : '';
+  const tabsHtml = terugKnop + hoofdPaginas.map(p=>`<button data-notion-open="${p.id}" style="padding:10px 16px; font-size:13px; font-weight:${p.id===actief.id?'700':'500'}; cursor:pointer; border:none; background:none; color:${p.id===actief.id?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${p.id===actief.id?'var(--text)':'transparent'};">${escHtml(p.titel)}</button>`).join('')
+    + (!inTabs ? `<span style="padding:10px 12px; font-size:13px; font-weight:700; border-bottom:2px solid var(--text);">${escHtml(actief.titel)}</span>` : '');
   const paginaData = NOTION_APP.blokken[actief.id];
   const notionAppUrl = 'https://www.notion.so/' + String(actief.id).replace(/-/g,'');
   const coverHtml = paginaData && paginaData.cover ? `<div style="height:180px; background:url('${escHtml(paginaData.cover)}') center/cover; border-radius:0;"></div>` : '';
@@ -4344,7 +4353,7 @@ function notionHTML(){
   <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none; overflow:hidden;">
     ${coverHtml}
     <div class="section-body" style="padding:${paginaData && paginaData.cover ? '0' : '28px'} 0 40px;">
-      <div style="max-width:760px; margin:0 auto; padding:0 32px; font-size:14.5px; color:var(--text);">
+      <div style="max-width:960px; margin:0 auto; padding:0 40px; font-size:14.5px; color:var(--text);">
         ${icoonHtml}
         <h1 style="font-size:30px; font-weight:700; margin:${icoonHtml?'10px':'0'} 0 14px; line-height:1.25;">${escHtml(actief.titel)}</h1>
         ${paginaData ? (notionBlokkenNaarHTML(paginaData.blokken) || '<div style="color:var(--muted2);">Deze pagina is leeg.</div>') : '<div style="color:var(--muted2);"><i class="ti ti-loader-2" aria-hidden="true"></i> Inhoud laden…</div>'}
@@ -9873,9 +9882,24 @@ function attachHandlers(){
   if(STATE.view==='notion' && NOTION_CFG.workerUrl && !NOTION_APP.paginas && !NOTION_APP.laden && !NOTION_APP.fout && SYNC.account){ notionAppLaden(); }
   document.querySelectorAll('[data-notion-open]').forEach(el=>el.addEventListener('click', ()=>{
     NOTION_APP.actief = el.getAttribute('data-notion-open');
+    NOTION_APP.pad = [];
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
     if(!NOTION_APP.blokken[NOTION_APP.actief]) notionBlokkenLaden(NOTION_APP.actief);
   }));
+  document.querySelectorAll('[data-notion-subpagina]').forEach(el=>el.addEventListener('click', ()=>{
+    const vorigeTitel = (NOTION_APP.paginas.find(p=>p.id===NOTION_APP.actief)||{}).titel || NOTION_APP.titels[NOTION_APP.actief] || 'Terug';
+    NOTION_APP.pad.push({ id: NOTION_APP.actief, titel: vorigeTitel });
+    NOTION_APP.actief = el.getAttribute('data-notion-subpagina');
+    NOTION_APP.titels[NOTION_APP.actief] = el.getAttribute('data-notion-subtitel') || 'Pagina';
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    if(!NOTION_APP.blokken[NOTION_APP.actief]) notionBlokkenLaden(NOTION_APP.actief);
+  }));
+  const notionTerug = document.querySelector('[data-notion-terug]');
+  if(notionTerug) notionTerug.addEventListener('click', ()=>{
+    const vorige = NOTION_APP.pad.pop();
+    if(vorige) NOTION_APP.actief = vorige.id;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
   document.querySelectorAll('[data-notion-vernieuw]').forEach(el=>el.addEventListener('click', ()=>{
     NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {};
     notionAppLaden(true);
