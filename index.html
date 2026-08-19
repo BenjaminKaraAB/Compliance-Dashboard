@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.8';
+const APP_VERSION = '2026.08.19.9';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -926,6 +926,7 @@ function addKlant(data){
     salarisdossierWerknemer: data.salarisdossierWerknemer !== false,
     staatOpHold: !!data.staatOpHold,
     toekomstigeKlant: !!data.toekomstigeKlant,
+    toekomstNotitie: data.toekomstNotitie || '',
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
     kvkLaatsteControle: data.kvkLaatsteControle || null,
@@ -4665,6 +4666,7 @@ function migrateData(){
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
       if(k.toekomstigeKlant===undefined) k.toekomstigeKlant=false;
+      if(k.toekomstNotitie===undefined) k.toekomstNotitie='';
       if(k.salarisdossierWerknemer===undefined) k.salarisdossierWerknemer=true;
       if(k.opHoldReden===undefined) k.opHoldReden='';
       if(k.kvkLaatsteControle===undefined) k.kvkLaatsteControle=null;
@@ -6252,6 +6254,48 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     </div>
   </div>`;
 }
+function loonheffingToekomstHTML(){
+  const bewerkbaar = magLhBewerken();
+  let list = RAW_KLANTEN.filter(k=>k.toekomstigeKlant).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  if(STATE.search){
+    const q = STATE.search.toLowerCase();
+    list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
+  }
+  if(!list.length) return '';
+  const rijen = list.map(k=>{
+    const editKey = `toekomst|${k.id}`;
+    const notitieCel = (bewerkbaar && STATE.lhEditNote === editKey)
+      ? `<div style="display:flex; gap:6px; align-items:flex-start;">
+          <textarea data-toekomst-input="${k.id}" rows="2" placeholder="Bijv. start per 1 oktober, wacht op tekenen overeenkomst…" style="flex:1; min-width:180px; max-width:340px; padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:11.5px; resize:vertical;">${(k.toekomstNotitie||'').replace(/</g,'&lt;')}</textarea>
+          <div style="display:flex; flex-direction:column; gap:4px; flex-shrink:0;">
+            <button class="btn sm primary" data-toekomst-save="${k.id}">Opslaan</button>
+            <button class="btn sm ghost" data-toekomst-cancel="${k.id}">Annuleren</button>
+          </div>
+        </div>`
+      : `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <span style="font-size:12px; color:${k.toekomstNotitie?'var(--text)':'var(--muted)'};">${k.toekomstNotitie ? k.toekomstNotitie.replace(/</g,'&lt;') : '—'}</span>
+          ${bewerkbaar ? `<button class="btn sm ghost" title="Notitie bewerken" data-toekomst-edit="${k.id}" style="padding:3px 7px; flex-shrink:0;"><i class="ti ti-pencil" aria-hidden="true"></i></button>` : ''}
+        </div>`;
+    return `<tr>
+      <td><div class="klant-name">${k.naam}</div><div class="klant-meta">${k.vorm||''}${k.extId?' · Nr. '+k.extId:''}</div></td>
+      <td>${bh(k.bh).naam}</td>
+      <td>${notitieCel}</td>
+      <td style="text-align:right; white-space:nowrap;">${bewerkbaar ? `<button class="btn sm" data-toekomst-actief="${k.id}" title="Vinkje uitzetten — klant verschijnt in de gewone lijsten">Nu actief maken</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="section" style="margin-bottom:18px;">
+    <div class="section-head">
+      <h3>Toekomstige klanten</h3>
+      <span class="hint">Klanten die binnenkort bij ons komen — nog zonder taken of deadlines · ${list.length} klant(en)</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Werkgever</th><th>Boekhouder</th><th>Notitie</th><th></th></tr></thead>
+        <tbody>${rijen}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
 function loonheffingOpHoldHTML(){
   const bewerkbaar = magLhBewerken();
   let list = RAW_KLANTEN.filter(k=>k.staatOpHold).slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
@@ -6470,8 +6514,7 @@ function loonheffingHTML(){
   ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga && !k.toekomstigeKlant), true, 'DGA-klanten')}
   ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga && !k.toekomstigeKlant), false, 'Geen-DGA-klanten')}
   ${loonheffingOpHoldHTML()}
-  ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga && k.toekomstigeKlant), true, 'Toekomstige klanten (DGA)')}
-  ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga && k.toekomstigeKlant), false, 'Toekomstige klanten (geen DGA)')}
+  ${loonheffingToekomstHTML()}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
@@ -9790,6 +9833,35 @@ function attachHandlers(){
     if(STATE.lhEditNote===`maandnotitie|${klantId}|${notitieId}`) STATE.lhEditNote = null;
     logActiviteit(`Loonheffingen: notitie verwijderd bij "${klant.naam}"`);
     persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-toekomst-edit]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    STATE.lhEditNote = `toekomst|${el.getAttribute('data-toekomst-edit')}`;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-toekomst-cancel]').forEach(el=>el.addEventListener('click',()=>{
+    STATE.lhEditNote = null;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-toekomst-save]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klant = RAW_KLANTEN.find(k=>k.id===el.getAttribute('data-toekomst-save'));
+    if(!klant) return;
+    const input = document.querySelector(`[data-toekomst-input="${klant.id}"]`);
+    klant.toekomstNotitie = input ? input.value.trim() : '';
+    STATE.lhEditNote = null;
+    persistMeta();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-toekomst-actief]').forEach(el=>el.addEventListener('click',()=>{
+    if(!magLhBewerken()) return;
+    const klant = RAW_KLANTEN.find(k=>k.id===el.getAttribute('data-toekomst-actief'));
+    if(!klant) return;
+    klant.toekomstigeKlant = false;
+    logActiviteit(`Klant "${klant.naam}" is nu actief (niet meer toekomstig)`);
+    persistMeta();
+    toast(`"${klant.naam}" staat nu in de gewone lijsten.`);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-ophold-edit]').forEach(el=>el.addEventListener('click',()=>{
