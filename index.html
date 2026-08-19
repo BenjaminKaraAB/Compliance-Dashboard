@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.6';
+const APP_VERSION = '2026.08.19.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -11802,9 +11802,14 @@ async function aiVerstuurBericht(tekst){
   _aiBewaarBerichten();
   renderAiPanel();
   try{
+    // Beveiligd: de worker eist een Microsoft-token van een @administratiebox.nl-account,
+    // omdat de meegestuurde context alle klantdata bevat.
+    let token = null;
+    try{ token = await getGraphToken(false); }catch(e){}
+    if(!token) throw new Error('log eerst in met Microsoft bij Instellingen');
     const res = await fetch(AI_WORKER_URL, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+token},
       body: JSON.stringify({
         messages: AI_STATE.messages.slice(-10).map(m=>({role:m.role, text:m.text})),
         context: aiContextSamenvatting()
@@ -11815,7 +11820,7 @@ async function aiVerstuurBericht(tekst){
       throw new Error(`Server gaf status ${res.status}${errBody ? ' — ' + errBody.slice(0,200) : ''}`);
     }
     const data = await res.json();
-    AI_STATE.messages.push({role:'assistant', text: data.reply || 'Geen antwoord ontvangen.'});
+    AI_STATE.messages.push({role:'assistant', text: data.reply || data.fout || 'Geen antwoord ontvangen.'});
   }catch(e){
     AI_STATE.messages.push({role:'assistant', text: 'Kon de AI-assistent niet bereiken (' + ((e&&e.message)||'onbekende fout') + '). Controleer of de Cloudflare Worker actief is en het adres in AI_WORKER_URL klopt.'});
   }
