@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.14';
+const APP_VERSION = '2026.08.19.15';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -974,7 +974,7 @@ const BH_KLEUREN_CYCLUS = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0
 function volgendeAutoKleur(){ return BH_KLEUREN_CYCLUS[BOEKHOUDERS.length % BH_KLEUREN_CYCLUS.length]; }
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
-  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', kleur: data.kleur || volgendeAutoKleur()};
+  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', teamHistorie:[{team:data.team||'', vanaf:''}], kleur: data.kleur || volgendeAutoKleur()};
   BOEKHOUDERS.push(b); invalidateBhIndex();
   logActiviteit(`Boekhouder toegevoegd: "${b.naam}"`);
   persistMeta();
@@ -983,6 +983,12 @@ function addBoekhouder(data){
 function updateBoekhouder(id, data){
   const b = BOEKHOUDERS.find(x=>x.id===id);
   if(!b) return null;
+  if(data && 'team' in data){
+    const nieuwTeam = data.team||'';
+    const vanaf = data.teamVanaf;
+    delete data.team; delete data.teamVanaf;
+    if(nieuwTeam !== (b.team||'')) setBoekhouderTeam(id, nieuwTeam, vanaf);
+  }
   Object.assign(b, data);
   logActiviteit(`Boekhouder bewerkt: "${b.naam}"`);
   persistMeta();
@@ -1136,12 +1142,90 @@ function deleteTeam(id){
   persistMeta();
   return true;
 }
-function setBoekhouderTeam(bhId, teamId){
+/* ============================= TEAMHISTORIE =============================
+   Een medewerker kan van team wisselen zónder dat oude data meeverhuist: per boekhouder
+   wordt bijgehouden in welk team hij/zij per welke ingangsdatum zat (teamHistorie).
+   Alles met een datum — activiteitenlog, LH-taken, agenda-afvinkjes — wordt toegerekend
+   aan het team van dát moment via teamVanOp()/teamVanPersoonOp(). Het veld b.team blijft
+   bestaan als "team van vandaag" (wordt automatisch herberekend, ook bij een wissel met
+   een ingangsdatum in de toekomst), zodat alle bestaande filters blijven werken. */
+function momentNaarIso(m){
+  try{
+    if(m===undefined || m===null || m==='') return agendaIsoVandaag();
+    if(typeof m==='number'){ const d = new Date(m); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    return String(m).slice(0,10);
+  }catch(e){ return agendaIsoVandaag(); }
+}
+function teamHistorieVan(b){
+  if(b && Array.isArray(b.teamHistorie) && b.teamHistorie.length) return b.teamHistorie;
+  return [{team:(b && b.team)||'', vanaf:''}];
+}
+function teamVanOp(bhId, moment){
   const b = bh(bhId);
-  if(!b) return false;
-  b.team = teamId || '';
+  if(!b || !b.id) return '';
+  const iso = momentNaarIso(moment);
+  let team = '';
+  teamHistorieVan(b).forEach(h=>{ if(h && (!h.vanaf || String(h.vanaf) <= iso)) team = h.team || ''; });
+  return team;
+}
+function teamVanPersoonOp(naamOfEmail, moment){
+  const z = String(naamOfEmail||'').trim().toLowerCase();
+  if(!z) return '';
+  const b = BOEKHOUDERS.find(x=>String(x.naam||'').trim().toLowerCase()===z || String(x.email||'').trim().toLowerCase()===z);
+  return b ? teamVanOp(b.id, moment) : '';
+}
+function setBoekhouderTeam(bhId, teamId, vanafIso){
+  const b = bh(bhId);
+  if(!b || !b.id) return false;
+  const vanaf = momentNaarIso(vanafIso);
+  if(!Array.isArray(b.teamHistorie) || !b.teamHistorie.length) b.teamHistorie = [{team:b.team||'', vanaf:''}];
+  if(teamVanOp(b.id, vanaf) === (teamId||'')){
+    b.team = teamVanOp(b.id, momentNaarIso());
+    persistMeta();
+    return true;
+  }
+  const bestaand = b.teamHistorie.find(h=>h.vanaf===vanaf);
+  if(bestaand) bestaand.team = teamId||'';
+  else b.teamHistorie.push({team:teamId||'', vanaf});
+  b.teamHistorie.sort((a,c)=>String(a.vanaf).localeCompare(String(c.vanaf)));
+  b.team = teamVanOp(b.id, momentNaarIso());
+  const naarNaam = teamId && teamOf(teamId) ? teamOf(teamId).naam : 'geen team';
+  logActiviteit(`Teamwissel: "${b.naam}" naar ${naarNaam} per ${fmtDate(vanaf)} — data van vóór die datum blijft bij het oude team`);
   persistMeta();
   return true;
+}
+function teamLedenHistorie(teamId){
+  const res = [];
+  BOEKHOUDERS.forEach(b=>{
+    const hist = teamHistorieVan(b);
+    hist.forEach((h, i)=>{
+      if((h.team||'') !== teamId) return;
+      res.push({ b, vanaf: h.vanaf||'', tot: (i+1 < hist.length) ? hist[i+1].vanaf : null });
+    });
+  });
+  return res.sort((a,c)=>String(a.vanaf).localeCompare(String(c.vanaf)));
+}
+/* Telt alle gedateerde handelingen (activiteitenlog, agenda-afvinkjes, LH-taken) per team
+   per maand, toegerekend aan het team waar de persoon op dat moment zat. */
+function teamActiviteitTelling(){
+  const telling = {};
+  const tel = (door, ts)=>{
+    if(!door || !ts) return;
+    try{
+      const team = teamVanPersoonOp(door, ts);
+      const maand = momentNaarIso(ts).slice(0,7);
+      if(!telling[team]) telling[team] = {};
+      telling[team][maand] = (telling[team][maand]||0) + 1;
+    }catch(e){}
+  };
+  (ACTIVITEITENLOG||[]).forEach(a=>tel(a.door, a.ts));
+  Object.keys((AGENDA && AGENDA.afgevinkt)||{}).forEach(s=>{ const a = AGENDA.afgevinkt[s]; if(a) tel(a.door, a.ts); });
+  ((AGENDA && AGENDA.punten)||[]).forEach(p=>{ if(p && p.klaar) tel(p.klaarDoor, p.klaarTs); });
+  RAW_KLANTEN.forEach(kl=>{
+    const f = STORE[kl.id];
+    (((f||{}).lh||{}).taken||[]).forEach(t=>{ if(t && t.done) tel(t.door, t.ts); });
+  });
+  return telling;
 }
 function teamOf(id){ return TEAMS.find(t=>t.id===id); }
 function boekhoudersOfTeam(teamId){ return BOEKHOUDERS.filter(b=>b.team===teamId); }
@@ -4802,6 +4886,13 @@ function migrateData(){
   const agGrens = Date.now() - 120*86400000;
   Object.keys(AGENDA.afgevinkt).forEach(s=>{ const a = AGENDA.afgevinkt[s]; if(!a || (a.ts && a.ts < agGrens)) delete AGENDA.afgevinkt[s]; });
   AGENDA.punten = AGENDA.punten.filter(p=>{ const dd = daysDiff(p.datum); return !(p.klaar && dd!==null && !isNaN(dd) && dd < -120); });
+  BOEKHOUDERS.forEach(b=>{
+    if(!Array.isArray(b.teamHistorie) || !b.teamHistorie.length) b.teamHistorie = [{team:b.team||'', vanaf:''}];
+    b.teamHistorie = b.teamHistorie.filter(h=>h && typeof h==='object').map(h=>({team:h.team||'', vanaf:h.vanaf ? String(h.vanaf).slice(0,10) : ''}));
+    if(!b.teamHistorie.length) b.teamHistorie = [{team:b.team||'', vanaf:''}];
+    b.teamHistorie.sort((a,c)=>String(a.vanaf).localeCompare(String(c.vanaf)));
+    b.team = teamVanOp(b.id, momentNaarIso());
+  });
   INVENTARIS_ITEMS.forEach(it=>{
     if(typeof it.naam !== 'string') it.naam = it.naam ? String(it.naam) : '';
     if(typeof it.omschrijving !== 'string') it.omschrijving = '';
@@ -5691,6 +5782,10 @@ function boekhoudersHTML(){
 /* ============================= VIEW: TEAMS ============================= */
 function teamsHTML(){
   const types = ['OB','VPB','LH','JR','Overige'];
+  const activiteit = teamActiviteitTelling();
+  const maandNu = momentNaarIso().slice(0,7);
+  const vorige = new Date(TODAY); vorige.setMonth(vorige.getMonth()-1);
+  const maandVorig = vorige.getFullYear()+'-'+String(vorige.getMonth()+1).padStart(2,'0');
   const cards = TEAMS.map(t=>{
     const leden = boekhoudersOfTeam(t.id);
     const klanten = klantenOfTeam(t.id);
@@ -5739,6 +5834,14 @@ function teamsHTML(){
           <thead><tr><th>Categorie</th><th>Actie vereist</th><th>Nadert</th><th>Op schema</th><th>Totaal open</th></tr></thead>
           <tbody>${perTypeRows || `<tr><td colspan="5" style="color:var(--muted2);">Geen klanten in dit team.</td></tr>`}</tbody>
         </table>
+        ${(()=>{
+          const hist = teamLedenHistorie(t.id);
+          const metPeriode = hist.filter(h=>h.vanaf || h.tot);
+          const act = activiteit[t.id]||{};
+          const histHtml = metPeriode.length ? `<div style="margin-top:12px; font-size:11.5px; color:var(--muted);"><i class="ti ti-history" aria-hidden="true"></i> <b>Teamhistorie:</b> ${metPeriode.map(h=>`${h.b.naam} · ${h.vanaf?fmtDate(h.vanaf):'vanaf begin'} – ${h.tot?fmtDate(h.tot):'heden'}`).join(' &nbsp;·&nbsp; ')}</div>` : '';
+          return `${histHtml}
+          <div style="margin-top:${metPeriode.length?'6px':'12px'}; font-size:11.5px; color:var(--muted);" title="Elke handeling (logboek, afgevinkte taken, agenda) telt mee bij het team waar de medewerker op dát moment zat — ook na een teamwissel."><i class="ti ti-chart-bar" aria-hidden="true"></i> <b>Activiteit</b> (toegerekend aan team van dat moment): deze maand ${act[maandNu]||0} · vorige maand ${act[maandVorig]||0} handelingen</div>`;
+        })()}
       </div>
     </div>`;
   }).join('');
@@ -9104,6 +9207,8 @@ function editBhFormHTML(b){
       <div class="field-row"><label>Rol</label><input type="text" id="editBhRol" value="${escHtml(b.rol||'')}" placeholder="Boekhouder"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editBhEmail" value="${escHtml(b.email||'')}" placeholder="naam@administratiebox.nl"></div>
       <div class="field-row"><label>Team</label><select id="editBhTeam" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"><option value="">Geen team</option>${teamOptions}</select></div>
+      <div class="field-row"><label>Ingangsdatum</label><input type="date" id="editBhTeamDatum" value="${agendaIsoVandaag()}" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;"></div>
+      <div style="font-size:11.5px; color:var(--muted); margin-bottom:4px;">Alleen gebruikt bij een teamwissel: vanaf deze datum telt ${escHtml(b.naam)} mee bij het nieuwe team. Alle data van vóór die datum (logboek, afgevinkte taken, agenda) blijft toegerekend aan het oude team.</div>
       <div class="field-row"><label>Kleur</label><input type="color" id="editBhKleur" value="${b.kleur}" style="width:60px; height:34px; padding:2px; border:1px solid var(--border); border-radius:8px; cursor:pointer;"></div>
       <div style="font-size:11.5px; color:var(--muted);">Deze kleur wordt gebruikt voor het bolletje bij afgevinkte taken op Loonheffingen, de avatar en de legenda.</div>
     </div></div>
@@ -9198,6 +9303,7 @@ function openEditBhPanel(bhId, silent){
       naam, rol:document.getElementById('editBhRol').value.trim(),
       email:document.getElementById('editBhEmail').value.trim(),
       team:document.getElementById('editBhTeam').value,
+      teamVanaf:(document.getElementById('editBhTeamDatum')||{}).value || '',
       kleur:document.getElementById('editBhKleur').value,
     });
     STATE.editBh=null;
