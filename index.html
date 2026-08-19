@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.15';
+const APP_VERSION = '2026.08.18.16';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -640,6 +640,10 @@ let LH_MAAND_BANNERS = [];
    welke stappen klaar zijn. Beide gesynchroniseerd zodat de admin voortgang kan volgen. */
 let LEERPAD = null;
 let LEERPAD_VOORTGANG = {};
+/* Notion-pagina's die als iframe in het dashboard getoond worden. Alleen via "Publiceren naar
+   web" gedeelde pagina's (naam.notion.site) kunnen ingesloten worden — privé notion.so-links
+   blokkeert Notion zelf in iframes. Beheerd door admins, gedeeld via sync. */
+let NOTION_PAGINAS = [];
 let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -711,6 +715,7 @@ function loadMeta(){
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
       if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
       if(parsed.lhMaandBanners && parsed.lhMaandBanners.length) LH_MAAND_BANNERS = parsed.lhMaandBanners;
+      if(parsed.notionPaginas && parsed.notionPaginas.length) NOTION_PAGINAS = parsed.notionPaginas;
       if(parsed.leerpad) LEERPAD = parsed.leerpad;
       if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
     }
@@ -719,7 +724,7 @@ function loadMeta(){
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionPaginas:NOTION_PAGINAS})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1561,7 +1566,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionPaginas: NOTION_PAGINAS });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1655,10 +1660,11 @@ async function fetchRemoteAndMerge(showFeedback){
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         LH_MAAND_BANNERS = json.lhMaandBanners && json.lhMaandBanners.length ? json.lhMaandBanners : LH_MAAND_BANNERS;
+        NOTION_PAGINAS = json.notionPaginas && json.notionPaginas.length ? json.notionPaginas : NOTION_PAGINAS;
         LEERPAD = json.leerpad || LEERPAD;
         LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionPaginas:NOTION_PAGINAS})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -2022,7 +2028,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbTab:'leerpad', lpModule:0, lpStap:0, lpAntwoord:null, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbTab:'leerpad', lpModule:0, lpStap:0, lpAntwoord:null, notionActief:0, notionBeheerOpen:false, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2079,7 +2085,7 @@ function render(){
         ${navItem('autolijst','auto','Autolijst')}
         ${navItem('archief','upload','Archief-uploader','later')}
         <div class="nav-group-label">Apps &amp; instellingen</div>
-        ${navItem('notion','notion','Notion','later')}
+        ${navItem('notion','notion','Notion')}
         ${navItem('msteams','msteams','Teams-chat','later')}
         ${navItem('outlook','mail','Outlook','later')}
         ${navItem('instellingen','gear','Instellingen')}
@@ -4163,25 +4169,70 @@ function msmailBindHandlers(){
   const verstuur = document.querySelector('[data-msmail-verstuur]');
   if(verstuur) verstuur.addEventListener('click', ()=>msmailVerstuur());
 }
+function notionIsEmbedbaar(url){ return /^https:\/\/[a-z0-9-]+\.notion\.site\//i.test(String(url||'')); }
 function notionHTML(){
-  return `
+  const admin = isAdmin();
+  const paginas = NOTION_PAGINAS;
+  const actiefIdx = Math.min(STATE.notionActief||0, Math.max(0, paginas.length-1));
+  const actief = paginas[actiefIdx] || null;
+
+  const beheer = admin ? `
+  <div class="section" style="margin-top:14px;">
+    <button data-notion-beheer-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:${STATE.notionBeheerOpen?'1px solid var(--border)':'none'};">
+      <h3 style="margin:0; font-size:13.5px; font-weight:700;">Pagina's beheren</h3>
+      <span style="font-size:15px; color:var(--muted); display:inline-block; transform:rotate(${STATE.notionBeheerOpen?'0':'-90'}deg);">▾</span>
+    </button>
+    ${STATE.notionBeheerOpen ? `<div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Alleen pagina's die in Notion via <b>Delen → Publiceren</b> ("Publish to web") zijn gepubliceerd kunnen worden ingesloten — die krijgen een link als <code>naam.notion.site/…</code>. Privé-links (notion.so) blokkeert Notion in iframes; die tonen hier een leeg of foutscherm.</p>
+      <div class="field-row"><label>Titel</label><input type="text" id="notionNieuwTitel" placeholder="bv. Werkinstructies"></div>
+      <div class="field-row"><label>Notion-URL</label><input type="text" id="notionNieuwUrl" placeholder="https://administratiebox.notion.site/…"></div>
+      <div style="margin-top:10px;"><button class="btn sm primary" data-notion-toevoegen>Pagina toevoegen</button></div>
+      ${paginas.length ? `<div style="margin-top:14px;">${paginas.map((p,i)=>`
+        <div style="display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12.5px;">
+          <span style="font-weight:700;">${escHtml(p.titel||'Pagina')}</span>
+          <span style="flex:1; min-width:0; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escHtml(p.url)}</span>
+          ${notionIsEmbedbaar(p.url) ? '' : '<span class="badge amber"><span class="dot amber"></span>niet-embedbare link</span>'}
+          <button class="btn sm ghost" data-notion-verwijder="${i}" style="color:var(--red); flex-shrink:0;"><i class="ti ti-trash" aria-hidden="true"></i></button>
+        </div>`).join('')}</div>` : ''}
+    </div>` : ''}
+  </div>` : '';
+
+  if(!paginas.length){
+    return `
   <div class="section">
     <div class="section-body" style="text-align:center; padding:56px 24px;">
       <div style="width:56px; height:56px; border-radius:14px; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;">
         <i class="ti ti-brand-notion" style="font-size:26px;" aria-hidden="true"></i>
       </div>
-      <h3 style="margin:0 0 8px;">Notion-koppeling volgt binnenkort</h3>
+      <h3 style="margin:0 0 8px;">Nog geen Notion-pagina's ingericht</h3>
       <p style="max-width:440px; margin:0 auto 20px; color:var(--muted); font-size:13.5px; line-height:1.6;">
-        Hier komt een overzicht van gedeelde Notion-pagina's voor collega's, en automatische data-sync vanuit
-        specifieke Notion-databases. Dit vraagt eerst een interne Notion-integratie met gedeelde toegang
-        (momenteel gast-toegang, dat is nog niet genoeg) en een klein serverless tussenlaagje, omdat Notion's
-        API niet rechtstreeks vanuit de browser aangeroepen kan worden.
+        ${admin ? 'Publiceer een pagina in Notion via Delen → Publiceren en voeg de notion.site-link hieronder toe bij "Pagina\'s beheren".' : 'De beheerder heeft nog geen pagina\'s toegevoegd. Tot die tijd kun je Notion in een eigen tabblad openen.'}
       </p>
       <a class="btn sm" href="https://notion.so" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open Notion in nieuw tabblad</a>
     </div>
-  </div>`;
-}
+  </div>${beheer}`;
+  }
 
+  const tabsHtml = paginas.map((p,i)=>`<button data-notion-tab="${i}" style="padding:10px 16px; font-size:13px; font-weight:${i===actiefIdx?'700':'500'}; cursor:pointer; border:none; background:none; color:${i===actiefIdx?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${i===actiefIdx?'var(--text)':'transparent'};">${escHtml(p.titel||'Pagina')}</button>`).join('');
+  const embedbaar = actief && notionIsEmbedbaar(actief.url);
+  return `
+  <div class="section" style="margin-bottom:0; border-radius:var(--radius) var(--radius) 0 0; padding:0 8px;">
+    <div style="display:flex; align-items:center; gap:2px; flex-wrap:wrap;">
+      ${tabsHtml}
+      <a class="btn sm ghost" style="margin-left:auto; margin-right:8px; font-size:11.5px;" href="${escHtml(actief.url)}" target="_blank" rel="noopener">Open in Notion ↗</a>
+    </div>
+  </div>
+  <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none;">
+    ${embedbaar
+      ? `<iframe src="${escHtml(actief.url)}" style="width:100%; height:calc(100vh - 220px); min-height:480px; border:none; display:block; border-radius:0 0 var(--radius) var(--radius); background:#fff;" loading="lazy" referrerpolicy="no-referrer" title="${escHtml(actief.titel||'Notion')}"></iframe>`
+      : `<div class="section-body pad" style="padding:32px; text-align:center;">
+          <i class="ti ti-lock" style="font-size:26px; color:var(--amber);" aria-hidden="true"></i>
+          <div style="font-size:13px; color:var(--muted); margin-top:10px; max-width:460px; margin-left:auto; margin-right:auto; line-height:1.6;">Deze link (<code>${escHtml((actief.url||'').replace(/^https:\/\//,'').split('/')[0])}</code>) is een privé Notion-link — die blokkeert Notion in iframes. Publiceer de pagina in Notion via Delen → Publiceren en gebruik de notion.site-link.</div>
+          <a class="btn sm" style="margin-top:14px;" href="${escHtml(actief.url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open in Notion</a>
+        </div>`}
+  </div>
+  ${beheer}`;
+}
 function allDeadlineRows(){
   const rows = [];
   RAW_KLANTEN.forEach(k=>{
@@ -4546,6 +4597,8 @@ function migrateData(){
   // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
   if(!Array.isArray(INVENTARIS_ITEMS)) INVENTARIS_ITEMS = [];
   if(!Array.isArray(LH_MAAND_BANNERS)) LH_MAAND_BANNERS = [];
+  if(!Array.isArray(NOTION_PAGINAS)) NOTION_PAGINAS = [];
+  NOTION_PAGINAS = NOTION_PAGINAS.filter(p=>p && typeof p.url === 'string' && /^https:\/\//.test(p.url));
   if(LEERPAD && typeof LEERPAD !== 'object') LEERPAD = null;
   if(!LEERPAD_VOORTGANG || typeof LEERPAD_VOORTGANG !== 'object' || Array.isArray(LEERPAD_VOORTGANG)) LEERPAD_VOORTGANG = {};
   LH_MAAND_BANNERS = LH_MAAND_BANNERS.filter(b=>b && /^\d{4}-\d{2}$/.test(String(b.maand||'')) && String(b.tekst||'').trim());
@@ -9695,6 +9748,38 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-lh-notities-jaar]').forEach(el=>el.addEventListener('change', ()=>{
     STATE.lhNotitiesJaar = parseInt(el.value, 10);
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-notion-tab]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.notionActief = Number(el.getAttribute('data-notion-tab'));
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  const notionBeheerBtn = document.querySelector('[data-notion-beheer-toggle]');
+  if(notionBeheerBtn) notionBeheerBtn.addEventListener('click', ()=>{
+    STATE.notionBeheerOpen = !STATE.notionBeheerOpen;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
+  const notionAddBtn = document.querySelector('[data-notion-toevoegen]');
+  if(notionAddBtn) notionAddBtn.addEventListener('click', ()=>{
+    const titel = document.getElementById('notionNieuwTitel').value.trim();
+    const url = document.getElementById('notionNieuwUrl').value.trim();
+    if(!url || !/^https:\/\//.test(url)){ toast('Vul een geldige https-link in.'); return; }
+    if(!notionIsEmbedbaar(url) && !confirm('Dit is geen notion.site-link (Publiceren naar web). Notion blokkeert privé-links in iframes — de pagina zal waarschijnlijk niet laden. Toch toevoegen?')) return;
+    NOTION_PAGINAS.push({ id:'np'+Date.now(), titel: titel || 'Pagina '+(NOTION_PAGINAS.length+1), url });
+    STATE.notionActief = NOTION_PAGINAS.length-1;
+    logActiviteit(`Notion-pagina toegevoegd: "${titel||url}"`);
+    persistMeta();
+    toast('Notion-pagina toegevoegd.');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  });
+  document.querySelectorAll('[data-notion-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
+    const i = Number(el.getAttribute('data-notion-verwijder'));
+    const p = NOTION_PAGINAS[i];
+    if(!p || !confirm(`Notion-pagina "${p.titel}" verwijderen uit het dashboard? (De pagina zelf blijft gewoon in Notion bestaan.)`)) return;
+    NOTION_PAGINAS.splice(i,1);
+    STATE.notionActief = 0;
+    logActiviteit(`Notion-pagina verwijderd: "${p.titel}"`);
+    persistMeta();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   document.querySelectorAll('[data-kb-tab]').forEach(el=>el.addEventListener('click', ()=>{
