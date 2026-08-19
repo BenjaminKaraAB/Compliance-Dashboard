@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.16';
+const APP_VERSION = '2026.08.18.18';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -640,10 +640,12 @@ let LH_MAAND_BANNERS = [];
    welke stappen klaar zijn. Beide gesynchroniseerd zodat de admin voortgang kan volgen. */
 let LEERPAD = null;
 let LEERPAD_VOORTGANG = {};
-/* Notion-pagina's die als iframe in het dashboard getoond worden. Alleen via "Publiceren naar
-   web" gedeelde pagina's (naam.notion.site) kunnen ingesloten worden — privé notion.so-links
-   blokkeert Notion zelf in iframes. Beheerd door admins, gedeeld via sync. */
-let NOTION_PAGINAS = [];
+/* Veilige Notion-koppeling: het dashboard praat via de eigen Cloudflare Worker
+   (met Microsoft-tokencontrole) met de Notion-API. Pagina's blijven privé in Notion;
+   alles wat met de integratie gedeeld is verschijnt automatisch. Alleen de worker-URL
+   wordt gedeeld via sync. */
+let NOTION_CFG = { workerUrl:'' };
+const NOTION_APP = { paginas:null, laden:false, fout:null, actief:null, blokken:{}, blokkenLaden:false };
 let INVENTARIS_ITEMS = [];
 let BIJTELLING_TABEL = [
   {jaar:2017, laag:null, cap:null, algemeen:0.22},
@@ -715,7 +717,7 @@ function loadMeta(){
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
       if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
       if(parsed.lhMaandBanners && parsed.lhMaandBanners.length) LH_MAAND_BANNERS = parsed.lhMaandBanners;
-      if(parsed.notionPaginas && parsed.notionPaginas.length) NOTION_PAGINAS = parsed.notionPaginas;
+      if(parsed.notionCfg && typeof parsed.notionCfg==='object') NOTION_CFG = Object.assign({workerUrl:''}, parsed.notionCfg);
       if(parsed.leerpad) LEERPAD = parsed.leerpad;
       if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
     }
@@ -724,7 +726,7 @@ function loadMeta(){
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionPaginas:NOTION_PAGINAS})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1566,7 +1568,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionPaginas: NOTION_PAGINAS });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1660,11 +1662,11 @@ async function fetchRemoteAndMerge(showFeedback){
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         LH_MAAND_BANNERS = json.lhMaandBanners && json.lhMaandBanners.length ? json.lhMaandBanners : LH_MAAND_BANNERS;
-        NOTION_PAGINAS = json.notionPaginas && json.notionPaginas.length ? json.notionPaginas : NOTION_PAGINAS;
+        NOTION_CFG = json.notionCfg && typeof json.notionCfg==='object' ? Object.assign({workerUrl:''}, json.notionCfg) : NOTION_CFG;
         LEERPAD = json.leerpad || LEERPAD;
         LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionPaginas:NOTION_PAGINAS})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -4169,67 +4171,161 @@ function msmailBindHandlers(){
   const verstuur = document.querySelector('[data-msmail-verstuur]');
   if(verstuur) verstuur.addEventListener('click', ()=>msmailVerstuur());
 }
-function notionIsEmbedbaar(url){ return /^https:\/\/[a-z0-9-]+\.notion\.site\//i.test(String(url||'')); }
+/* ---- Notion via de eigen worker (Notion-API, alleen-lezen) ---- */
+async function notionWorkerFetch(pad){
+  const basis = String(NOTION_CFG.workerUrl||'').replace(/\/+$/,'');
+  if(!basis) throw new Error('Geen worker-URL ingesteld.');
+  const token = await getGraphToken(false);
+  const res = await fetch(basis + pad, { headers: { 'Authorization': 'Bearer ' + token } });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.fout || ('Worker gaf status ' + res.status));
+  return data;
+}
+async function notionAppLaden(){
+  if(NOTION_APP.laden || !NOTION_CFG.workerUrl || !SYNC.account) return;
+  NOTION_APP.laden = true; NOTION_APP.fout = null;
+  try{
+    const data = await notionWorkerFetch('/paginas');
+    NOTION_APP.paginas = data.paginas || [];
+    if(!NOTION_APP.actief && NOTION_APP.paginas.length) NOTION_APP.actief = NOTION_APP.paginas[0].id;
+    if(NOTION_APP.actief) await notionBlokkenLaden(NOTION_APP.actief);
+  }catch(e){
+    NOTION_APP.fout = e.message || 'Kon de Notion-worker niet bereiken.';
+  }
+  NOTION_APP.laden = false;
+  if(STATE.view==='notion'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+async function notionBlokkenLaden(paginaId){
+  try{
+    const data = await notionWorkerFetch('/blokken/' + paginaId);
+    const blokken = data.blokken || [];
+    // Kinderen van toggles/lijsten één niveau diep meeladen (max 12 om het snel te houden)
+    const metKinderen = blokken.filter(b=>b.has_children && ['toggle','bulleted_list_item','numbered_list_item','to_do','callout','quote'].includes(b.type)).slice(0,12);
+    for(const b of metKinderen){
+      try{ const kind = await notionWorkerFetch('/blokken/' + b.id); b._kinderen = kind.blokken || []; }catch(e){}
+    }
+    NOTION_APP.blokken[paginaId] = blokken;
+  }catch(e){
+    NOTION_APP.blokken[paginaId] = [{ type:'_fout', melding: e.message }];
+  }
+  if(STATE.view==='notion'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
+}
+function notionRichText(rt){
+  return (rt||[]).map(t=>{
+    let s = escHtml(t.plain_text||'');
+    const a = t.annotations || {};
+    if(a.code) s = `<code style="background:var(--bg); padding:1px 5px; border-radius:4px; font-size:12px;">${s}</code>`;
+    if(a.bold) s = `<b>${s}</b>`;
+    if(a.italic) s = `<i>${s}</i>`;
+    if(a.strikethrough) s = `<s>${s}</s>`;
+    if(a.underline) s = `<u>${s}</u>`;
+    if(t.href) s = `<a href="${escHtml(t.href)}" target="_blank" rel="noopener" style="color:var(--primary-dark);">${s}</a>`;
+    return s;
+  }).join('');
+}
+function notionBlokHTML(b){
+  const d = b[b.type] || {};
+  const rt = ()=>notionRichText(d.rich_text);
+  const kinderen = b._kinderen ? `<div style="margin-left:20px;">${b._kinderen.map(notionBlokHTML).join('')}</div>` : '';
+  switch(b.type){
+    case '_fout': return `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">${escHtml(b.melding||'Fout bij laden')}</div>`;
+    case 'heading_1': return `<h2 style="font-size:19px; margin:20px 0 8px;">${rt()}</h2>`;
+    case 'heading_2': return `<h3 style="font-size:16px; margin:16px 0 6px;">${rt()}</h3>`;
+    case 'heading_3': return `<h4 style="font-size:14px; margin:14px 0 5px;">${rt()}</h4>`;
+    case 'paragraph': return `<p style="margin:6px 0; line-height:1.7;">${rt()||'&nbsp;'}</p>${kinderen}`;
+    case 'bulleted_list_item': return `<div style="display:flex; gap:8px; margin:3px 0;"><span style="flex-shrink:0;">•</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
+    case 'numbered_list_item': return `<div style="display:flex; gap:8px; margin:3px 0;"><span style="flex-shrink:0; color:var(--muted);">·</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
+    case 'to_do': return `<div style="display:flex; gap:8px; margin:3px 0; align-items:flex-start;"><input type="checkbox" ${d.checked?'checked':''} disabled style="margin-top:3px;"><div style="${d.checked?'color:var(--muted); text-decoration:line-through;':''}">${rt()}</div></div>${kinderen}`;
+    case 'toggle': return `<details style="margin:6px 0;"><summary style="cursor:pointer; font-weight:600;">${rt()}</summary>${kinderen||'<div style="color:var(--muted2); font-size:12px; margin-left:20px;">(inhoud niet geladen)</div>'}</details>`;
+    case 'quote': return `<blockquote style="border-left:3px solid var(--border); margin:8px 0; padding:4px 14px; color:var(--muted);">${rt()}${kinderen}</blockquote>`;
+    case 'callout': return `<div style="display:flex; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:8px 0;"><span>${escHtml((d.icon&&d.icon.emoji)||'💡')}</span><div>${rt()}${kinderen}</div></div>`;
+    case 'divider': return `<hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">`;
+    case 'code': return `<pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-size:12px; overflow-x:auto; margin:8px 0;">${notionRichText(d.rich_text)}</pre>`;
+    case 'image': {
+      const src = (d.file&&d.file.url) || (d.external&&d.external.url) || '';
+      return src ? `<img src="${escHtml(src)}" style="max-width:100%; border-radius:10px; margin:8px 0;" loading="lazy">` : '';
+    }
+    case 'child_page': return `<div style="margin:4px 0;"><i class="ti ti-file" aria-hidden="true"></i> ${escHtml(d.title||'Subpagina')} <span style="font-size:11px; color:var(--muted2);">(open in Notion)</span></div>`;
+    case 'bookmark': case 'link_preview': {
+      const u = d.url || '';
+      return u ? `<div style="margin:6px 0;"><a href="${escHtml(u)}" target="_blank" rel="noopener" style="color:var(--primary-dark); font-size:12.5px;"><i class="ti ti-link" aria-hidden="true"></i> ${escHtml(u)}</a></div>` : '';
+    }
+    case 'table': return b._kinderen ? `<table style="margin:8px 0;"><tbody>${b._kinderen.map(r=>{
+      const cellen = (r.table_row && r.table_row.cells) || [];
+      return `<tr>${cellen.map(c=>`<td style="border:1px solid var(--border); padding:6px 10px; font-size:12.5px;">${notionRichText(c)}</td>`).join('')}</tr>`;
+    }).join('')}</tbody></table>` : '<div style="color:var(--muted2); font-size:12px;">(tabel — open in Notion)</div>';
+    default: return '';
+  }
+}
 function notionHTML(){
   const admin = isAdmin();
-  const paginas = NOTION_PAGINAS;
-  const actiefIdx = Math.min(STATE.notionActief||0, Math.max(0, paginas.length-1));
-  const actief = paginas[actiefIdx] || null;
-
   const beheer = admin ? `
   <div class="section" style="margin-top:14px;">
     <button data-notion-beheer-toggle style="width:100%; border:none; background:none; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:${STATE.notionBeheerOpen?'1px solid var(--border)':'none'};">
-      <h3 style="margin:0; font-size:13.5px; font-weight:700;">Pagina's beheren</h3>
+      <h3 style="margin:0; font-size:13.5px; font-weight:700;">Koppeling beheren</h3>
       <span style="font-size:15px; color:var(--muted); display:inline-block; transform:rotate(${STATE.notionBeheerOpen?'0':'-90'}deg);">▾</span>
     </button>
     ${STATE.notionBeheerOpen ? `<div class="section-body pad">
-      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Alleen pagina's die in Notion via <b>Delen → Publiceren</b> ("Publish to web") zijn gepubliceerd kunnen worden ingesloten — die krijgen een link als <code>naam.notion.site/…</code>. Privé-links (notion.so) blokkeert Notion in iframes; die tonen hier een leeg of foutscherm.</p>
-      <div class="field-row"><label>Titel</label><input type="text" id="notionNieuwTitel" placeholder="bv. Werkinstructies"></div>
-      <div class="field-row"><label>Notion-URL</label><input type="text" id="notionNieuwUrl" placeholder="https://administratiebox.notion.site/…"></div>
-      <div style="margin-top:10px;"><button class="btn sm primary" data-notion-toevoegen>Pagina toevoegen</button></div>
-      ${paginas.length ? `<div style="margin-top:14px;">${paginas.map((p,i)=>`
-        <div style="display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12.5px;">
-          <span style="font-weight:700;">${escHtml(p.titel||'Pagina')}</span>
-          <span style="flex:1; min-width:0; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escHtml(p.url)}</span>
-          ${notionIsEmbedbaar(p.url) ? '' : '<span class="badge amber"><span class="dot amber"></span>niet-embedbare link</span>'}
-          <button class="btn sm ghost" data-notion-verwijder="${i}" style="color:var(--red); flex-shrink:0;"><i class="ti ti-trash" aria-hidden="true"></i></button>
-        </div>`).join('')}</div>` : ''}
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Veilige koppeling via de eigen Cloudflare Worker: de Notion-sleutel blijft server-side, pagina's blijven privé, en de worker geeft alleen inhoud aan ingelogde @administratiebox.nl-accounts. Pagina's verschijnen hier automatisch zodra ze in Notion via <b>… → Verbindingen</b> met de integratie gedeeld zijn. Zie het stappenplan in "notion-api-worker.js".</p>
+      <div class="field-row"><label>Worker-URL</label><input type="text" id="notionWorkerUrl" value="${escHtml(NOTION_CFG.workerUrl||'')}" placeholder="https://compliancebox-notion.….workers.dev"></div>
+      <div style="margin-top:10px;"><button class="btn sm primary" data-notion-cfg-opslaan>Opslaan &amp; verbinden</button></div>
     </div>` : ''}
   </div>` : '';
 
-  if(!paginas.length){
+  if(!NOTION_CFG.workerUrl){
     return `
   <div class="section">
     <div class="section-body" style="text-align:center; padding:56px 24px;">
       <div style="width:56px; height:56px; border-radius:14px; background:var(--primary-bg); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; margin:0 auto 18px;">
         <i class="ti ti-brand-notion" style="font-size:26px;" aria-hidden="true"></i>
       </div>
-      <h3 style="margin:0 0 8px;">Nog geen Notion-pagina's ingericht</h3>
-      <p style="max-width:440px; margin:0 auto 20px; color:var(--muted); font-size:13.5px; line-height:1.6;">
-        ${admin ? 'Publiceer een pagina in Notion via Delen → Publiceren en voeg de notion.site-link hieronder toe bij "Pagina\'s beheren".' : 'De beheerder heeft nog geen pagina\'s toegevoegd. Tot die tijd kun je Notion in een eigen tabblad openen.'}
+      <h3 style="margin:0 0 8px;">Notion-koppeling nog niet ingericht</h3>
+      <p style="max-width:460px; margin:0 auto 20px; color:var(--muted); font-size:13.5px; line-height:1.6;">
+        ${admin ? 'Zet de Notion-worker live (stappenplan staat in notion-api-worker.js) en vul hieronder de worker-URL in bij "Koppeling beheren". Pagina\'s blijven volledig privé — alleen ingelogde collega\'s kunnen ze hier lezen.' : 'De beheerder heeft de koppeling nog niet ingericht. Tot die tijd kun je Notion in een eigen tabblad openen.'}
       </p>
       <a class="btn sm" href="https://notion.so" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open Notion in nieuw tabblad</a>
     </div>
   </div>${beheer}`;
   }
-
-  const tabsHtml = paginas.map((p,i)=>`<button data-notion-tab="${i}" style="padding:10px 16px; font-size:13px; font-weight:${i===actiefIdx?'700':'500'}; cursor:pointer; border:none; background:none; color:${i===actiefIdx?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${i===actiefIdx?'var(--text)':'transparent'};">${escHtml(p.titel||'Pagina')}</button>`).join('');
-  const embedbaar = actief && notionIsEmbedbaar(actief.url);
+  if(NOTION_APP.fout){
+    return `<div class="section"><div class="section-body pad" style="padding:28px; text-align:center;">
+      <i class="ti ti-alert-triangle" style="font-size:24px; color:var(--amber);" aria-hidden="true"></i>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">${escHtml(NOTION_APP.fout)}</div>
+      <button class="btn sm primary" data-notion-vernieuw style="margin-top:12px;">Opnieuw proberen</button>
+    </div></div>${beheer}`;
+  }
+  if(!NOTION_APP.paginas){
+    return `<div class="section"><div class="section-body pad" style="padding:28px; text-align:center;">
+      <i class="ti ti-loader-2" style="font-size:22px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:8px;">Notion-pagina's ophalen…</div>
+    </div></div>${beheer}`;
+  }
+  if(!NOTION_APP.paginas.length){
+    return `<div class="section"><div class="section-body pad" style="padding:36px; text-align:center;">
+      <i class="ti ti-brand-notion" style="font-size:24px; color:var(--muted);" aria-hidden="true"></i>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:10px; max-width:420px; margin-left:auto; margin-right:auto; line-height:1.6;">De worker is verbonden, maar er zijn nog geen pagina's met de integratie gedeeld. Open in Notion een pagina → menu (…) → Verbindingen → voeg de integratie toe. De pagina verschijnt hier dan vanzelf.</div>
+      <button class="btn sm" data-notion-vernieuw style="margin-top:12px;"><i class="ti ti-refresh" aria-hidden="true"></i> Vernieuwen</button>
+    </div></div>${beheer}`;
+  }
+  const actiefId = NOTION_APP.actief || NOTION_APP.paginas[0].id;
+  const actief = NOTION_APP.paginas.find(p=>p.id===actiefId) || NOTION_APP.paginas[0];
+  const tabsHtml = NOTION_APP.paginas.map(p=>`<button data-notion-open="${p.id}" style="padding:10px 16px; font-size:13px; font-weight:${p.id===actief.id?'700':'500'}; cursor:pointer; border:none; background:none; color:${p.id===actief.id?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${p.id===actief.id?'var(--text)':'transparent'};">${escHtml(p.titel)}</button>`).join('');
+  const blokken = NOTION_APP.blokken[actief.id];
+  const notionAppUrl = 'https://www.notion.so/' + String(actief.id).replace(/-/g,'');
   return `
   <div class="section" style="margin-bottom:0; border-radius:var(--radius) var(--radius) 0 0; padding:0 8px;">
     <div style="display:flex; align-items:center; gap:2px; flex-wrap:wrap;">
       ${tabsHtml}
-      <a class="btn sm ghost" style="margin-left:auto; margin-right:8px; font-size:11.5px;" href="${escHtml(actief.url)}" target="_blank" rel="noopener">Open in Notion ↗</a>
+      <span style="margin-left:auto; display:flex; gap:6px; align-items:center; margin-right:8px;">
+        <button class="btn sm ghost" data-notion-vernieuw title="Vernieuwen" style="font-size:11.5px;"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+        <a class="btn sm ghost" style="font-size:11.5px;" href="${escHtml(notionAppUrl)}" target="_blank" rel="noopener">Bewerk in Notion ↗</a>
+      </span>
     </div>
   </div>
   <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none;">
-    ${embedbaar
-      ? `<iframe src="${escHtml(actief.url)}" style="width:100%; height:calc(100vh - 220px); min-height:480px; border:none; display:block; border-radius:0 0 var(--radius) var(--radius); background:#fff;" loading="lazy" referrerpolicy="no-referrer" title="${escHtml(actief.titel||'Notion')}"></iframe>`
-      : `<div class="section-body pad" style="padding:32px; text-align:center;">
-          <i class="ti ti-lock" style="font-size:26px; color:var(--amber);" aria-hidden="true"></i>
-          <div style="font-size:13px; color:var(--muted); margin-top:10px; max-width:460px; margin-left:auto; margin-right:auto; line-height:1.6;">Deze link (<code>${escHtml((actief.url||'').replace(/^https:\/\//,'').split('/')[0])}</code>) is een privé Notion-link — die blokkeert Notion in iframes. Publiceer de pagina in Notion via Delen → Publiceren en gebruik de notion.site-link.</div>
-          <a class="btn sm" style="margin-top:14px;" href="${escHtml(actief.url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> Open in Notion</a>
-        </div>`}
+    <div class="section-body pad" style="padding:24px 28px; font-size:13.5px; max-width:860px;">
+      ${blokken ? (blokken.map(notionBlokHTML).join('') || '<div style="color:var(--muted2);">Deze pagina is leeg.</div>') : '<div style="color:var(--muted2);"><i class="ti ti-loader-2" aria-hidden="true"></i> Inhoud laden…</div>'}
+    </div>
   </div>
   ${beheer}`;
 }
@@ -4597,8 +4693,8 @@ function migrateData(){
   // 25%-tarief) — vul zo nodig de standaardtabel opnieuw in.
   if(!Array.isArray(INVENTARIS_ITEMS)) INVENTARIS_ITEMS = [];
   if(!Array.isArray(LH_MAAND_BANNERS)) LH_MAAND_BANNERS = [];
-  if(!Array.isArray(NOTION_PAGINAS)) NOTION_PAGINAS = [];
-  NOTION_PAGINAS = NOTION_PAGINAS.filter(p=>p && typeof p.url === 'string' && /^https:\/\//.test(p.url));
+  if(!NOTION_CFG || typeof NOTION_CFG !== 'object') NOTION_CFG = { workerUrl:'' };
+  if(typeof NOTION_CFG.workerUrl !== 'string' || (NOTION_CFG.workerUrl && !/^https:\/\//.test(NOTION_CFG.workerUrl))) NOTION_CFG.workerUrl = '';
   if(LEERPAD && typeof LEERPAD !== 'object') LEERPAD = null;
   if(!LEERPAD_VOORTGANG || typeof LEERPAD_VOORTGANG !== 'object' || Array.isArray(LEERPAD_VOORTGANG)) LEERPAD_VOORTGANG = {};
   LH_MAAND_BANNERS = LH_MAAND_BANNERS.filter(b=>b && /^\d{4}-\d{2}$/.test(String(b.maand||'')) && String(b.tekst||'').trim());
@@ -9750,8 +9846,15 @@ function attachHandlers(){
     STATE.lhNotitiesJaar = parseInt(el.value, 10);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
-  document.querySelectorAll('[data-notion-tab]').forEach(el=>el.addEventListener('click', ()=>{
-    STATE.notionActief = Number(el.getAttribute('data-notion-tab'));
+  if(STATE.view==='notion' && NOTION_CFG.workerUrl && !NOTION_APP.paginas && !NOTION_APP.laden && !NOTION_APP.fout && SYNC.account){ notionAppLaden(); }
+  document.querySelectorAll('[data-notion-open]').forEach(el=>el.addEventListener('click', ()=>{
+    NOTION_APP.actief = el.getAttribute('data-notion-open');
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    if(!NOTION_APP.blokken[NOTION_APP.actief]) notionBlokkenLaden(NOTION_APP.actief);
+  }));
+  document.querySelectorAll('[data-notion-vernieuw]').forEach(el=>el.addEventListener('click', ()=>{
+    NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {};
+    notionAppLaden();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   const notionBeheerBtn = document.querySelector('[data-notion-beheer-toggle]');
@@ -9759,29 +9862,18 @@ function attachHandlers(){
     STATE.notionBeheerOpen = !STATE.notionBeheerOpen;
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   });
-  const notionAddBtn = document.querySelector('[data-notion-toevoegen]');
-  if(notionAddBtn) notionAddBtn.addEventListener('click', ()=>{
-    const titel = document.getElementById('notionNieuwTitel').value.trim();
-    const url = document.getElementById('notionNieuwUrl').value.trim();
-    if(!url || !/^https:\/\//.test(url)){ toast('Vul een geldige https-link in.'); return; }
-    if(!notionIsEmbedbaar(url) && !confirm('Dit is geen notion.site-link (Publiceren naar web). Notion blokkeert privé-links in iframes — de pagina zal waarschijnlijk niet laden. Toch toevoegen?')) return;
-    NOTION_PAGINAS.push({ id:'np'+Date.now(), titel: titel || 'Pagina '+(NOTION_PAGINAS.length+1), url });
-    STATE.notionActief = NOTION_PAGINAS.length-1;
-    logActiviteit(`Notion-pagina toegevoegd: "${titel||url}"`);
+  const notionCfgBtn = document.querySelector('[data-notion-cfg-opslaan]');
+  if(notionCfgBtn) notionCfgBtn.addEventListener('click', ()=>{
+    const url = document.getElementById('notionWorkerUrl').value.trim().replace(/\/+$/,'');
+    if(url && !/^https:\/\//.test(url)){ toast('Vul een geldige https-link in.'); return; }
+    NOTION_CFG.workerUrl = url;
+    NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {}; NOTION_APP.actief = null;
+    logActiviteit(url ? 'Notion-worker-URL ingesteld' : 'Notion-koppeling uitgeschakeld');
     persistMeta();
-    toast('Notion-pagina toegevoegd.');
+    toast(url ? 'Opgeslagen — verbinden…' : 'Koppeling uitgeschakeld.');
+    if(url) notionAppLaden();
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   });
-  document.querySelectorAll('[data-notion-verwijder]').forEach(el=>el.addEventListener('click', ()=>{
-    const i = Number(el.getAttribute('data-notion-verwijder'));
-    const p = NOTION_PAGINAS[i];
-    if(!p || !confirm(`Notion-pagina "${p.titel}" verwijderen uit het dashboard? (De pagina zelf blijft gewoon in Notion bestaan.)`)) return;
-    NOTION_PAGINAS.splice(i,1);
-    STATE.notionActief = 0;
-    logActiviteit(`Notion-pagina verwijderd: "${p.titel}"`);
-    persistMeta();
-    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
-  }));
   document.querySelectorAll('[data-kb-tab]').forEach(el=>el.addEventListener('click', ()=>{
     STATE.kbTab = el.getAttribute('data-kb-tab');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
