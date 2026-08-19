@@ -92,6 +92,18 @@
   .hero-digest-empty{background:var(--bg); border-radius:10px; padding:12px 14px; display:flex; gap:10px; align-items:center; color:var(--muted); font-size:12.5px;}
   .hero-digest-actions{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
   .hero-digest-actions button{font-size:12px; padding:6px 12px;}
+  .hero-agenda-grid{display:grid; grid-template-columns:290px minmax(0,1fr); gap:14px; align-items:stretch; margin-bottom:18px;}
+  .hero-agenda-grid .hero-banner{margin-bottom:0; height:100%; box-sizing:border-box;}
+  .hero-agenda-grid .agenda-kaart{margin-bottom:0; height:100%; box-sizing:border-box;}
+  @media(max-width:1150px){.hero-agenda-grid{grid-template-columns:1fr;}}
+  .hero-mini{border-top:1px solid var(--border); margin-top:14px; padding-top:12px; display:flex; flex-direction:column; gap:7px; font-size:12.5px; color:var(--muted);}
+  .hero-mini i{font-size:15px; margin-right:6px; vertical-align:-2px;}
+  .agenda-kaart{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px 18px;}
+  .agenda-kop{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+  .agenda-kop h3{margin:0; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  .agenda-dag{margin:10px 0 5px; font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.2px;}
+  .agenda-item{transition:background .12s;}
+  .agenda-item:hover{background:var(--bg);}
   html[data-theme="dark"] .hero-stat{background:rgba(255,255,255,.03);}
 
   .panel-section{scroll-margin-top:52px;}
@@ -529,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.13';
+const APP_VERSION = '2026.08.19.14';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5213,34 +5225,29 @@ function heroBannerHTML(rows, klantenGefilterd, cnt){
     return d!==null && !isNaN(d) && d>=0 && d<=3;
   });
   const zonderKlantnr = klantenGefilterd.filter(k=>!k.extId).length;
-  const delen = [];
-  if(cnt.actie) delen.push(`<b>${cnt.actie}</b> deadline(s) verlopen of binnen 7 dagen`);
-  if(lhBinnenkort.length) delen.push(`<b>${lhBinnenkort.length}</b> loonheffing-periode(s) sluiten binnen 3 dagen`);
-  if(flagged.length) delen.push(`<b>${flagged.length}</b> klant(en) met openstaande transacties én naderende deadline`);
-  if(zonderKlantnr) delen.push(`<b>${zonderKlantnr}</b> klant(en) zonder klantnummer`);
-  const digest = delen.length
-    ? `<div class="hero-digest">
-        <i class="ti ti-sparkles" aria-hidden="true"></i>
-        <div style="flex:1">
-          <p class="hero-digest-title">Automatisch voor je gesignaleerd</p>
-          <p class="hero-digest-body">${delen.join(' · ')}.</p>
-          <div class="hero-digest-actions">
-            ${flagged.length ? `<button class="btn sm" data-hero-bulk-herinnering>Verstuur herinneringen (${flagged.length})</button>` : ''}
-            <button class="btn sm ghost" data-hero-weekoverzicht><i class="ti ti-mail" aria-hidden="true"></i> Weekoverzicht mailen</button>
-          </div>
-        </div>
-      </div>`
-    : `<div class="hero-digest-empty"><i class="ti ti-check" aria-hidden="true"></i> Niets dat nu om actie vraagt — alles op schema.</div>`;
+  let agendaVandaag = 0;
+  try{ agendaVandaag = agendaPunten().filter(it=>daysDiff(it.datum)===0 && !it.klaar).length; }catch(e){}
   return `
   <div class="hero-banner">
-    <div class="hero-top">
+    <div class="hero-top" style="margin-bottom:0;">
       <div>
         <p class="hero-date">${fmtDagVolledig(new Date())}</p>
-        <h1 class="hero-greeting">${heroGroet()}, ${voornaam}</h1>
+        <h1 class="hero-greeting" style="font-size:19px;">${heroGroet()}, ${voornaam}</h1>
       </div>
       <div class="hero-avatar">${initiaal}</div>
     </div>
-    ${digest}
+    <div class="hero-mini">
+      <span><i class="ti ti-alert-triangle" style="color:var(--red);" aria-hidden="true"></i>${cnt.actie} deadline(s) verlopen of ≤ 7 dagen</span>
+      <span><i class="ti ti-clock" style="color:var(--amber);" aria-hidden="true"></i>${cnt.nadert} deadline(s) naderen (8–14 dagen)</span>
+      <span><i class="ti ti-checklist" style="color:var(--blue);" aria-hidden="true"></i>${agendaVandaag} agendapunt(en) vandaag open</span>
+      ${lhBinnenkort.length ? `<span><i class="ti ti-report-money" style="color:var(--primary-dark);" aria-hidden="true"></i>${lhBinnenkort.length} loonheffing-periode(s) sluiten binnen 3 dagen</span>` : ''}
+      ${zonderKlantnr ? `<span><i class="ti ti-id-off" style="color:var(--muted2);" aria-hidden="true"></i>${zonderKlantnr} klant(en) zonder klantnummer</span>` : ''}
+      ${!cnt.actie && !agendaVandaag ? `<span><i class="ti ti-check" style="color:var(--green);" aria-hidden="true"></i>Niets dat nu om actie vraagt</span>` : ''}
+    </div>
+    <div class="hero-digest-actions">
+      ${flagged.length ? `<button class="btn sm" data-hero-bulk-herinnering>Verstuur herinneringen (${flagged.length})</button>` : ''}
+      <button class="btn sm ghost" data-hero-weekoverzicht><i class="ti ti-mail" aria-hidden="true"></i> Weekoverzicht</button>
+    </div>
   </div>`;
 }
 /* Verstuurt een korte herinneringsmail naar één klant (openstaande transacties + naderende deadline).
@@ -5319,9 +5326,9 @@ const AGENDA_BRON_META = {
   auto:       {label:'autolijst',         bg:'#FAEEDA', fg:'#633806'},
   handmatig:  {label:'handmatig',         bg:'#F1EFE8', fg:'#444441'},
 };
-function agendaAutoPunten(horizon, alleenBh){
+function agendaAutoPunten(horizon, klantFilter){
   const punten = [];
-  const magKlant = k => !alleenBh || (k && k.bh===alleenBh);
+  const magKlant = k => !klantFilter || (k && klantFilter(k));
   const inVenster = (iso, terug)=>{ const dd = daysDiff(iso); return dd!==null && !isNaN(dd) && dd >= -(terug===undefined?60:terug) && dd <= horizon; };
   const vandaagIso = agendaIsoVandaag();
   const huidigeMaand = vandaagIso.slice(0,7);
@@ -5388,7 +5395,7 @@ function agendaAutoPunten(horizon, alleenBh){
   AUTOS.forEach(a=>{
     if(!a || !a.verkoopdatum) return;
     const k = RAW_KLANTEN.find(x=>x.id===a.klant);
-    if(alleenBh && !magKlant(k)) return;
+    if(klantFilter && !magKlant(k)) return;
     if(!inVenster(a.verkoopdatum, 30)) return;
     punten.push({ key:`av|${a.id}|${a.verkoopdatum}`, datum:a.verkoopdatum, bron:'auto', nav:'autolijst',
       tekst:`Auto ${(a.merk||'')+' '+(a.kenteken||'')} verkocht per ${fmtDate(a.verkoopdatum)}${k ? ` (${k.naam})` : ''} — autolijst bijwerken` });
@@ -5396,11 +5403,16 @@ function agendaAutoPunten(horizon, alleenBh){
   return punten;
 }
 function agendaPunten(){
-  if(STATE.agendaFilter===undefined){ try{ STATE.agendaFilter = localStorage.getItem('cd_agenda_filter')||'iedereen'; }catch(e){ STATE.agendaFilter='iedereen'; } }
+  if(STATE.agendaFilter===undefined){ try{ STATE.agendaFilter = localStorage.getItem('cd_agenda_filter')||'mij'; }catch(e){ STATE.agendaFilter='mij'; } }
   const horizon = STATE.agendaHorizon || 14;
   const mijn = mijnBoekhouderId();
-  const alleenIk = STATE.agendaFilter==='mij';
-  const items = agendaAutoPunten(horizon, alleenIk ? (mijn||'__geen__') : null);
+  const modus = ['mij','team','iedereen'].includes(STATE.agendaFilter) ? STATE.agendaFilter : 'mij';
+  const mijnB = mijn ? bh(mijn) : null;
+  const teamBhIds = (mijnB && mijnB.team) ? new Set(BOEKHOUDERS.filter(b=>b.team===mijnB.team).map(b=>b.id)) : new Set(mijn ? [mijn] : []);
+  let klantFilter = null;
+  if(modus==='mij') klantFilter = k => k && k.bh===mijn && !!mijn;
+  if(modus==='team') klantFilter = k => k && teamBhIds.has(k.bh);
+  const items = agendaAutoPunten(horizon, klantFilter);
   (AGENDA.punten||[]).forEach(p=>{
     if(!p || !p.datum) return;
     const dd = daysDiff(p.datum);
@@ -5413,7 +5425,8 @@ function agendaPunten(){
     it.klaar = !!af; it.klaarDoor = af ? af.door : null;
   });
   let lijst = items;
-  if(alleenIk) lijst = lijst.filter(it=> it.handmatig ? it.toegewezen===mijn : (!it.toegewezen || it.toegewezen===mijn));
+  if(modus==='mij') lijst = lijst.filter(it=> it.handmatig ? it.toegewezen===mijn : (!it.toegewezen || it.toegewezen===mijn));
+  else if(modus==='team') lijst = lijst.filter(it=> !it.toegewezen || teamBhIds.has(it.toegewezen));
   lijst = lijst.filter(it=>{ const dd = daysDiff(it.datum); return !(it.klaar && dd!==null && dd<0); });
   lijst.sort((a,b)=> a.datum===b.datum ? (a.klaar===b.klaar ? String(a.tekst).localeCompare(String(b.tekst),'nl') : (a.klaar?1:-1)) : (a.datum<b.datum?-1:1));
   return lijst;
@@ -5462,25 +5475,26 @@ function agendaHTML(){
       <button class="btn sm ghost" data-agenda-nieuw>Annuleren</button>
     </div>` : '';
   const dagenHtml = Array.from(perDag.entries()).map(([iso, its])=>`
-    <p style="margin:10px 0 5px; font-size:11px; font-weight:600; color:var(--muted);">${agendaDagLabel(iso)} · ${fmtDate(iso)}</p>
+    <p class="agenda-dag">${agendaDagLabel(iso)} · ${fmtDate(iso)}</p>
     <div style="display:flex; flex-direction:column; gap:5px;">${its.map(agendaItemHTML).join('')}</div>`).join('');
   return `
-  <div class="section" style="margin-bottom:16px;">
-    <div class="section-head" style="flex-wrap:wrap; gap:8px;">
-      <h3 style="display:flex; align-items:center; gap:8px;"><i class="ti ti-calendar" aria-hidden="true"></i> Agenda <span class="hint" style="font-weight:400;">komende ${horizon} dagen · herkent zelf deadlines, toekomstige klanten, maandmeldingen en auto-verkoopdata</span></h3>
+  <div class="agenda-kaart">
+    <div class="agenda-kop">
+      <h3><i class="ti ti-calendar" aria-hidden="true"></i> Agenda <span class="hint" style="font-weight:400;">komende ${horizon} dagen</span></h3>
       <div style="display:flex; gap:6px; align-items:center; margin-left:auto;">
-        <select id="agendaFilterSel" title="${mijn ? 'Alleen ik = jouw klanten + wat aan jou is toegewezen' : 'Je e-mailadres is (nog) niet aan een boekhouder gekoppeld — Alleen ik toont dan alleen expliciete toewijzingen'}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
-          <option value="iedereen" ${STATE.agendaFilter!=='mij'?'selected':''}>Iedereen</option>
-          <option value="mij" ${STATE.agendaFilter==='mij'?'selected':''}>Alleen ik</option>
+        <select id="agendaFilterSel" title="${mijn ? 'Alleen ik = jouw klanten + wat aan jou is toegewezen · Mijn team = klanten van jouw team' : 'Je e-mailadres is (nog) niet aan een boekhouder gekoppeld — vul het in bij Boekhouders om Alleen ik en Mijn team te laten werken'}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="mij" ${STATE.agendaFilter!=='team'&&STATE.agendaFilter!=='iedereen'?'selected':''}>Alleen ik</option>
+          <option value="team" ${STATE.agendaFilter==='team'?'selected':''}>Mijn team</option>
+          <option value="iedereen" ${STATE.agendaFilter==='iedereen'?'selected':''}>Iedereen</option>
         </select>
         <button class="btn sm ghost" data-agenda-horizon>${horizon===14 ? 'Verder kijken (90 dgn)' : 'Terug naar 14 dgn'}</button>
         <button class="btn sm primary" data-agenda-nieuw><i class="ti ti-plus" aria-hidden="true"></i> Agendapunt</button>
       </div>
     </div>
-    <div class="section-body">
+    <div>
       ${nieuwForm}
       ${achterstallig.length ? `
-        <p style="margin:0 0 5px; font-size:11px; font-weight:600; color:var(--red);">Achterstallig (${achterstallig.length})</p>
+        <p class="agenda-dag" style="color:var(--red); margin-top:0;">Achterstallig (${achterstallig.length})</p>
         <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:4px;">${achterstallig.map(agendaItemHTML).join('')}</div>` : ''}
       ${dagenHtml || (!achterstallig.length ? `<p style="font-size:12.5px; color:var(--muted); margin:0;"><i class="ti ti-check" aria-hidden="true"></i> Geen agendapunten in de komende ${horizon} dagen${STATE.agendaFilter==='mij' ? ' voor jou' : ''}.</p>` : '')}
     </div>
@@ -5528,8 +5542,10 @@ function dashboardHTML(){
   const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
 
   return `
-  ${heroHTML}
-  ${agendaHTML()}
+  <div class="hero-agenda-grid">
+    ${heroHTML}
+    ${agendaHTML()}
+  </div>
   <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
     <label style="font-size:12.5px; color:var(--muted);">Weergave</label>
     <select id="filterTeamDashboard" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12.5px;">
