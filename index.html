@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.20';
+const APP_VERSION = '2026.08.18.21';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -4172,20 +4172,20 @@ function msmailBindHandlers(){
   if(verstuur) verstuur.addEventListener('click', ()=>msmailVerstuur());
 }
 /* ---- Notion via de eigen worker (Notion-API, alleen-lezen) ---- */
-async function notionWorkerFetch(pad){
+async function notionWorkerFetch(pad, allowInteractive){
   const basis = String(NOTION_CFG.workerUrl||'').replace(/\/+$/,'');
   if(!basis) throw new Error('Geen worker-URL ingesteld.');
-  const token = await getGraphToken(false);
+  const token = await getGraphToken(!!allowInteractive);
   const res = await fetch(basis + pad, { headers: { 'Authorization': 'Bearer ' + token } });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.fout || ('Worker gaf status ' + res.status));
   return data;
 }
-async function notionAppLaden(){
+async function notionAppLaden(allowInteractive){
   if(NOTION_APP.laden || !NOTION_CFG.workerUrl || !SYNC.account) return;
   NOTION_APP.laden = true; NOTION_APP.fout = null;
   try{
-    const data = await notionWorkerFetch('/paginas');
+    const data = await notionWorkerFetch('/paginas', allowInteractive);
     NOTION_APP.paginas = data.paginas || [];
     if(!NOTION_APP.actief && NOTION_APP.paginas.length) NOTION_APP.actief = NOTION_APP.paginas[0].id;
     if(NOTION_APP.actief) await notionBlokkenLaden(NOTION_APP.actief);
@@ -9854,7 +9854,7 @@ function attachHandlers(){
   }));
   document.querySelectorAll('[data-notion-vernieuw]').forEach(el=>el.addEventListener('click', ()=>{
     NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {};
-    notionAppLaden();
+    notionAppLaden(true);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
   const notionBeheerBtn = document.querySelector('[data-notion-beheer-toggle]');
@@ -9875,7 +9875,7 @@ function attachHandlers(){
     logActiviteit(url ? 'Notion-worker-URL ingesteld' : 'Notion-koppeling uitgeschakeld');
     persistMeta();
     toast(url ? 'Opgeslagen — verbinden…' : 'Koppeling uitgeschakeld.');
-    if(url) notionAppLaden();
+    if(url) notionAppLaden(true);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   });
   document.querySelectorAll('[data-kb-tab]').forEach(el=>el.addEventListener('click', ()=>{
