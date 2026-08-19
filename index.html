@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.10';
+const APP_VERSION = '2026.08.19.11';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -11793,60 +11793,122 @@ const AI_STATE = { open:false, loading:false, messages: (function(){ try{ return
 function _aiBewaarBerichten(){
   try{ localStorage.setItem('cd_ai_messages', JSON.stringify(AI_STATE.messages.slice(-30))); }catch(e){}
 }
-/* Bouwt een volledige samenvatting van ALLE dashboarddata (niet meer alleen een top-15) voor de
-   AI-assistent: per klant boekhouder, rechtsvorm, banksaldo, OB/VPB/LH/JR-status, loonheffing-
-   voortgang + vaste notitie, en aantal auto's. Bij ~300-400 klanten blijft dit ruim binnen het
-   context-venster van het model (128k tokens) en de kosten zijn verwaarloosbaar (~$0,01 per vraag). */
-function aiContextSamenvatting(){
+/* Slimme context-selectie: in plaats van ALLE klanten mee te sturen (duur: ~2.000 neurons per
+   vraag bij Workers AI) selecteert deze functie alleen wat relevant is voor de gestelde vraag —
+   genoemde klanten (volledige detailregel), urgente deadlines, en thematische lijstjes (saldo,
+   auto's, loonheffing, boekhouder) alleen als de vraag daarover gaat. Een normale vraag kost
+   daardoor nog maar ~100-200 neurons en blijft binnen de gratis Cloudflare-dagbundel. */
+const AI_STOPWOORDEN = new Set(['deze','die','deze','over','naar','voor','wordt','worden','staat','staan','heeft','hebben','geef','geven','laat','zien','lijst','welke','vraag','graag','alle','alles','even','vandaag','morgen','deze','week','maand','jaar','holding','beheer','groep','administratie','onderneming','bedrijf','klant','klanten','deadline','deadlines','moet','moeten','kunnen','zijn','haar','ook','nog','wanneer','hoeveel','waarom','waar','doen','doet']);
+function aiZoekwoorden(vraag){
+  return Array.from(new Set(String(vraag||'').toLowerCase().replace(/[^a-z0-9à-ÿ&\s-]/g,' ').split(/[\s-]+/)
+    .filter(w=>w.length>=4 && !AI_STOPWOORDEN.has(w))));
+}
+function aiKlantDetailregel(k){
+  const f = STORE[k.id];
+  if(!f) return `- ${k.naam}: (geen data)`;
+  const boekhouderNaam = bh(k.bh) ? bh(k.bh).naam : 'onbekend';
+  const statussen = ['OB','VPB','LH','JR'].map(t=>{
+    const e = effDL(k,t);
+    if(!e || e.na) return null;
+    const s = statusOf(e);
+    return `${t} ${fmtDate(e.datum)} (${s.key})`;
+  }).filter(Boolean).join(', ');
+  let lhInfo = '';
+  if(k.doetLoonaangifte && f.lh){
+    const gedaan = (f.lh.taken||[]).filter(t=>t.done).length;
+    lhInfo = ` | LH-taken ${gedaan}/${(f.lh.taken||[]).length}`;
+    if(f.lh.overigeNotitie) lhInfo += ` | LH-vaste notitie: "${String(f.lh.overigeNotitie).slice(0,100)}"`;
+  }
+  const autos = AUTOS.filter(a=>a.klant===k.id);
+  const autoInfo = autos.length ? ` | auto's: ${autos.slice(0,5).map(a=>`${a.merk||'?'} ${a.kenteken||''} (${a.btwAuto==='ja'?'btw-auto':'marge'}, ${a.elektrisch==='ja'?'elektrisch':'brandstof'})`).join('; ')}` : '';
+  const notitie = f.notities ? ` | notitie: "${String(f.notities).slice(0,150)}"` : '';
+  const afspraken = f.afspraken ? ` | afspraken: "${String(f.afspraken).slice(0,150)}"` : '';
+  const toekomst = k.toekomstigeKlant ? ' | TOEKOMSTIGE KLANT (nog niet actief)' : '';
+  return `- ${k.naam} | vorm ${k.vorm||'onbekend'} | boekhouder ${boekhouderNaam} | saldo ${fmtEUR(f.saldo)} | ${statussen || 'geen lopende deadlines'}${lhInfo}${autoInfo}${toekomst}${notitie}${afspraken}`;
+}
+function aiContextSamenvatting(vraag){
   try{
-    const klantregels = RAW_KLANTEN.map(k=>{
-      const f = STORE[k.id];
-      if(!f) return `- ${k.naam}: (geen data)`;
-      const boekhouderNaam = bh(k.bh) ? bh(k.bh).naam : 'onbekend';
-      const statussen = ['OB','VPB','LH','JR'].map(t=>{
-        const e = effDL(k,t);
-        if(!e || e.na) return null;
-        const s = statusOf(e);
-        return `${t} ${fmtDate(e.datum)} (${s.key})`;
-      }).filter(Boolean).join(', ');
-      (f.dl.overige||[]).forEach(o=>{
-        // overige deadlines apart meenemen, want die zitten niet in de OB/VPB/LH/JR-lijst hierboven
-      });
-      let lhInfo = '';
-      if(k.doetLoonaangifte && f.lh){
-        const gedaan = (f.lh.taken||[]).filter(t=>t.done).length;
-        const totaal = (f.lh.taken||[]).length;
-        lhInfo = ` | LH-taken ${gedaan}/${totaal}`;
-        if(f.lh.overigeNotitie) lhInfo += ` | LH-vaste notitie: "${String(f.lh.overigeNotitie).slice(0,100)}"`;
-      }
-      const autoCount = AUTOS.filter(a=>a.klant===k.id).length;
-      const notitie = f.notities ? ` | notitie: "${String(f.notities).slice(0,100)}"` : '';
-      const afspraken = f.afspraken ? ` | afspraken: "${String(f.afspraken).slice(0,150)}"` : '';
-      return `- ${k.naam} | vorm ${k.vorm||'onbekend'} | boekhouder ${boekhouderNaam} | saldo ${fmtEUR(f.saldo)} | ${statussen || 'geen lopende deadlines'}${lhInfo}${autoCount?` | ${autoCount} auto('s)`:''}${notitie}${afspraken}`;
-    }).join('\n');
+    const v = String(vraag||'').toLowerCase();
+    const woorden = aiZoekwoorden(vraag);
+    const delen = [];
 
+    // 1. Altijd: compacte kerncijfers over het hele kantoor
     const rows = allDeadlineRows();
     const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
-    rows.forEach(r=>cnt[r.st.key]++);
-    const totalSaldo = RAW_KLANTEN.reduce((s,k)=>s+STORE[k.id].saldo,0);
-    const teamsInfo = TEAMS.map(t=>t.naam).join(', ') || '(geen teams)';
-    const bhInfo = BOEKHOUDERS.map(b=>b.naam).join(', ') || '(geen boekhouders)';
+    rows.forEach(r=>{ if(cnt[r.st.key]!==undefined) cnt[r.st.key]++; });
+    const totalSaldo = RAW_KLANTEN.reduce((s,k)=>s+(((STORE[k.id]||{}).saldo)||0),0);
+    delen.push(`Vandaag: ${TODAY.toLocaleDateString('nl-NL')}.
+Kantoortotalen: ${RAW_KLANTEN.length} klanten, ${BOEKHOUDERS.length} boekhouders (${BOEKHOUDERS.map(b=>b.naam).join(', ')||'-'}), ${TEAMS.length} teams, ${AUTOS.length} auto('s).
+Deadlinestatus over alle klanten: ${cnt.actie} actie vereist, ${cnt.nadert} nadert (8-14 dagen), ${cnt.schema} op schema, ${cnt.ingediend} ingediend.
+Totaal openstaand banksaldo over alle klanten: ${fmtEUR(totalSaldo)}.`);
 
-    const kennisbankTekst = (KENNISBANK.artikelen||[]).length ? KENNISBANK.artikelen.map(a=>{
-      const cat = a.categorieId ? kbCategorieNaam(a.categorieId) : 'Algemeen';
-      return `## [${cat}] ${a.titel}\n${a.inhoud||''}`;
-    }).join('\n\n') : '(nog niets vastgelegd)';
+    // 2. In de vraag genoemde klanten: volledige detailregels (max 20)
+    let genoemd = [];
+    if(woorden.length){
+      genoemd = RAW_KLANTEN.filter(k=>{
+        const naam = String(k.naam||'').toLowerCase();
+        const nr = String(k.extId||'').toLowerCase();
+        return woorden.some(w=> naam.includes(w) || (nr && w===nr));
+      });
+    }
+    if(genoemd.length){
+      delen.push(`Klanten die (mogelijk) in de vraag genoemd worden — volledige gegevens:
+${genoemd.slice(0,20).map(aiKlantDetailregel).join('\n')}${genoemd.length>20?`\n…en nog ${genoemd.length-20} klanten met een naam die op de vraag lijkt — vraag de gebruiker om de exacte klantnaam.`:''}`);
+    }
 
-    return `Vandaag: ${TODAY.toLocaleDateString('nl-NL')}.
-Totaal ${RAW_KLANTEN.length} klanten, ${BOEKHOUDERS.length} boekhouders (${bhInfo}), ${TEAMS.length} teams (${teamsInfo}), ${AUTOS.length} auto('s) in de autolijst.
-Deadlinestatus over alle klanten: ${cnt.actie} actie vereist, ${cnt.nadert} nadert, ${cnt.schema} op schema, ${cnt.ingediend} ingediend.
-Totaal openstaand banksaldo over alle klanten: ${fmtEUR(totalSaldo)}.
+    // 3. Urgente deadlines: altijd meegeven (kern van het dashboard), compact
+    const urgent = rows.filter(r=>r.st.key==='actie'||r.st.key==='nadert');
+    if(urgent.length){
+      delen.push(`Urgente deadlines (actie vereist of nadert):
+${urgent.slice(0,80).map(r=>`- ${r.klant.naam} | ${r.type} ${fmtDate(r.entry.datum)} (${r.st.key})`).join('\n')}${urgent.length>80?`\n…en nog ${urgent.length-80} urgente deadlines.`:''}`);
+    }
 
-Volledige klantenlijst met actuele status per klant:
-${klantregels || '(geen klanten)'}
+    // 4. Thematische lijstjes, alleen als de vraag erover gaat
+    if(/saldo|bank|geld|openstaand|betaal/.test(v)){
+      const top = RAW_KLANTEN.map(k=>({k, s:((STORE[k.id]||{}).saldo)||0})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);
+      delen.push(`Hoogste openstaande banksaldi:
+${top.slice(0,20).map(x=>`- ${x.k.naam}: ${fmtEUR(x.s)}`).join('\n')||'(geen)'}${top.length>20?`\n…in totaal ${top.length} klanten met een openstaand saldo.`:''}`);
+    }
+    if(/auto|bijtelling|kenteken|marge|youngtimer|elektrisch/.test(v)){
+      delen.push(`Autolijst (compact):
+${AUTOS.slice(0,60).map(a=>{ const kk = RAW_KLANTEN.find(x=>x.id===a.klant); return `- ${a.merk||'?'} ${a.kenteken||''} | klant ${kk?kk.naam:'onbekend'} | ${a.btwAuto==='ja'?'btw-auto':'marge-auto'} | ${a.elektrisch==='ja'?'elektrisch':'brandstof'} | ${a.gebruik||''}`; }).join('\n')||'(geen)'}${AUTOS.length>60?`\n…en nog ${AUTOS.length-60} auto's.`:''}`);
+    }
+    if(/loonheffing|salaris|loon\b|loonaangifte|dga|whk|werknemer/.test(v)){
+      const lhKlanten = RAW_KLANTEN.filter(k=>k.doetLoonaangifte && !k.toekomstigeKlant);
+      const open = lhKlanten.map(k=>{ const f=STORE[k.id]||{}; const taken=(f.lh&&f.lh.taken)||[]; return {k, open:taken.filter(t=>!t.done).length, tot:taken.length}; }).filter(x=>x.tot>0 && x.open>0);
+      delen.push(`Loonheffing: ${lhKlanten.length} actieve LH-klanten, waarvan ${open.length} met nog openstaande taken deze maand:
+${open.slice(0,80).map(x=>`- ${x.k.naam}: ${x.open}/${x.tot} taken open${x.k.dga?' (DGA)':''}`).join('\n')||'(alles afgerond)'}${open.length>80?`\n…en nog ${open.length-80}.`:''}`);
+    }
+    if(/toekomst/.test(v)){
+      const tk = RAW_KLANTEN.filter(k=>k.toekomstigeKlant);
+      delen.push(`Toekomstige klanten (${tk.length}):
+${tk.slice(0,40).map(k=>`- ${k.naam}${k.toekomstNotitie?` — ${String(k.toekomstNotitie).slice(0,100)}`:''}`).join('\n')||'(geen)'}`);
+    }
+    const genoemdeBh = BOEKHOUDERS.filter(b=>{ const bn = String(b.naam||'').toLowerCase(); return woorden.some(w=>bn.includes(w)); });
+    genoemdeBh.slice(0,2).forEach(b=>{
+      const zijn = RAW_KLANTEN.filter(k=>k.bh===b.id);
+      delen.push(`Klanten van boekhouder ${b.naam} (${zijn.length}):
+${zijn.slice(0,80).map(k=>`- ${k.naam}`).join('\n')||'(geen)'}${zijn.length>80?`\n…en nog ${zijn.length-80}.`:''}`);
+    });
 
-Interne kennisbank van AdministratieBox (onze eigen werkwijze/stappenplannen — gebruik dit als bron voor vragen over "hoe doen wij dit", niet alleen algemene kennis):
-${kennisbankTekst}`;
+    // 5. Kennisbank: alleen artikelen die bij de vraag passen (max 3), plus altijd de titellijst
+    const artikelen = (KENNISBANK.artikelen||[]);
+    if(artikelen.length){
+      const scored = artikelen.map(a=>{
+        const titel = String(a.titel||'').toLowerCase(), inhoud = String(a.inhoud||'').toLowerCase();
+        let score = 0;
+        woorden.forEach(w=>{ if(titel.includes(w)) score += 3; if(inhoud.includes(w)) score += 1; });
+        return {a, score};
+      }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,3);
+      if(scored.length){
+        delen.push(`Relevante kennisbank-artikelen:
+${scored.map(x=>`## [${x.a.categorieId?kbCategorieNaam(x.a.categorieId):'Algemeen'}] ${x.a.titel}\n${String(x.a.inhoud||'').slice(0,4000)}`).join('\n\n')}`);
+      }
+      delen.push(`Alle kennisbank-titels: ${artikelen.map(a=>a.titel).join(' | ')}`);
+    }
+
+    delen.push(`LET OP: dit is een gerichte selectie uit ${RAW_KLANTEN.length} klanten, geen volledige dump. Detailgegevens staan alleen bij de hierboven expliciet genoemde klanten. Gaat de vraag over een klant die hierboven niet voorkomt, zeg dan dat je die klant niet in de meegestuurde selectie ziet en vraag de gebruiker de exacte klantnaam te noemen.`);
+    return delen.join('\n\n');
   }catch(e){ return 'Geen dashboarddata beschikbaar.'; }
 }
 // Escaped HTML-tekst, met URLs omgezet naar aanklikbare links (voor bronvermeldingen bij
@@ -11866,7 +11928,7 @@ function renderAiPanel(){
     </div>`).join('') : `
     <div class="ai-empty">
       <i class="ti ti-sparkles" style="font-size:22px; color:var(--muted2);" aria-hidden="true"></i>
-      <p>Stel een vraag over klanten, deadlines of taken.</p>
+      <p>Stel een vraag over klanten, deadlines of taken.<br><span style="font-size:11px; color:var(--muted2);">Tip: noem de klantnaam voor detailvragen.</span></p>
     </div>`;
   const typingHtml = AI_STATE.loading ? `
     <div class="ai-msg assistant">
@@ -11917,7 +11979,7 @@ async function aiVerstuurBericht(tekst){
       headers: {'Content-Type':'application/json', 'Authorization':'Bearer '+token},
       body: JSON.stringify({
         messages: AI_STATE.messages.slice(-10).map(m=>({role:m.role, text:m.text})),
-        context: aiContextSamenvatting()
+        context: aiContextSamenvatting(AI_STATE.messages.filter(m=>m.role==='user').slice(-3).map(m=>m.text).join(' '))
       })
     });
     if(!res.ok){
