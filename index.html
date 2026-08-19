@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.18';
+const APP_VERSION = '2026.08.18.20';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1310,7 +1310,7 @@ let msalInitPromise = null;
 /* 'Mail.Send' is nodig voor het automatisch versturen van documenten (bijv. de akkoordverklaring
    aangifte IB) rechtstreeks vanuit het ingelogde Microsoft-account via Graph — dit vraagt bij de
    eerstvolgende keer inloggen (of opnieuw inloggen) om een extra toestemming van de gebruiker. */
-const GRAPH_SCOPES = ['Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite', 'Mail.ReadWrite', 'Files.ReadWrite'];
+const GRAPH_SCOPES = ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send', 'Chat.ReadWrite', 'Mail.ReadWrite', 'Files.ReadWrite'];
 
 function loadSync(){
   try{ const raw = localStorage.getItem(SYNC_KEY); if(raw) SYNC = Object.assign(SYNC, JSON.parse(raw)); }catch(e){}
@@ -4267,7 +4267,7 @@ function notionHTML(){
     </button>
     ${STATE.notionBeheerOpen ? `<div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Veilige koppeling via de eigen Cloudflare Worker: de Notion-sleutel blijft server-side, pagina's blijven privé, en de worker geeft alleen inhoud aan ingelogde @administratiebox.nl-accounts. Pagina's verschijnen hier automatisch zodra ze in Notion via <b>… → Verbindingen</b> met de integratie gedeeld zijn. Zie het stappenplan in "notion-api-worker.js".</p>
-      <div class="field-row"><label>Worker-URL</label><input type="text" id="notionWorkerUrl" value="${escHtml(NOTION_CFG.workerUrl||'')}" placeholder="https://compliancebox-notion.….workers.dev"></div>
+      <div class="field-row"><label>Worker-URL</label><input type="text" id="notionWorkerUrl" value="${escHtml(NOTION_CFG.workerUrl||'')}" placeholder="https://compliancebox-notion.….workers.dev — géén Notion-link"></div>
       <div style="margin-top:10px;"><button class="btn sm primary" data-notion-cfg-opslaan>Opslaan &amp; verbinden</button></div>
     </div>` : ''}
   </div>` : '';
@@ -9866,6 +9866,10 @@ function attachHandlers(){
   if(notionCfgBtn) notionCfgBtn.addEventListener('click', ()=>{
     const url = document.getElementById('notionWorkerUrl').value.trim().replace(/\/+$/,'');
     if(url && !/^https:\/\//.test(url)){ toast('Vul een geldige https-link in.'); return; }
+    if(url && /notion\.(so|site|com)/i.test(url)){
+      toast('Dit is een Notion-link — hier hoort de Cloudflare-worker-URL (….workers.dev). Pagina\'s deel je in Notion zelf via … → Verbindingen.');
+      return;
+    }
     NOTION_CFG.workerUrl = url;
     NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {}; NOTION_APP.actief = null;
     logActiviteit(url ? 'Notion-worker-URL ingesteld' : 'Notion-koppeling uitgeschakeld');
