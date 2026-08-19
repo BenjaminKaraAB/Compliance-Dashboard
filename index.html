@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.3';
+const APP_VERSION = '2026.08.19.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -925,6 +925,7 @@ function addKlant(data){
     heeftDga: !!data.heeftDga,
     salarisdossierWerknemer: data.salarisdossierWerknemer !== false,
     staatOpHold: !!data.staatOpHold,
+    toekomstigeKlant: !!data.toekomstigeKlant,
     opHoldReden: data.opHoldReden || '',
     extId: data.extId || '',
     kvkLaatsteControle: data.kvkLaatsteControle || null,
@@ -4282,8 +4283,11 @@ function notionBlokHTML(b, nummer){
     case 'toggle': return `<details style="margin:2px 0; padding:2px 0;"><summary style="cursor:pointer; line-height:1.65; list-style-position:outside;">${rt()}</summary>${kinderen||'<div style="color:var(--muted2); font-size:12px; margin-left:24px;">(leeg)</div>'}</details>`;
     case 'quote': return `<blockquote style="border-left:3px solid var(--text); margin:6px 0; padding:4px 16px; line-height:1.65;">${rt()}${kinderen}</blockquote>`;
     case 'callout': {
+      const inhoud = rt();
+      // Callouts met alleen niet-ondersteunde inhoud (Notion-knoppen, widgets) niet als leeg grijs vak tonen
+      if(!inhoud.trim() && !(kinderen && kinderen.replace(/<[^>]*>/g,'').trim())) return '';
       const icoon = d.icon ? (d.icon.emoji || '') : '💡';
-      return `<div style="display:flex; gap:10px; background:var(--bg); border-radius:6px; padding:14px 16px; margin:6px 0; line-height:1.65;"><span style="font-size:16px;">${escHtml(icoon||'💡')}</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
+      return `<div style="display:flex; gap:10px; background:var(--bg); border-radius:6px; padding:14px 16px; margin:6px 0; line-height:1.65;"><span style="font-size:16px;">${escHtml(icoon||'💡')}</span><div style="flex:1;">${inhoud}${kinderen}</div></div>`;
     }
     case 'divider': return `<hr style="border:none; border-top:1px solid var(--border); margin:12px 0;">`;
     case 'code': return `<pre style="background:#f7f6f3; border-radius:6px; padding:16px 18px; font-size:12.5px; overflow-x:auto; margin:6px 0; line-height:1.6;"><code>${notionRichText(d.rich_text)}</code></pre>`;
@@ -4660,6 +4664,7 @@ function migrateData(){
       if(k.doetLoonaangifte===undefined) k.doetLoonaangifte=false;
       if(k.heeftDga===undefined) k.heeftDga=false;
       if(k.staatOpHold===undefined) k.staatOpHold=false;
+      if(k.toekomstigeKlant===undefined) k.toekomstigeKlant=false;
       if(k.salarisdossierWerknemer===undefined) k.salarisdossierWerknemer=true;
       if(k.opHoldReden===undefined) k.opHoldReden='';
       if(k.kvkLaatsteControle===undefined) k.kvkLaatsteControle=null;
@@ -6462,8 +6467,10 @@ function loonheffingHTML(){
         : `<button class="btn sm ghost" data-lh-maand-nav="0" style="font-size:11px; padding:3px 10px;">vandaag</button>`}
     </div>`;
   })()}
-  ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga), true, 'DGA-klanten')}
-  ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga), false, 'Geen-DGA-klanten')}
+  ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga && !k.toekomstigeKlant), true, 'DGA-klanten')}
+  ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga && !k.toekomstigeKlant), false, 'Geen-DGA-klanten')}
+  ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga && k.toekomstigeKlant), true, 'Toekomstige klanten (DGA)')}
+  ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga && k.toekomstigeKlant), false, 'Toekomstige klanten (geen DGA)')}
   ${loonheffingOpHoldHTML()}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
@@ -8343,6 +8350,10 @@ function panelHTML(klant){
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Alleen relevant voor geen-DGA klanten: bepaalt of taak 5 ("Salarisdossier werknemer") in de takenlijst staat. Uitvinken = geen 5e bolletje bij deze klant.</div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+          <input type="checkbox" id="toekomstToggle" ${klant.toekomstigeKlant?'checked':''}> Toekomstige klant
+        </label>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Voor klanten die binnenkort starten: ze krijgen op de Loonheffingen-pagina hun eigen tabel "Toekomstige klanten" (met dezelfde taken en bolletjes), gescheiden van de lopende DGA/geen-DGA-lijsten. Vink uit zodra de klant echt draait.</div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
           <input type="checkbox" id="opHoldToggle" ${klant.staatOpHold?'checked':''}> Inactief
         </label>
         <div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Voor klanten die nog niet reageren of nog niet zijn aangemeld voor de loonadministratie. Verschijnt dan onderaan de Loonheffingen-pagina, onder de geen-DGA-lijst.</div>
@@ -9945,7 +9956,7 @@ function attachHandlers(){
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   });
   document.querySelectorAll('[data-notion-vernieuw]').forEach(el=>el.addEventListener('click', ()=>{
-    NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {};
+    NOTION_APP.paginas = null; NOTION_APP.fout = null; NOTION_APP.blokken = {}; NOTION_APP.databases = {};
     notionAppLaden(true);
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
   }));
@@ -11011,6 +11022,14 @@ function attachPanelHandlers(klant){
     klant.staatOpHold = e.target.checked;
     persistMeta();
     toast(e.target.checked ? 'Klant gemarkeerd als "inactief".' : 'Klant niet meer inactief.');
+    refreshPanel(klant);
+  });
+  const toekomstToggle = document.getElementById('toekomstToggle');
+  if(toekomstToggle) toekomstToggle.addEventListener('change', (e)=>{
+    klant.toekomstigeKlant = e.target.checked;
+    logActiviteit(e.target.checked ? `Klant "${klant.naam}" gemarkeerd als toekomstige klant` : `Klant "${klant.naam}" is nu actief (niet meer toekomstig)`);
+    persistMeta();
+    toast(e.target.checked ? 'Verplaatst naar "Toekomstige klanten" bij Loonheffingen.' : 'Klant staat weer in de gewone loonheffingenlijst.');
     refreshPanel(klant);
   });
   const opHoldRedenSave = document.getElementById('opHoldRedenSave');
