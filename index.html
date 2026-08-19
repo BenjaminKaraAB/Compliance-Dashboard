@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.18.21';
+const APP_VERSION = '2026.08.19.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -4197,16 +4197,10 @@ async function notionAppLaden(allowInteractive){
 }
 async function notionBlokkenLaden(paginaId){
   try{
-    const data = await notionWorkerFetch('/blokken/' + paginaId);
-    const blokken = data.blokken || [];
-    // Kinderen van toggles/lijsten één niveau diep meeladen (max 12 om het snel te houden)
-    const metKinderen = blokken.filter(b=>b.has_children && ['toggle','bulleted_list_item','numbered_list_item','to_do','callout','quote'].includes(b.type)).slice(0,12);
-    for(const b of metKinderen){
-      try{ const kind = await notionWorkerFetch('/blokken/' + b.id); b._kinderen = kind.blokken || []; }catch(e){}
-    }
-    NOTION_APP.blokken[paginaId] = blokken;
+    const data = await notionWorkerFetch('/pagina/' + paginaId);
+    NOTION_APP.blokken[paginaId] = { blokken: data.blokken || [], icoon: data.icoon || null, cover: data.cover || null };
   }catch(e){
-    NOTION_APP.blokken[paginaId] = [{ type:'_fout', melding: e.message }];
+    NOTION_APP.blokken[paginaId] = { blokken: [{ type:'_fout', melding: e.message }], icoon:null, cover:null };
   }
   if(STATE.view==='notion'){ document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers(); }
 }
@@ -4223,36 +4217,55 @@ function notionRichText(rt){
     return s;
   }).join('');
 }
-function notionBlokHTML(b){
+function notionBlokkenNaarHTML(blokken){
+  // Notion-stijl: opeenvolgende numbered_list_items krijgen echte nummers.
+  let html = '', nr = 0;
+  for(const b of (blokken||[])){
+    if(b.type === 'numbered_list_item'){ nr++; html += notionBlokHTML(b, nr); }
+    else { nr = 0; html += notionBlokHTML(b); }
+  }
+  return html;
+}
+function notionBlokHTML(b, nummer){
   const d = b[b.type] || {};
   const rt = ()=>notionRichText(d.rich_text);
-  const kinderen = b._kinderen ? `<div style="margin-left:20px;">${b._kinderen.map(notionBlokHTML).join('')}</div>` : '';
+  const kinderenLijst = b.kinderen || b._kinderen || null;
+  const kinderen = kinderenLijst ? `<div style="margin-left:24px;">${notionBlokkenNaarHTML(kinderenLijst)}</div>` : '';
   switch(b.type){
     case '_fout': return `<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06;">${escHtml(b.melding||'Fout bij laden')}</div>`;
-    case 'heading_1': return `<h2 style="font-size:19px; margin:20px 0 8px;">${rt()}</h2>`;
-    case 'heading_2': return `<h3 style="font-size:16px; margin:16px 0 6px;">${rt()}</h3>`;
-    case 'heading_3': return `<h4 style="font-size:14px; margin:14px 0 5px;">${rt()}</h4>`;
-    case 'paragraph': return `<p style="margin:6px 0; line-height:1.7;">${rt()||'&nbsp;'}</p>${kinderen}`;
-    case 'bulleted_list_item': return `<div style="display:flex; gap:8px; margin:3px 0;"><span style="flex-shrink:0;">•</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
-    case 'numbered_list_item': return `<div style="display:flex; gap:8px; margin:3px 0;"><span style="flex-shrink:0; color:var(--muted);">·</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
-    case 'to_do': return `<div style="display:flex; gap:8px; margin:3px 0; align-items:flex-start;"><input type="checkbox" ${d.checked?'checked':''} disabled style="margin-top:3px;"><div style="${d.checked?'color:var(--muted); text-decoration:line-through;':''}">${rt()}</div></div>${kinderen}`;
-    case 'toggle': return `<details style="margin:6px 0;"><summary style="cursor:pointer; font-weight:600;">${rt()}</summary>${kinderen||'<div style="color:var(--muted2); font-size:12px; margin-left:20px;">(inhoud niet geladen)</div>'}</details>`;
-    case 'quote': return `<blockquote style="border-left:3px solid var(--border); margin:8px 0; padding:4px 14px; color:var(--muted);">${rt()}${kinderen}</blockquote>`;
-    case 'callout': return `<div style="display:flex; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:8px 0;"><span>${escHtml((d.icon&&d.icon.emoji)||'💡')}</span><div>${rt()}${kinderen}</div></div>`;
-    case 'divider': return `<hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">`;
-    case 'code': return `<pre style="background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; font-size:12px; overflow-x:auto; margin:8px 0;">${notionRichText(d.rich_text)}</pre>`;
+    case 'heading_1': return `<h2 style="font-size:24px; font-weight:700; margin:26px 0 4px; line-height:1.3;">${rt()}</h2>${kinderen}`;
+    case 'heading_2': return `<h3 style="font-size:19px; font-weight:700; margin:20px 0 3px; line-height:1.3;">${rt()}</h3>${kinderen}`;
+    case 'heading_3': return `<h4 style="font-size:15.5px; font-weight:700; margin:16px 0 2px; line-height:1.3;">${rt()}</h4>${kinderen}`;
+    case 'paragraph': return `<p style="margin:3px 0; padding:3px 0; line-height:1.65; min-height:1em;">${rt()||'&nbsp;'}</p>${kinderen}`;
+    case 'bulleted_list_item': return `<div style="display:flex; gap:9px; margin:1px 0; padding:2px 0;"><span style="flex-shrink:0; line-height:1.65;">•</span><div style="flex:1; line-height:1.65;">${rt()}${kinderen}</div></div>`;
+    case 'numbered_list_item': return `<div style="display:flex; gap:9px; margin:1px 0; padding:2px 0;"><span style="flex-shrink:0; line-height:1.65; min-width:16px;">${nummer||1}.</span><div style="flex:1; line-height:1.65;">${rt()}${kinderen}</div></div>`;
+    case 'to_do': return `<div style="display:flex; gap:9px; margin:1px 0; padding:2px 0; align-items:flex-start;"><input type="checkbox" ${d.checked?'checked':''} disabled style="margin-top:5px; accent-color:#2383e2;"><div style="line-height:1.65; ${d.checked?'color:var(--muted2); text-decoration:line-through;':''}">${rt()}${kinderen}</div></div>`;
+    case 'toggle': return `<details style="margin:2px 0; padding:2px 0;"><summary style="cursor:pointer; line-height:1.65; list-style-position:outside;">${rt()}</summary>${kinderen||'<div style="color:var(--muted2); font-size:12px; margin-left:24px;">(leeg)</div>'}</details>`;
+    case 'quote': return `<blockquote style="border-left:3px solid var(--text); margin:6px 0; padding:4px 16px; line-height:1.65;">${rt()}${kinderen}</blockquote>`;
+    case 'callout': {
+      const icoon = d.icon ? (d.icon.emoji || '') : '💡';
+      return `<div style="display:flex; gap:10px; background:var(--bg); border-radius:6px; padding:14px 16px; margin:6px 0; line-height:1.65;"><span style="font-size:16px;">${escHtml(icoon||'💡')}</span><div style="flex:1;">${rt()}${kinderen}</div></div>`;
+    }
+    case 'divider': return `<hr style="border:none; border-top:1px solid var(--border); margin:12px 0;">`;
+    case 'code': return `<pre style="background:#f7f6f3; border-radius:6px; padding:16px 18px; font-size:12.5px; overflow-x:auto; margin:6px 0; line-height:1.6;"><code>${notionRichText(d.rich_text)}</code></pre>`;
     case 'image': {
       const src = (d.file&&d.file.url) || (d.external&&d.external.url) || '';
-      return src ? `<img src="${escHtml(src)}" style="max-width:100%; border-radius:10px; margin:8px 0;" loading="lazy">` : '';
+      const onderschrift = d.caption && d.caption.length ? `<div style="font-size:12px; color:var(--muted2); margin-top:4px;">${notionRichText(d.caption)}</div>` : '';
+      return src ? `<div style="margin:8px 0;"><img src="${escHtml(src)}" style="max-width:100%; border-radius:4px;" loading="lazy">${onderschrift}</div>` : '';
     }
-    case 'child_page': return `<div style="margin:4px 0;"><i class="ti ti-file" aria-hidden="true"></i> ${escHtml(d.title||'Subpagina')} <span style="font-size:11px; color:var(--muted2);">(open in Notion)</span></div>`;
-    case 'bookmark': case 'link_preview': {
-      const u = d.url || '';
-      return u ? `<div style="margin:6px 0;"><a href="${escHtml(u)}" target="_blank" rel="noopener" style="color:var(--primary-dark); font-size:12.5px;"><i class="ti ti-link" aria-hidden="true"></i> ${escHtml(u)}</a></div>` : '';
+    case 'video': case 'file': case 'pdf': case 'embed': case 'bookmark': case 'link_preview': {
+      const u = (d.external&&d.external.url) || (d.file&&d.file.url) || d.url || '';
+      return u ? `<div style="margin:6px 0;"><a href="${escHtml(u)}" target="_blank" rel="noopener" style="color:var(--primary-dark); font-size:13px;"><i class="ti ti-external-link" aria-hidden="true"></i> ${escHtml(u.length>70?u.slice(0,70)+'…':u)}</a></div>` : '';
     }
-    case 'table': return b._kinderen ? `<table style="margin:8px 0;"><tbody>${b._kinderen.map(r=>{
+    case 'column_list': return kinderenLijst ? `<div style="display:flex; gap:28px; margin:6px 0; flex-wrap:wrap;">${kinderenLijst.map(k=>notionBlokHTML(k)).join('')}</div>` : '';
+    case 'column': return `<div style="flex:1; min-width:220px;">${kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : ''}</div>`;
+    case 'child_page': return `<div style="margin:3px 0; padding:2px 0; line-height:1.65;"><i class="ti ti-file-text" aria-hidden="true"></i> <a href="https://www.notion.so/${String(b.id).replace(/-/g,'')}" target="_blank" rel="noopener" style="color:var(--text); text-decoration:underline; text-decoration-color:var(--border);">${escHtml(d.title||'Subpagina')}</a></div>`;
+    case 'child_database': return `<div style="margin:3px 0; color:var(--muted); font-size:13px;"><i class="ti ti-table" aria-hidden="true"></i> ${escHtml(d.title||'Database')} <span style="font-size:11px; color:var(--muted2);">(databases open je in Notion)</span></div>`;
+    case 'synced_block': return kinderenLijst ? notionBlokkenNaarHTML(kinderenLijst) : '';
+    case 'table': return kinderenLijst ? `<table style="margin:8px 0; border-collapse:collapse;"><tbody>${kinderenLijst.map((r,ri)=>{
       const cellen = (r.table_row && r.table_row.cells) || [];
-      return `<tr>${cellen.map(c=>`<td style="border:1px solid var(--border); padding:6px 10px; font-size:12.5px;">${notionRichText(c)}</td>`).join('')}</tr>`;
+      const kop = d.has_column_header && ri===0;
+      return `<tr>${cellen.map(c=>`<td style="border:1px solid var(--border); padding:7px 12px; font-size:13px; ${kop?'font-weight:700; background:var(--bg);':''}">${notionRichText(c)}</td>`).join('')}</tr>`;
     }).join('')}</tbody></table>` : '<div style="color:var(--muted2); font-size:12px;">(tabel — open in Notion)</div>';
     default: return '';
   }
@@ -4310,8 +4323,14 @@ function notionHTML(){
   const actiefId = NOTION_APP.actief || NOTION_APP.paginas[0].id;
   const actief = NOTION_APP.paginas.find(p=>p.id===actiefId) || NOTION_APP.paginas[0];
   const tabsHtml = NOTION_APP.paginas.map(p=>`<button data-notion-open="${p.id}" style="padding:10px 16px; font-size:13px; font-weight:${p.id===actief.id?'700':'500'}; cursor:pointer; border:none; background:none; color:${p.id===actief.id?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${p.id===actief.id?'var(--text)':'transparent'};">${escHtml(p.titel)}</button>`).join('');
-  const blokken = NOTION_APP.blokken[actief.id];
+  const paginaData = NOTION_APP.blokken[actief.id];
   const notionAppUrl = 'https://www.notion.so/' + String(actief.id).replace(/-/g,'');
+  const coverHtml = paginaData && paginaData.cover ? `<div style="height:180px; background:url('${escHtml(paginaData.cover)}') center/cover; border-radius:0;"></div>` : '';
+  const icoonHtml = paginaData && paginaData.icoon
+    ? (paginaData.icoon.soort==='emoji'
+        ? `<div style="font-size:56px; line-height:1; ${paginaData.cover?'margin-top:-34px;':''}">${escHtml(paginaData.icoon.waarde||'')}</div>`
+        : (paginaData.icoon.waarde ? `<img src="${escHtml(paginaData.icoon.waarde)}" style="width:56px; height:56px; border-radius:6px; ${paginaData.cover?'margin-top:-34px;':''}">` : ''))
+    : '';
   return `
   <div class="section" style="margin-bottom:0; border-radius:var(--radius) var(--radius) 0 0; padding:0 8px;">
     <div style="display:flex; align-items:center; gap:2px; flex-wrap:wrap;">
@@ -4322,9 +4341,14 @@ function notionHTML(){
       </span>
     </div>
   </div>
-  <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none;">
-    <div class="section-body pad" style="padding:24px 28px; font-size:13.5px; max-width:860px;">
-      ${blokken ? (blokken.map(notionBlokHTML).join('') || '<div style="color:var(--muted2);">Deze pagina is leeg.</div>') : '<div style="color:var(--muted2);"><i class="ti ti-loader-2" aria-hidden="true"></i> Inhoud laden…</div>'}
+  <div class="section" style="border-radius:0 0 var(--radius) var(--radius); border-top:none; overflow:hidden;">
+    ${coverHtml}
+    <div class="section-body" style="padding:${paginaData && paginaData.cover ? '0' : '28px'} 0 40px;">
+      <div style="max-width:760px; margin:0 auto; padding:0 32px; font-size:14.5px; color:var(--text);">
+        ${icoonHtml}
+        <h1 style="font-size:30px; font-weight:700; margin:${icoonHtml?'10px':'0'} 0 14px; line-height:1.25;">${escHtml(actief.titel)}</h1>
+        ${paginaData ? (notionBlokkenNaarHTML(paginaData.blokken) || '<div style="color:var(--muted2);">Deze pagina is leeg.</div>') : '<div style="color:var(--muted2);"><i class="ti ti-loader-2" aria-hidden="true"></i> Inhoud laden…</div>'}
+      </div>
     </div>
   </div>
   ${beheer}`;
