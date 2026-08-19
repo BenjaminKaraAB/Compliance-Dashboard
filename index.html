@@ -529,7 +529,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.11';
+const APP_VERSION = '2026.08.19.12';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -9561,6 +9561,7 @@ function attachHandlers(){
       };
       if(box) box.innerHTML = balk('AI-assistent (vragen)', d.ai, 500, 'richtwaarde ±500 vragen binnen de gratis bundel')
         + balk('Notion-verzoeken', d.notion, 5000, 'ruim binnen 100.000 worker-verzoeken/dag')
+        + (d.webzoeken ? balk('Internetzoekopdrachten (Tavily)', d.tavily||0, 33, 'gratis plan: 1.000/maand ≈ 33 per dag') : '')
         + `<div style="font-size:11px; color:var(--muted2);">Peildatum ${d.datum} · tellers verlopen automatisch na 2 dagen · <button class="btn sm ghost" data-api-gebruik-laden style="padding:2px 8px; font-size:11px;">vernieuwen</button></div>`;
       document.querySelectorAll('#apiGebruikBox [data-api-gebruik-laden]').forEach(k=>k.addEventListener('click', ()=>document.querySelector('[data-api-gebruik-laden]').click()));
     }catch(e){
