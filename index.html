@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.16';
+const APP_VERSION = '2026.08.19.18';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -6398,7 +6398,7 @@ function loonheffingKlantDetailHTML(k){
     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
       <div>
         <div style="font-weight:700; font-size:13.5px;">${k.naam} <span style="font-weight:400; color:var(--muted); font-size:12px;">(${k.vorm})</span></div>
-        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${(k.lhEmail||k.email) ? ' · '+(k.lhEmail||k.email)+(k.lhEmail ? ' <span style="font-size:9px; background:var(--primary-bg); color:var(--primary-dark); border-radius:8px; padding:1px 6px; vertical-align:1px;" title="Apart e-mailadres voor loonheffing — het algemene adres staat in de klantenlijst">LH</span>' : '') : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
+        <div class="hint" style="margin-top:2px;">${bh(k.bh).naam}${(k.lhEmail||k.email) ? ' · <a href="mailto:'+encodeURIComponent(k.lhEmail||k.email)+'" title="Opent een nieuw bericht in je Outlook-app met dit adres ingevuld" style="color:var(--primary-dark); text-decoration:underline; text-underline-offset:2px;">'+(k.lhEmail||k.email)+'</a>'+(k.lhEmail ? ' <span style="font-size:9px; background:var(--primary-bg); color:var(--primary-dark); border-radius:8px; padding:1px 6px; vertical-align:1px;" title="Apart e-mailadres voor loonheffing — het algemene adres staat in de klantenlijst">LH</span>' : '') : ''} · ${doneCount}/${f.lh.taken.length} taken deze periode · LH-deadline ${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</div>
         ${maandNotitiesHTML}
       </div>
       <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap;">
