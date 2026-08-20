@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.19';
+const APP_VERSION = '2026.08.19.20';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2196,7 +2196,6 @@ function render(){
         ${navItem('kennisbank','book','Opleiding','later')}
         <div class="nav-group-label">Werkzaamheden</div>
         ${navItem('mijnwerk','werk','Mijn Werk')}
-        ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
         ${navItem('archief','upload','Archief-uploader','later')}
@@ -2275,7 +2274,7 @@ function viewHTML(){
   if(STATE.view==='boekhouders') return boekhoudersHTML();
   if(STATE.view==='teams') return teamsHTML();
   if(STATE.view==='klanten') return klantenHTML();
-  if(STATE.view==='aanlevering') return aanleveringHTML();
+  if(STATE.view==='aanlevering') return isAdmin() ? aanleveringHTML() : dashboardHTML();
   if(STATE.view==='loonheffing') return loonheffingHTML();
   if(STATE.view==='autolijst') return autolijstHTML();
   if(STATE.view==='instellingen') return instellingenHTML();
@@ -2989,7 +2988,7 @@ function standaardLeerpad(){
       { id:'m4s2', type:'vraag', titel:'Kennischeck', vraag:'De BTW-deadline van een klant staat op rood met "vandaag". Wat doe je?', opties:['Niets, komt morgen wel','Direct oppakken of overleggen met de verantwoordelijke boekhouder','De deadline een maand opschuiven'], juist:1 },
     ]},
     { id:'m5', titel:'Aanlevering & banksaldo', stappen:[
-      { id:'m5s1', type:'bezoek', titel:'Bekijk Aanlevering & Saldo', doel:'aanlevering', inhoud:'Open de pagina Aanlevering & Saldo. Links kies je een klant, rechts zie je welke stukken nog missen en het openstaande banksaldo. Vanuit hier stuur je ook herinneringen.' },
+      { id:'m5s1', type:'bezoek', titel:'Bekijk banksaldo & aanleverpunten bij een klant', doel:'klanten', inhoud:'Open de pagina Klanten en klik een klant aan. In het klantpaneel zie je de sectie "Banksaldo & aan te leveren stukken": het openstaande saldo en welke stukken nog missen.' },
       { id:'m5s2', type:'vraag', titel:'Kennischeck', vraag:'Een klant heeft een naderende deadline én openstaande banktransacties. Wat toont het dashboard?', opties:['Niets bijzonders','Een vlaggetje/waarschuwing: stuur een herinnering','De klant wordt verwijderd'], juist:1 },
     ]},
     { id:'m6', titel:'Autolijst & bijtelling', stappen:[
@@ -7301,7 +7300,7 @@ function bijtellingBeheerHTML(){
 /* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
    Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
    localStorage (hoeft niet mee in de gedeelde sync). */
-const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','opleiding','api','logboek','inventaris','opschonen'];
+const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','aanlevering','opleiding','api','logboek','inventaris','opschonen'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
@@ -7348,6 +7347,15 @@ function adminHTML(){
   const totaalInBezit = INVENTARIS_ITEMS.filter(it=>!it.teruggegeven).length;
 
   const blokken = {
+    aanlevering: ()=>`
+  <div class="section"${marge('aanlevering')}>
+    ${kop('aanlevering','Aanlevering & Saldo')}
+    ${isOpen('aanlevering') ? `<div class="section-body pad">
+      <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Openstaand banksaldo en aan te leveren stukken per klant — verplaatst naar Admin. Collega's zien deze gegevens gewoon in het klantpaneel (sectie "Banksaldo &amp; aan te leveren stukken").</p>
+      ${aanleveringHTML()}
+    </div>` : ''}
+  </div>`,
+
     bevoegdheid: ()=>`
   <div class="section"${marge('bevoegdheid')}>
     ${kop('bevoegdheid','Bevoegdheid Loonheffingen')}
