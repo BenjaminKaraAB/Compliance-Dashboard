@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.20';
+const APP_VERSION = '2026.08.19.21';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -601,7 +601,7 @@ let TEAMS = [];
    geldt zodra ze synchroniseren.
    Heette tot voor kort 'akkoordverklaringActief' (toen er nog maar één documenttype was) — migrateData()
    neemt de oude sleutel over als iemand nog gesynchroniseerde data heeft van vóór de hernoeming. */
-let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
+let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], taakToewijzers:[], documentenVersturenActief:false };
 /* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
 let AUTOS = [];
 /* Kennisbank (opleiding voor nieuwe/junior boekhouders): categorieën + artikelen (stappenplannen,
@@ -1441,6 +1441,15 @@ function huidigeBoekhouder(){
   const uname = (SYNC.account.username||'').trim().toLowerCase();
   const naam = (SYNC.account.name||'').trim().toLowerCase();
   return BOEKHOUDERS.find(b => (b.email && b.email.trim().toLowerCase()===uname) || (b.naam && b.naam.trim().toLowerCase()===naam)) || null;
+}
+/* Taken toewijzen aan een collega mag alleen door admins en de aangevinkte medewerkers
+   (Admin → Bevoegdheid). Lijst leeg = geen restrictie. Iedereen mag wel taken voor
+   zichzelf aanmaken en afvinken. */
+function magTakenToewijzen(){
+  if(isAdmin()) return true;
+  if(!Array.isArray(RECHTEN.taakToewijzers) || !RECHTEN.taakToewijzers.length) return true;
+  const huidige = huidigeBoekhouder();
+  return !!(huidige && RECHTEN.taakToewijzers.includes(huidige.id));
 }
 function magLhBewerken(){
   if(isAdmin()) return true;
@@ -4945,6 +4954,7 @@ function migrateData(){
   if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
   if(!Array.isArray(RECHTEN.adminEmails)) RECHTEN.adminEmails = ['benjamin@administratiebox.nl'];
   if(!Array.isArray(RECHTEN.lhBevoegdeBhIds)) RECHTEN.lhBevoegdeBhIds = [];
+  if(!Array.isArray(RECHTEN.taakToewijzers)) RECHTEN.taakToewijzers = [];
   if(RECHTEN.documentenVersturenActief === undefined){
     // Migratie van de oude, documenttype-specifieke sleutel (uit de tijd dat er alleen een IB-akkoordverklaring was).
     RECHTEN.documentenVersturenActief = RECHTEN.akkoordverklaringActief !== undefined ? !!RECHTEN.akkoordverklaringActief : false;
@@ -5564,7 +5574,7 @@ function agendaItemHTML(it){
     <span style="flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; ${it.klaar?'text-decoration:line-through; color:var(--muted);':''} ${klikbaar?'cursor:pointer;':''}"
       ${it.klantId?`data-agenda-open="${it.klantId}" title="Klantpaneel openen"`:''} ${!it.klantId && it.nav?`data-agenda-nav="${it.nav}" title="Naar de betreffende pagina"`:''}>${String(it.tekst).replace(/</g,'&lt;')}</span>
     ${wie ? `<span title="Toegewezen aan ${wie.naam}" style="width:20px; height:20px; border-radius:50%; background:${wie.kleur||'#9ca3af'}22; color:var(--text); border:1px solid ${wie.kleur||'#9ca3af'}; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${initialen}</span>` : ''}
-    <select data-agenda-toewijs="${it.key}" title="Toewijzen aan een medewerker" style="width:${wie?'18px':'92px'}; padding:3px 2px; border:1px solid var(--border); border-radius:6px; font-size:10.5px; color:var(--muted); flex-shrink:0;">${wieOpties}</select>
+    ${magTakenToewijzen() ? `<select data-agenda-toewijs="${it.key}" title="Toewijzen aan een medewerker" style="width:${wie?'18px':'92px'}; padding:3px 2px; border:1px solid var(--border); border-radius:6px; font-size:10.5px; color:var(--muted); flex-shrink:0;">${wieOpties}</select>` : ''}
     <span style="font-size:9.5px; background:${meta.bg}; color:${meta.fg}; border-radius:10px; padding:2px 8px; white-space:nowrap; flex-shrink:0;">${meta.label}</span>
     ${it.handmatig ? `<button class="btn sm ghost" data-agenda-del="${it.handmatig.id}" title="Agendapunt verwijderen" aria-label="Verwijderen" style="padding:2px 5px; flex-shrink:0;"><i class="ti ti-trash" style="font-size:13px; color:var(--muted2);" aria-hidden="true"></i></button>` : ''}
   </div>`;
@@ -5582,7 +5592,7 @@ function agendaHTML(){
     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px; border:1px dashed var(--border); border-radius:8px; margin-bottom:10px;">
       <input type="date" id="agendaNieuwDatum" value="${agendaIsoVandaag()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
       <input type="text" id="agendaNieuwTekst" placeholder="Wat moet er gebeuren?" maxlength="300" style="flex:1; min-width:160px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
-      <select id="agendaNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>
+      ${magTakenToewijzen() ? `<select id="agendaNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>` : ''}
       <button class="btn sm primary" data-agenda-opslaan>Opslaan</button>
       <button class="btn sm ghost" data-agenda-nieuw>Annuleren</button>
     </div>` : '';
@@ -5771,7 +5781,7 @@ function mijnWerkHTML(){
         <input type="date" id="mwNieuwDatum" value="${agendaIsoVandaag()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
         <input type="text" id="mwNieuwTekst" placeholder="Wat moet er gebeuren?" maxlength="300" style="flex:1; min-width:180px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
         <select id="mwNieuwPrio" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"><option value="hoog">Hoog</option><option value="middel" selected>Middel</option><option value="laag">Laag</option></select>
-        <select id="mwNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>
+        ${magTakenToewijzen() ? `<select id="mwNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>` : ''}
       </div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <select id="mwNieuwBron" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"><option value="handmatig">Handmatig</option><option value="meeting">Meeting</option><option value="thema">Kwartaalthema</option><option value="initiatief">Initiatief</option></select>
@@ -7369,6 +7379,19 @@ function adminHTML(){
         </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
       <div style="margin-top:10px;">
         <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
+      </div>
+      <div style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
+        <h4 style="margin:0 0 6px; font-size:13px;">Taken toewijzen (Agenda &amp; Mijn Werk)</h4>
+        <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan wie taken aan collega's mag toewijzen. Anderen kunnen wel taken aanmaken en afvinken, maar alleen voor zichzelf. Niemand aanvinken = geen restrictie. Admins mogen altijd toewijzen.</p>
+        ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+          <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
+            <input type="checkbox" data-toewijs-access-check value="${b.id}" ${(RECHTEN.taakToewijzers||[]).includes(b.id)?'checked':''}>
+            <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
+            ${b.naam}${b.email? ' · '+b.email : ''}
+          </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
+        <div style="margin-top:10px;">
+          <button class="btn sm primary" data-save-toewijs-access>Toewijs-bevoegdheid opslaan</button>
+        </div>
       </div>
     </div>` : ''}
   </div>`,
@@ -10061,7 +10084,7 @@ function attachHandlers(){
     const sopId = sopSel ? sopSel.value : '';
     const sopTitel = sopId && sopSel.options[sopSel.selectedIndex] ? sopSel.options[sopSel.selectedIndex].text : '';
     AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum, tekst:tekst.slice(0,300),
-      toegewezen: v('mwNieuwWie')||null, klaar:false, status:null, prioriteit: v('mwNieuwPrio')||'middel',
+      toegewezen: magTakenToewijzen() ? (v('mwNieuwWie')||null) : (mijnBoekhouderId()||null), klaar:false, status:null, prioriteit: v('mwNieuwPrio')||'middel',
       bronType, bronLabel: bronLabel.slice(0,120), themaId: themaId||'', initiatiefId: initiatiefId||'',
       sopId: sopId||'', sopTitel: sopTitel.slice(0,80), door: huidigeGebruiker(), ts: Date.now() });
     STATE.mwNieuw = false;
@@ -10121,7 +10144,7 @@ function attachHandlers(){
     const tekst = ((document.getElementById('agendaNieuwTekst')||{}).value || '').trim();
     const wie = (document.getElementById('agendaNieuwWie')||{}).value || '';
     if(!datum || !tekst){ toast('Vul een datum en omschrijving in.'); return; }
-    AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum, tekst: tekst.slice(0,300), toegewezen: wie||null, klaar:false, door: huidigeGebruiker(), ts: Date.now() });
+    AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum, tekst: tekst.slice(0,300), toegewezen: magTakenToewijzen() ? (wie||null) : (mijnBoekhouderId()||null), klaar:false, door: huidigeGebruiker(), ts: Date.now() });
     STATE.agendaNieuw = false;
     logActiviteit(`Agendapunt toegevoegd (${fmtDate(datum)}): "${tekst.slice(0,60)}"`);
     persistMeta();
@@ -10149,6 +10172,7 @@ function attachHandlers(){
     }
   }));
   document.querySelectorAll('[data-agenda-toewijs]').forEach(el=>el.addEventListener('change', ()=>{
+    if(!magTakenToewijzen()){ toast('Je hebt geen bevoegdheid om taken toe te wijzen.'); return; }
     const key = el.getAttribute('data-agenda-toewijs');
     const val = el.value || null;
     if(key.startsWith('hp|')){
@@ -10722,6 +10746,16 @@ function attachHandlers(){
     logActiviteit(`Loonheffingen: logboek-item verwijderd bij "${klant.naam}"`);
     toast('Logboek-item verwijderd.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  document.querySelectorAll('[data-save-toewijs-access]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const ids = [];
+    document.querySelectorAll('[data-toewijs-access-check]').forEach(c=>{ if(c.checked) ids.push(c.getAttribute('value')); });
+    RECHTEN.taakToewijzers = ids;
+    logActiviteit('Toewijs-bevoegdheid (taken) gewijzigd');
+    persistMeta();
+    toast('Toewijs-bevoegdheid opgeslagen — komt door bij collega\'s zodra zij synchroniseren.');
+    render();
   }));
   document.querySelectorAll('[data-save-lh-access]').forEach(el=>el.addEventListener('click',()=>{
     if(!isAdmin()) return;
