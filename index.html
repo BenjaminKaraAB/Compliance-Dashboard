@@ -541,7 +541,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.19.18';
+const APP_VERSION = '2026.08.19.19';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -649,7 +649,12 @@ let RDW_HERCHECK_CFG = { herhaling:'uit', laatsteAutoCheck:null };
 let LH_MAAND_BANNERS = [];
 /* Agenda op de Overzicht-pagina: handmatige punten + afvink/toewijs-status van automatisch
    herkende punten (deadlines, toekomstige klanten, maandmeldingen, auto's). Gesynct via SharePoint. */
-let AGENDA = { punten: [], afgevinkt: {}, toewijzing: {} };
+let AGENDA = { punten: [], afgevinkt: {}, toewijzing: {}, bezig: {} };
+/* Mijn Werk: kwartaalthema's en initiatieven (cascade uit het besturingssysteem).
+   Taken zelf leven in AGENDA.punten (handmatig/meeting/thema/initiatief) of worden live
+   afgeleid uit de brondata (deadlines, loonheffing) — één bron per type informatie. */
+let KWARTAALTHEMAS = [];
+let INITIATIEVEN = [];
 /* Leerpad (Opleiding): vaste route voor nieuwe medewerkers. LEERPAD bevat aanpassingen op de
    standaardroute (artikel-koppelingen); LEERPAD_VOORTGANG houdt per medewerker (e-mail) bij
    welke stappen klaar zijn. Beide gesynchroniseerd zodat de admin voortgang kan volgen. */
@@ -732,7 +737,9 @@ function loadMeta(){
       if(parsed.rdwHercheckCfg) RDW_HERCHECK_CFG = Object.assign({herhaling:'uit', laatsteAutoCheck:null}, parsed.rdwHercheckCfg);
       if(parsed.inventarisItems && parsed.inventarisItems.length) INVENTARIS_ITEMS = parsed.inventarisItems;
       if(parsed.lhMaandBanners && parsed.lhMaandBanners.length) LH_MAAND_BANNERS = parsed.lhMaandBanners;
-      if(parsed.agenda) AGENDA = Object.assign({punten:[], afgevinkt:{}, toewijzing:{}}, parsed.agenda);
+      if(parsed.agenda) AGENDA = Object.assign({punten:[], afgevinkt:{}, toewijzing:{}, bezig:{}}, parsed.agenda);
+      if(parsed.kwartaalthemas) KWARTAALTHEMAS = parsed.kwartaalthemas;
+      if(parsed.initiatieven) INITIATIEVEN = parsed.initiatieven;
       if(parsed.notionCfg && typeof parsed.notionCfg==='object') NOTION_CFG = Object.assign({workerUrl:''}, parsed.notionCfg);
       if(parsed.leerpad) LEERPAD = parsed.leerpad;
       if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
@@ -742,7 +749,7 @@ function loadMeta(){
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1670,7 +1677,7 @@ async function pushRemote(allowInteractive){
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, agenda: AGENDA, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, agenda: AGENDA, kwartaalthemas: KWARTAALTHEMAS, initiatieven: INITIATIEVEN, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -1764,12 +1771,14 @@ async function fetchRemoteAndMerge(showFeedback){
         RDW_HERCHECK_CFG = json.rdwHercheckCfg ? Object.assign({herhaling:'uit', laatsteAutoCheck:null}, json.rdwHercheckCfg) : RDW_HERCHECK_CFG;
         INVENTARIS_ITEMS = json.inventarisItems && json.inventarisItems.length ? json.inventarisItems : INVENTARIS_ITEMS;
         LH_MAAND_BANNERS = json.lhMaandBanners && json.lhMaandBanners.length ? json.lhMaandBanners : LH_MAAND_BANNERS;
-        AGENDA = json.agenda ? Object.assign({punten:[], afgevinkt:{}, toewijzing:{}}, json.agenda) : AGENDA;
+        AGENDA = json.agenda ? Object.assign({punten:[], afgevinkt:{}, toewijzing:{}, bezig:{}}, json.agenda) : AGENDA;
+        KWARTAALTHEMAS = json.kwartaalthemas ? json.kwartaalthemas : KWARTAALTHEMAS;
+        INITIATIEVEN = json.initiatieven ? json.initiatieven : INITIATIEVEN;
         NOTION_CFG = json.notionCfg && typeof json.notionCfg==='object' ? Object.assign({workerUrl:''}, json.notionCfg) : NOTION_CFG;
         LEERPAD = json.leerpad || LEERPAD;
         LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
+        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG})); }catch(e){}
         try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
@@ -2119,7 +2128,7 @@ function berekenBtwCorrectieProRata(auto){
 function klantVanAuto(auto){ return RAW_KLANTEN.find(k=>k.id===auto.klant) || null; }
 
 /* ============================= STATE ============================= */
-const GELDIGE_VIEWS = ['dashboard','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','outlook','notion'];
+const GELDIGE_VIEWS = ['dashboard','mijnwerk','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','outlook','notion'];
 const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
 function onthoudHuidigePagina(view){
   // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
@@ -2138,6 +2147,7 @@ let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
 const ICONS = {
+  werk:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7"/><path d="M3 12h18"/><path d="M12 11v2.5"/></svg>',
   dash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.5 14.3c2.7.4 4.5 2.5 4.5 5.7"/></svg>',
   building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="11" height="18" rx="1"/><path d="M15 8h5v13h-5"/><path d="M7.5 7h1M11 7h1M7.5 10.5h1M11 10.5h1M7.5 14h1M11 14h1"/></svg>',
@@ -2185,6 +2195,7 @@ function render(){
         ${navItem('klanten','users','Klanten')}
         ${navItem('kennisbank','book','Opleiding','later')}
         <div class="nav-group-label">Werkzaamheden</div>
+        ${navItem('mijnwerk','werk','Mijn Werk')}
         ${navItem('aanlevering','bank','Aanlevering & Saldo')}
         ${navItem('loonheffing','loon','Loonheffingen')}
         ${navItem('autolijst','auto','Autolijst')}
@@ -2235,11 +2246,12 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Admin'}[STATE.view];
+  return {dashboard:'Overzicht', mijnwerk:'Mijn Werk', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Admin'}[STATE.view];
 }
 function pageSub(){
   return {
     dashboard:'Status van alle deadlines in één oogopslag',
+    mijnwerk:'Alles waar jij verantwoordelijk voor bent — uit deadlines, meetings, kwartaalthema\'s en loonheffing',
     boekhouders:'Klantportefeuille per boekhouder',
     teams:'Teamindeling en openstaande deadlines per team',
     klanten:'Alle klanten met deadlinestatus per categorie',
@@ -2259,6 +2271,7 @@ function pageSub(){
 /* ============================= VIEW: DASHBOARD ============================= */
 function viewHTML(){
   if(STATE.view==='dashboard') return dashboardHTML();
+  if(STATE.view==='mijnwerk') return mijnWerkHTML();
   if(STATE.view==='boekhouders') return boekhoudersHTML();
   if(STATE.view==='teams') return teamsHTML();
   if(STATE.view==='klanten') return klantenHTML();
@@ -4882,6 +4895,15 @@ function migrateData(){
   if(!Array.isArray(AGENDA.punten)) AGENDA.punten = [];
   if(!AGENDA.afgevinkt || typeof AGENDA.afgevinkt!=='object') AGENDA.afgevinkt = {};
   if(!AGENDA.toewijzing || typeof AGENDA.toewijzing!=='object') AGENDA.toewijzing = {};
+  if(!AGENDA.bezig || typeof AGENDA.bezig!=='object') AGENDA.bezig = {};
+  if(!Array.isArray(KWARTAALTHEMAS)) KWARTAALTHEMAS = [];
+  if(!Array.isArray(INITIATIEVEN)) INITIATIEVEN = [];
+  KWARTAALTHEMAS = KWARTAALTHEMAS.filter(t=>t && t.id && String(t.titel||'').trim());
+  INITIATIEVEN = INITIATIEVEN.filter(i=>i && i.id && String(i.titel||'').trim());
+  AGENDA.punten.forEach(p=>{
+    if(!['hoog','middel','laag'].includes(p.prioriteit)) p.prioriteit = 'middel';
+    if(!['handmatig','meeting','thema','initiatief'].includes(p.bronType)) p.bronType = 'handmatig';
+  });
   AGENDA.punten = AGENDA.punten.filter(p=>p && p.id && p.datum && String(p.tekst||'').trim());
   const agGrens = Date.now() - 120*86400000;
   Object.keys(AGENDA.afgevinkt).forEach(s=>{ const a = AGENDA.afgevinkt[s]; if(!a || (a.ts && a.ts < agGrens)) delete AGENDA.afgevinkt[s]; });
@@ -5588,6 +5610,249 @@ function agendaHTML(){
         <p class="agenda-dag" style="color:var(--red); margin-top:0;">Achterstallig (${achterstallig.length})</p>
         <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:4px;">${achterstallig.map(agendaItemHTML).join('')}</div>` : ''}
       ${dagenHtml || (!achterstallig.length ? `<p style="font-size:12.5px; color:var(--muted); margin:0;"><i class="ti ti-check" aria-hidden="true"></i> Geen agendapunten in de komende ${horizon} dagen${STATE.agendaFilter==='mij' ? ' voor jou' : ''}.</p>` : '')}
+    </div>
+  </div>`;
+}
+/* ============================= MIJN WERK =============================
+   De uitvoeringslaag van het besturingssysteem: alles waar iemand verantwoordelijk
+   voor is, in één werkvoorraad. Automatische taken (deadlines, loonheffing, enz.)
+   worden live afgeleid uit de brondata (géén dubbele administratie); handmatige,
+   meeting-, kwartaalthema- en initiatief-taken zijn echte records in AGENDA.punten.
+   Elke taak: wie → wat → wanneer → status (open/bezig/klaar) → prioriteit → bron,
+   plus optioneel een SOP-koppeling die de Notion-pagina in het dashboard opent. */
+const MW_BRON_META = {
+  deadline:   {label:'deadline',    bg:'#FCEBEB', fg:'#791F1F'},
+  toekomst:   {label:'toekomstige klant', bg:'#E6F1FB', fg:'#0C447C'},
+  loonheffing:{label:'loonheffing', bg:'#EEEDFE', fg:'#26215C'},
+  auto:       {label:'autolijst',   bg:'#FAEEDA', fg:'#412402'},
+  handmatig:  {label:'handmatig',   bg:'#F1EFE8', fg:'#444441'},
+  meeting:    {label:'meeting',     bg:'#FBEAF0', fg:'#4B1528'},
+  thema:      {label:'kwartaalthema', bg:'#E1F5EE', fg:'#04342C'},
+  initiatief: {label:'initiatief',  bg:'#E1F5EE', fg:'#04342C'},
+};
+const MW_PRIO_KLEUR = { hoog:'#A32D2D', middel:'#BA7517', laag:'var(--muted2)' };
+function mwScopeFilter(){
+  const mijn = mijnBoekhouderId();
+  const modus = ['mij','team','iedereen'].includes(STATE.mwScope) ? STATE.mwScope : 'mij';
+  const mijnB = mijn ? bh(mijn) : null;
+  const teamBhIds = (mijnB && mijnB.team) ? new Set(BOEKHOUDERS.filter(b=>b.team===mijnB.team).map(b=>b.id)) : new Set(mijn ? [mijn] : []);
+  let klantFilter = null;
+  if(modus==='mij') klantFilter = k => k && k.bh===mijn && !!mijn;
+  if(modus==='team') klantFilter = k => k && teamBhIds.has(k.bh);
+  return {modus, mijn, teamBhIds, klantFilter};
+}
+function mwThemaVan(p){
+  if(p.themaId) return KWARTAALTHEMAS.find(t=>t.id===p.themaId) || null;
+  if(p.initiatiefId){
+    const ini = INITIATIEVEN.find(i=>i.id===p.initiatiefId);
+    if(ini) return KWARTAALTHEMAS.find(t=>t.id===ini.themaId) || null;
+  }
+  return null;
+}
+function mwBronPill(it){
+  let meta = MW_BRON_META[it.bron] || MW_BRON_META.handmatig;
+  let label = meta.label;
+  if(it.handmatig){
+    const p = it.handmatig;
+    if(p.bronType==='meeting') label = p.bronLabel || 'meeting';
+    else if(p.bronType==='thema'){ const t = mwThemaVan(p); label = t ? `${t.kwartaal}: ${t.titel}` : 'kwartaalthema'; }
+    else if(p.bronType==='initiatief'){ const i = INITIATIEVEN.find(x=>x.id===p.initiatiefId); label = i ? `initiatief: ${i.titel}` : 'initiatief'; }
+    meta = MW_BRON_META[p.bronType] || MW_BRON_META.handmatig;
+  }
+  return `<span style="font-size:10px; background:${meta.bg}; color:${meta.fg}; border-radius:10px; padding:2px 8px; white-space:nowrap; flex-shrink:0;">${String(label).replace(/</g,'&lt;')}</span>`;
+}
+function mwPunten(){
+  if(STATE.mwScope===undefined){ try{ STATE.mwScope = localStorage.getItem('cd_mw_scope')||'mij'; }catch(e){ STATE.mwScope='mij'; } }
+  const sc = mwScopeFilter();
+  const horizon = 30;
+  const items = agendaAutoPunten(horizon, sc.klantFilter);
+  (AGENDA.punten||[]).forEach(p=>{
+    if(!p || !p.datum) return;
+    const dd = daysDiff(p.datum);
+    if(dd===null || isNaN(dd) || dd>horizon || dd<-60) return;
+    items.push({ key:'hp|'+p.id, datum:p.datum, bron:p.bronType||'handmatig', tekst:p.tekst, handmatig:p });
+  });
+  items.forEach(it=>{
+    it.toegewezen = it.handmatig ? (it.handmatig.toegewezen||null) : (AGENDA.toewijzing[it.key]||null);
+    const af = it.handmatig ? (it.handmatig.klaar ? {door:it.handmatig.klaarDoor, ts:it.handmatig.klaarTs} : null) : (AGENDA.afgevinkt[it.key]||null);
+    it.klaar = !!af; it.klaarDoor = af ? af.door : null; it.klaarTs = af ? af.ts : null;
+    it.status = it.klaar ? 'klaar' : ((it.handmatig ? it.handmatig.status==='bezig' : !!AGENDA.bezig[it.key]) ? 'bezig' : 'open');
+    if(it.handmatig) it.prioriteit = it.handmatig.prioriteit || 'middel';
+    else { const dd = daysDiff(it.datum); it.prioriteit = (dd!==null && !isNaN(dd)) ? (dd<0 ? 'hoog' : (dd<=7 ? 'middel' : 'laag')) : 'laag'; }
+  });
+  let lijst = items;
+  if(sc.modus==='mij') lijst = lijst.filter(it=> it.handmatig ? it.toegewezen===sc.mijn : (!it.toegewezen || it.toegewezen===sc.mijn));
+  else if(sc.modus==='team') lijst = lijst.filter(it=> !it.toegewezen || sc.teamBhIds.has(it.toegewezen));
+  lijst = lijst.filter(it=>{ const dd = daysDiff(it.datum); return !(it.klaar && dd!==null && dd<0); });
+  return lijst;
+}
+function mwZetStatus(key, status){
+  const naam = huidigeGebruiker();
+  if(key.startsWith('hp|')){
+    const p = AGENDA.punten.find(x=>'hp|'+x.id===key);
+    if(!p) return;
+    p.status = status==='bezig' ? 'bezig' : null;
+    p.klaar = status==='klaar';
+    p.klaarDoor = p.klaar ? naam : null;
+    p.klaarTs = p.klaar ? Date.now() : null;
+  } else {
+    if(status==='bezig') AGENDA.bezig[key] = {door:naam, ts:Date.now()}; else delete AGENDA.bezig[key];
+    if(status==='klaar') AGENDA.afgevinkt[key] = {door:naam, ts:Date.now()}; else delete AGENDA.afgevinkt[key];
+  }
+  persistMeta();
+}
+function mwTaakRijHTML(it){
+  const achterstallig = daysDiff(it.datum) < 0 && !it.klaar;
+  const prioKleur = MW_PRIO_KLEUR[it.prioriteit] || MW_PRIO_KLEUR.laag;
+  const prioTitel = {hoog:'Hoge prioriteit', middel:'Middel', laag:'Laag'}[it.prioriteit];
+  const p = it.handmatig;
+  const sop = p && p.sopId ? ` <a data-mw-sop="${p.sopId}" data-mw-sop-titel="${String(p.sopTitel||'SOP').replace(/"/g,'&quot;')}" style="font-size:10.5px; color:#3C3489; margin-left:6px; cursor:pointer; text-decoration:none;"><i class="ti ti-book" style="font-size:11px;" aria-hidden="true"></i> ${String(p.sopTitel||'SOP').replace(/</g,'&lt;')}</a>` : '';
+  const statusStijl = it.status==='klaar' ? 'background:#E1F5EE; color:#04342C; border:1px solid transparent;'
+    : it.status==='bezig' ? 'background:#FAEEDA; color:#412402; border:1px solid transparent;'
+    : (achterstallig ? 'border:1px solid #F09595; color:#791F1F; background:none;' : 'border:1px solid var(--border); color:var(--text); background:none;');
+  return `<div class="agenda-item" style="display:flex; align-items:center; gap:8px; padding:7px 9px; border:1px solid ${achterstallig?'#F7C1C1':'var(--border)'}; ${achterstallig?'background:#FCEBEB;':''} border-radius:8px;">
+    <button class="btn sm ghost" data-mw-vink="${it.key}" title="${it.klaar ? `Klaar — ${it.klaarDoor||''}. Klik om te heropenen.` : 'Markeer als klaar'}" aria-label="Afvinken" style="padding:2px 5px; flex-shrink:0;">
+      <i class="ti ${it.klaar?'ti-square-check':'ti-square'}" style="font-size:16px; ${it.klaar?'color:var(--green);':(achterstallig?'color:#A32D2D;':'')}" aria-hidden="true"></i>
+    </button>
+    ${it.klaar ? '' : (p
+      ? `<button class="btn sm ghost" data-mw-prio="${it.key}" title="${prioTitel} — klik om te wisselen" aria-label="Prioriteit" style="padding:2px 3px; flex-shrink:0;"><i class="ti ti-flag" style="color:${prioKleur}; font-size:13px;" aria-hidden="true"></i></button>`
+      : `<i class="ti ti-flag" style="color:${prioKleur}; font-size:13px; flex-shrink:0;" title="${prioTitel} — automatisch op basis van de deadline" aria-hidden="true"></i>`)}
+    <span style="flex:1; font-size:12px; min-width:0; ${it.klaar?'text-decoration:line-through; color:var(--muted);':(achterstallig?'color:#791F1F;':'')} ${it.klantId?'cursor:pointer;':''}" ${it.klantId?`data-agenda-open="${it.klantId}" title="Klantpaneel openen"`:''}>${String(it.tekst).replace(/</g,'&lt;')}${sop}</span>
+    ${mwBronPill(it)}
+    <span data-mw-status="${it.key}" title="Klik om status te wisselen: open → bezig → klaar" style="font-size:10px; border-radius:10px; padding:2px 8px; cursor:pointer; white-space:nowrap; flex-shrink:0; ${statusStijl}">${it.status}${it.status!=='klaar' ? ' <i class="ti ti-chevron-down" style="font-size:9px;" aria-hidden="true"></i>' : ''}</span>
+    ${p ? `<button class="btn sm ghost" data-agenda-del="${p.id}" title="Taak verwijderen" aria-label="Verwijderen" style="padding:2px 5px; flex-shrink:0;"><i class="ti ti-trash" style="font-size:13px; color:var(--muted2);" aria-hidden="true"></i></button>` : ''}
+  </div>`;
+}
+function mijnWerkHTML(){
+  const lijst = mwPunten();
+  const sc = mwScopeFilter();
+  const chip = STATE.mwChip || 'alles';
+  const sorteer = STATE.mwSort || 'prioriteit';
+  const dd = it => daysDiff(it.datum);
+  const nietKlaar = lijst.filter(it=>!it.klaar);
+  const maandag = new Date(TODAY); maandag.setDate(maandag.getDate() - ((maandag.getDay()+6)%7)); maandag.setHours(0,0,0,0);
+  const klaarDezeWeek = lijst.filter(it=>it.klaar && it.klaarTs && it.klaarTs >= maandag.getTime()).length
+    + (AGENDA.punten||[]).filter(p=>p.klaar && p.klaarTs && p.klaarTs >= maandag.getTime() && !lijst.some(it=>it.handmatig===p)).length;
+  const zondag = new Date(maandag); zondag.setDate(zondag.getDate()+6);
+  const inDezeWeek = it => { const d = new Date(it.datum+'T00:00:00'); return d>=maandag && d<=zondag; };
+  const tellers = {
+    alles: lijst.length,
+    vandaag: nietKlaar.filter(it=>dd(it)===0).length,
+    week: nietKlaar.filter(inDezeWeek).length,
+    achterstallig: nietKlaar.filter(it=>dd(it)<0).length,
+  };
+  let zichtbaar = lijst;
+  if(chip==='vandaag') zichtbaar = lijst.filter(it=>dd(it)===0);
+  if(chip==='week') zichtbaar = lijst.filter(inDezeWeek);
+  if(chip==='achterstallig') zichtbaar = lijst.filter(it=>dd(it)<0 && !it.klaar);
+  const prioRang = {hoog:0, middel:1, laag:2};
+  zichtbaar = zichtbaar.slice().sort((a,b)=>{
+    if(a.klaar!==b.klaar) return a.klaar?1:-1;
+    if(sorteer==='prioriteit' && prioRang[a.prioriteit]!==prioRang[b.prioriteit]) return prioRang[a.prioriteit]-prioRang[b.prioriteit];
+    return a.datum<b.datum?-1:(a.datum>b.datum?1:0);
+  });
+  const achterstallig = zichtbaar.filter(it=>dd(it)<0 && !it.klaar);
+  const rest = zichtbaar.filter(it=>!(dd(it)<0 && !it.klaar));
+  const perDag = new Map();
+  rest.slice().sort((a,b)=>a.datum<b.datum?-1:1).forEach(it=>{ if(!perDag.has(it.datum)) perDag.set(it.datum, []); perDag.get(it.datum).push(it); });
+  perDag.forEach(its=>its.sort((a,b)=>{ if(a.klaar!==b.klaar) return a.klaar?1:-1; return sorteer==='prioriteit' ? prioRang[a.prioriteit]-prioRang[b.prioriteit] : 0; }));
+
+  const kpiTegel = (label, n, kleur)=>`<div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px;"><div style="font-size:10.5px; color:var(--muted2);">${label}</div><div style="font-size:20px; font-weight:700; margin-top:2px; ${kleur?`color:${kleur};`:''}">${n}</div></div>`;
+  const chipEl = (id, label, n, kleur)=> chip===id
+    ? `<span data-mw-chip="${id}" style="font-size:11px; border-radius:14px; padding:3px 12px; background:#26215C; color:#EEEDFE; cursor:pointer;">${label} ${n}</span>`
+    : `<span data-mw-chip="${id}" style="font-size:11px; border:1px solid var(--border); border-radius:14px; padding:3px 12px; cursor:pointer; ${kleur?`color:${kleur};`:''}">${label} ${n}</span>`;
+
+  const wieOpties = ['<option value="">Niet toegewezen</option>'].concat(BOEKHOUDERS.map(b=>`<option value="${b.id}">${b.naam}</option>`)).join('');
+  const themaOpties = ['<option value="">— kwartaalthema —</option>'].concat(KWARTAALTHEMAS.map(t=>`<option value="${t.id}">${t.kwartaal}: ${t.titel}</option>`)).concat(['<option value="__nieuw">Nieuw thema… (naam in toelichting-veld)</option>']).join('');
+  const iniOpties = ['<option value="">— initiatief —</option>'].concat(INITIATIEVEN.map(i=>`<option value="${i.id}">${i.titel}</option>`)).concat(['<option value="__nieuw">Nieuw initiatief… (naam in toelichting-veld)</option>']).join('');
+  const sopOpties = ['<option value="">— SOP koppelen (optioneel) —</option>'].concat(((NOTION_APP.paginas)||[]).map(p=>`<option value="${p.id}">${String(p.titel||'Pagina').replace(/</g,'&lt;')}</option>`)).join('');
+  const nieuwForm = STATE.mwNieuw ? `
+    <div style="display:flex; flex-direction:column; gap:6px; padding:10px; border:1px dashed var(--border); border-radius:8px; margin-bottom:10px; background:var(--card);">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <input type="date" id="mwNieuwDatum" value="${agendaIsoVandaag()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+        <input type="text" id="mwNieuwTekst" placeholder="Wat moet er gebeuren?" maxlength="300" style="flex:1; min-width:180px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+        <select id="mwNieuwPrio" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"><option value="hoog">Hoog</option><option value="middel" selected>Middel</option><option value="laag">Laag</option></select>
+        <select id="mwNieuwWie" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">${wieOpties}</select>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <select id="mwNieuwBron" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"><option value="handmatig">Handmatig</option><option value="meeting">Meeting</option><option value="thema">Kwartaalthema</option><option value="initiatief">Initiatief</option></select>
+        <input type="text" id="mwNieuwBronLabel" placeholder="Toelichting / meetingnaam / naam nieuw thema" maxlength="120" style="flex:1; min-width:160px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+        <select id="mwNieuwThema" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; max-width:190px;">${themaOpties}</select>
+        <select id="mwNieuwIni" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; max-width:190px;">${iniOpties}</select>
+        <select id="mwNieuwSop" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; max-width:210px;">${sopOpties}</select>
+        <button class="btn sm primary" data-mw-opslaan>Opslaan</button>
+        <button class="btn sm ghost" data-mw-nieuw>Annuleren</button>
+      </div>
+      ${!((NOTION_APP.paginas)||[]).length ? `<div style="font-size:10.5px; color:var(--muted2);">Tip: open eerst één keer de Notion-pagina, dan kun je hier SOP's koppelen.</div>` : ''}
+    </div>` : '';
+
+  const dagBlokken = Array.from(perDag.entries()).map(([iso, its])=>`
+    <p class="agenda-dag">${agendaDagLabel(iso)} · ${fmtDate(iso)}</p>
+    <div style="display:flex; flex-direction:column; gap:5px;">${its.map(mwTaakRijHTML).join('')}</div>`).join('');
+
+  const themaKaarten = KWARTAALTHEMAS.slice(0,4).map(t=>{
+    const iniIds = INITIATIEVEN.filter(i=>i.themaId===t.id).map(i=>i.id);
+    const taken = (AGENDA.punten||[]).filter(p=>p.themaId===t.id || (p.initiatiefId && iniIds.includes(p.initiatiefId)));
+    const klaarN = taken.filter(p=>p.klaar).length;
+    const pct = taken.length ? Math.round(klaarN/taken.length*100) : 0;
+    const eigenaarNaam = t.eigenaar && bh(t.eigenaar) ? bh(t.eigenaar).naam : (t.eigenaar||'—');
+    return `<div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px;">
+      <p style="margin:0 0 8px; font-size:12px; font-weight:700;"><i class="ti ti-target" aria-hidden="true"></i> Kwartaalthema ${t.kwartaal} — ${String(t.titel).replace(/</g,'&lt;')}</p>
+      <div style="height:7px; background:var(--bg); border-radius:4px; overflow:hidden; margin-bottom:6px;"><div style="height:100%; width:${pct}%; background:#1D9E75;"></div></div>
+      <p style="margin:0; font-size:11px; color:var(--muted);">${klaarN} van ${taken.length} taken klaar · ${iniIds.length} initiatie${iniIds.length===1?'f':'ven'} · eigenaar ${eigenaarNaam}</p>
+    </div>`;
+  }).join('');
+
+  const iedereenItems = (function(){ const b = STATE.mwScope; STATE.mwScope='iedereen'; const r = mwPunten(); STATE.mwScope=b; return r; })();
+  const voorraad = BOEKHOUDERS.map(b=>{
+    const van = iedereenItems.filter(it=>{
+      if(it.toegewezen) return it.toegewezen===b.id;
+      if(it.klantId){ const k = RAW_KLANTEN.find(x=>x.id===it.klantId); return k && k.bh===b.id; }
+      return false;
+    }).filter(it=>!it.klaar);
+    return { b, open: van.length, laat: van.filter(it=>dd(it)<0).length };
+  }).filter(x=>x.open>0).sort((a,c)=>c.open-a.open).slice(0,8);
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+    <div>
+      <p style="margin:0; font-size:17px; font-weight:700;"><i class="ti ti-briefcase" aria-hidden="true"></i> Mijn Werk</p>
+      <p style="margin:2px 0 0; font-size:11.5px; color:var(--muted);">Alles waar jij verantwoordelijk voor bent — uit deadlines, meetings, kwartaalthema's en loonheffing</p>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <select id="mwScopeSel" style="padding:6px 10px; border:1px solid var(--border-strong, var(--border)); border-radius:14px; font-size:11px;">
+        <option value="mij" ${sc.modus==='mij'?'selected':''}>Alleen ik</option>
+        <option value="team" ${sc.modus==='team'?'selected':''}>Mijn team</option>
+        <option value="iedereen" ${sc.modus==='iedereen'?'selected':''}>Iedereen</option>
+      </select>
+      <button class="btn sm primary" data-mw-nieuw style="border-radius:14px;"><i class="ti ti-plus" aria-hidden="true"></i> Taak</button>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin-bottom:12px;">
+    ${kpiTegel('Open', nietKlaar.length)}
+    ${kpiTegel('Vandaag', tellers.vandaag, '#185FA5')}
+    ${kpiTegel('Achterstallig', tellers.achterstallig, '#A32D2D')}
+    ${kpiTegel('Klaar deze week', klaarDezeWeek, '#0F6E56')}
+  </div>
+  <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">
+    ${chipEl('alles','Alles',tellers.alles)}
+    ${chipEl('vandaag','Vandaag',tellers.vandaag)}
+    ${chipEl('week','Deze week',tellers.week)}
+    ${chipEl('achterstallig','Achterstallig',tellers.achterstallig,'#A32D2D')}
+    <span data-mw-sort style="font-size:11px; border:1px solid var(--border); border-radius:14px; padding:3px 12px; cursor:pointer; margin-left:auto;">Sorteer: ${sorteer} <i class="ti ti-chevron-down" aria-hidden="true"></i></span>
+  </div>
+  <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px;">
+    ${nieuwForm}
+    ${achterstallig.length ? `
+      <p class="agenda-dag" style="color:var(--red); margin-top:0;">Achterstallig (${achterstallig.length})</p>
+      <div style="display:flex; flex-direction:column; gap:5px; margin-bottom:4px;">${achterstallig.map(mwTaakRijHTML).join('')}</div>` : ''}
+    ${dagBlokken || (!achterstallig.length ? `<p style="font-size:12.5px; color:var(--muted); margin:0;"><i class="ti ti-check" aria-hidden="true"></i> Geen taken in deze weergave.</p>` : '')}
+  </div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
+    ${themaKaarten || `<div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px;"><p style="margin:0 0 4px; font-size:12px; font-weight:700;"><i class="ti ti-target" aria-hidden="true"></i> Kwartaalthema's</p><p style="margin:0; font-size:11px; color:var(--muted);">Nog geen kwartaalthema's. Maak er een via + Taak → bron "Kwartaalthema" → "Nieuw thema…" (zet de naam in het toelichting-veld).</p></div>`}
+    <div style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px;">
+      <p style="margin:0 0 8px; font-size:12px; font-weight:700;"><i class="ti ti-users" aria-hidden="true"></i> Teamvoorraad</p>
+      ${voorraad.length ? `<p style="margin:0; font-size:11px; color:var(--muted); line-height:1.9;">${voorraad.map(x=>`${x.b.naam} <span style="float:right;">${x.open} open${x.laat?` · <span style="color:#A32D2D;">${x.laat} achterstallig</span>`:''}</span>`).join('<br>')}</p>` : `<p style="margin:0; font-size:11px; color:var(--muted);">Geen openstaande taken.</p>`}
     </div>
   </div>`;
 }
@@ -9748,6 +10013,83 @@ function attachHandlers(){
   }));
   const filterTeamDashboard = document.getElementById('filterTeamDashboard');
   if(filterTeamDashboard) filterTeamDashboard.addEventListener('change', e=>{ STATE.dashboardTeamFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
+  // ── Mijn Werk-handlers ──
+  const mwHerteken = ()=>{ document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); };
+  const mwScopeSel = document.getElementById('mwScopeSel');
+  if(mwScopeSel) mwScopeSel.addEventListener('change', ()=>{
+    STATE.mwScope = mwScopeSel.value;
+    try{ localStorage.setItem('cd_mw_scope', mwScopeSel.value); }catch(e){}
+    mwHerteken();
+  });
+  document.querySelectorAll('[data-mw-chip]').forEach(el=>el.addEventListener('click', ()=>{ STATE.mwChip = el.getAttribute('data-mw-chip'); mwHerteken(); }));
+  document.querySelectorAll('[data-mw-sort]').forEach(el=>el.addEventListener('click', ()=>{ STATE.mwSort = (STATE.mwSort||'prioriteit')==='prioriteit' ? 'datum' : 'prioriteit'; mwHerteken(); }));
+  document.querySelectorAll('[data-mw-nieuw]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.mwNieuw = !STATE.mwNieuw;
+    if(STATE.mwNieuw && !NOTION_APP.paginas && !NOTION_APP.laden){ try{ notionAppLaden(false); }catch(e){} }
+    mwHerteken();
+    const veld = document.getElementById('mwNieuwTekst');
+    if(veld) veld.focus();
+  }));
+  document.querySelectorAll('[data-mw-opslaan]').forEach(el=>el.addEventListener('click', ()=>{
+    const v = id => (document.getElementById(id)||{}).value || '';
+    const datum = v('mwNieuwDatum'), tekst = v('mwNieuwTekst').trim(), bronLabel = v('mwNieuwBronLabel').trim();
+    if(!datum || !tekst){ toast('Vul een datum en omschrijving in.'); return; }
+    const bronType = v('mwNieuwBron') || 'handmatig';
+    let themaId = v('mwNieuwThema'), initiatiefId = v('mwNieuwIni');
+    const kwartaalNu = 'Q'+(Math.floor(TODAY.getMonth()/3)+1)+' '+TODAY.getFullYear();
+    if(themaId==='__nieuw'){
+      if(!bronLabel){ toast('Zet de naam van het nieuwe thema in het toelichting-veld.'); return; }
+      const t = { id:'kt'+Date.now()+Math.floor(Math.random()*1000), titel:bronLabel, kwartaal:kwartaalNu, eigenaar:mijnBoekhouderId()||'', status:'actief' };
+      KWARTAALTHEMAS.push(t); themaId = t.id;
+      logActiviteit(`Kwartaalthema aangemaakt: "${t.titel}" (${t.kwartaal})`);
+    }
+    if(initiatiefId==='__nieuw'){
+      if(!bronLabel){ toast('Zet de naam van het nieuwe initiatief in het toelichting-veld.'); return; }
+      const i = { id:'ini'+Date.now()+Math.floor(Math.random()*1000), titel:bronLabel, themaId: themaId||'', eigenaar:mijnBoekhouderId()||'' };
+      INITIATIEVEN.push(i); initiatiefId = i.id;
+      logActiviteit(`Initiatief aangemaakt: "${i.titel}"`);
+    }
+    const sopSel = document.getElementById('mwNieuwSop');
+    const sopId = sopSel ? sopSel.value : '';
+    const sopTitel = sopId && sopSel.options[sopSel.selectedIndex] ? sopSel.options[sopSel.selectedIndex].text : '';
+    AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum, tekst:tekst.slice(0,300),
+      toegewezen: v('mwNieuwWie')||null, klaar:false, status:null, prioriteit: v('mwNieuwPrio')||'middel',
+      bronType, bronLabel: bronLabel.slice(0,120), themaId: themaId||'', initiatiefId: initiatiefId||'',
+      sopId: sopId||'', sopTitel: sopTitel.slice(0,80), door: huidigeGebruiker(), ts: Date.now() });
+    STATE.mwNieuw = false;
+    logActiviteit(`Taak toegevoegd (${fmtDate(datum)}): "${tekst.slice(0,60)}"`);
+    persistMeta();
+    mwHerteken();
+  }));
+  document.querySelectorAll('[data-mw-vink]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.getAttribute('data-mw-vink');
+    const nuKlaar = key.startsWith('hp|') ? (AGENDA.punten.find(x=>'hp|'+x.id===key)||{}).klaar : !!AGENDA.afgevinkt[key];
+    mwZetStatus(key, nuKlaar ? 'open' : 'klaar');
+    mwHerteken();
+  }));
+  document.querySelectorAll('[data-mw-status]').forEach(el=>el.addEventListener('click', ()=>{
+    const key = el.getAttribute('data-mw-status');
+    const p = key.startsWith('hp|') ? AGENDA.punten.find(x=>'hp|'+x.id===key) : null;
+    const huidig = (p ? (p.klaar ? 'klaar' : (p.status==='bezig' ? 'bezig' : 'open')) : (AGENDA.afgevinkt[key] ? 'klaar' : (AGENDA.bezig[key] ? 'bezig' : 'open')));
+    mwZetStatus(key, huidig==='open' ? 'bezig' : (huidig==='bezig' ? 'klaar' : 'open'));
+    mwHerteken();
+  }));
+  document.querySelectorAll('[data-mw-prio]').forEach(el=>el.addEventListener('click', ()=>{
+    const p = AGENDA.punten.find(x=>'hp|'+x.id===el.getAttribute('data-mw-prio'));
+    if(!p) return;
+    p.prioriteit = p.prioriteit==='hoog' ? 'middel' : (p.prioriteit==='middel' ? 'laag' : 'hoog');
+    persistMeta();
+    mwHerteken();
+  }));
+  document.querySelectorAll('[data-mw-sop]').forEach(el=>el.addEventListener('click', ()=>{
+    const id = el.getAttribute('data-mw-sop');
+    NOTION_APP.pad = [];
+    NOTION_APP.actief = id;
+    NOTION_APP.titels[id] = el.getAttribute('data-mw-sop-titel') || 'SOP';
+    STATE.view = 'notion';
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    if(!NOTION_APP.blokken[id]) notionBlokkenLaden(id);
+  }));
   // ── Agenda-handlers (Overzicht) ──
   const herteken = ()=>{ document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); };
   const agendaFilterSel = document.getElementById('agendaFilterSel');
