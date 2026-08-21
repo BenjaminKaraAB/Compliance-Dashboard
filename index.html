@@ -690,7 +690,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.21.4';
+const APP_VERSION = '2026.08.21.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -7552,6 +7552,7 @@ function klantenHTML(){
           <button data-klanten-view="kaarten" class="${STATE.klantenView==='kaarten'?'is-active':''}" title="Kaartweergave"><i class="ti ti-layout-grid" aria-hidden="true"></i></button>
         </div>
         <label class="btn sm" style="cursor:pointer;">${ICONS.upload} Importeren<input type="file" id="klantenCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+        <label class="btn sm" style="cursor:pointer;" title="Leest alleen de omzetbelastingnummers uit het bestand en vult die bij klanten die al in dit dashboard staan. Er wordt nooit een klant, boekhouder of team aangemaakt en er verandert verder niets aan de klantgegevens.">${ICONS.upload} Fiscale nummers<input type="file" id="obCsvUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
         <button class="btn sm primary" data-add-klant-btn>+ Nieuwe klant</button>
       </div>
     </div>
@@ -11213,6 +11214,8 @@ function attachHandlers(){
   document.querySelectorAll('[data-add-klant-btn]').forEach(el=>el.addEventListener('click', ()=>{ STATE.showAddKlant=true; render(); }));
   const klantenCsvUpload = document.getElementById('klantenCsvUpload');
   if(klantenCsvUpload) klantenCsvUpload.addEventListener('change', handleKlantenCSVUpload);
+  const obCsvUpload = document.getElementById('obCsvUpload');
+  if(obCsvUpload) obCsvUpload.addEventListener('change', handleObCSVUpload);
   const lhKlantenImportFile = document.getElementById('lhKlantenImportFile');
   if(lhKlantenImportFile) lhKlantenImportFile.addEventListener('change', handleLhKlantenImport);
   const autoExcelUpload = document.getElementById('autoExcelUpload');
@@ -13073,6 +13076,74 @@ function voerOpschoningUit(){
   OPSCHOON_PLAN = null;
   return verslag;
 }
+/* ---------------------------------------------------------------------------------------------------
+   Alleen-bijwerken-import voor omzetbelastingnummers.
+
+   Deze import is met opzet veel beperkter dan de gewone klantenimport: hij leest uitsluitend het
+   BTW-/omzetbelastingnummer en schrijft dat weg bij klanten die AL in dit dashboard staan. Er wordt
+   nooit een klant, boekhouder of team aangemaakt en er verandert niets aan naam, KvK, e-mail,
+   boekhouder of deadlines. Zo kan een export met meer (of andere) klanten dan het dashboard nooit
+   ongemerkt het klantenbestand laten groeien. Rijen zonder match worden niet stil overgeslagen maar
+   expliciet in het rapport benoemd, zodat te verantwoorden is wat er niet is verwerkt.
+--------------------------------------------------------------------------------------------------- */
+function handleObCSVUpload(e){
+  const file = e.target.files[0]; if(!file) return;
+  const resultBox = document.getElementById('klantImportResult');
+  if(resultBox) resultBox.innerHTML = `<div class="banner">Bezig met inlezen van "${file.name}"…</div>`;
+  readTabularFile(file, (rows, err)=>{
+    if(err){ toast(err); if(resultBox) resultBox.innerHTML=''; return; }
+    if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(resultBox) resultBox.innerHTML=''; return; }
+
+    const rap = { rijen:0, ingevuld:0, gewijzigd:0, gelijk:0, zonderNummerInBestand:[], nietGevonden:[], verdacht:[] };
+    const geraakt = new Set();
+
+    rows.forEach(row=>{
+      const naam = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
+      if(!naam) return;
+      rap.rijen++;
+      const extId = (findField(row,['Klantnummer']) || findField(row,['Id'])||'').trim();
+      const obNummer = normaliseerObNummer(findField(row,['BTW nummer','BTW-nummer','Btw nummer','Omzetbelastingnummer','BTW','Vat number'])||'');
+
+      let klant = extId ? RAW_KLANTEN.find(k=>k.extId===extId) : null;
+      if(!klant) klant = vindKlantOpNaam(naam);
+      if(!klant){ rap.nietGevonden.push(naam + (extId?` (${extId})`:'')); return; }
+
+      geraakt.add(klant.id);
+      if(!obNummer){ rap.zonderNummerInBestand.push(klant.naam); return; }
+
+      const negen = fiscaalNummerUitOb(obNummer);
+      if(!negen || !elfproefOk(negen)) rap.verdacht.push(klant.naam);
+
+      if(!klant.obNummer){ klant.obNummer = obNummer; rap.ingevuld++; }
+      else if(klant.obNummer !== obNummer){ klant.obNummer = obNummer; rap.gewijzigd++; }
+      else rap.gelijk++;
+    });
+
+    const zonder = RAW_KLANTEN.filter(k=>!k.obNummer).map(k=>k.naam);
+
+    logActiviteit(`Fiscale nummers bijgewerkt uit "${file.name}": ${rap.ingevuld} ingevuld, ${rap.gewijzigd} gewijzigd, ${rap.gelijk} ongewijzigd, ${rap.nietGevonden.length} rij(en) zonder match (geen klanten aangemaakt)`);
+    persistMeta(); persist();
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+
+    const lijst = (titel, arr, kleur)=> arr.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer; ${kleur?`color:${kleur};`:''}">${titel} (${arr.length})</summary><div style="margin-top:4px; font-size:12px; line-height:1.6;">${arr.map(x=>String(x).replace(/</g,'&lt;')).join(' · ')}</div></details>` : '';
+
+    const box = document.getElementById('klantImportResult');
+    if(box){
+      box.innerHTML = `<div class="banner">
+        <i class="ti ti-circle-check" aria-hidden="true"></i> <b>${file.name}</b> verwerkt — <b>er zijn geen klanten, boekhouders of teams aangemaakt of verwijderd</b>. Het klantenaantal is onveranderd: <b>${RAW_KLANTEN.length}</b>.<br>
+        Omzetbelastingnummers: <b>${rap.ingevuld}</b> nieuw ingevuld, <b>${rap.gewijzigd}</b> gewijzigd, <b>${rap.gelijk}</b> stonden al goed. Het fiscaal nummer wordt hieruit automatisch afgeleid.<br>
+        ${rap.rijen} rij(en) gelezen, ${rap.rijen - rap.nietGevonden.length} gekoppeld aan een bestaande klant.
+        ${lijst('Rijen uit het bestand zonder klant in dit dashboard — niet verwerkt', rap.nietGevonden, 'var(--amber)')}
+        ${lijst('Gekoppeld, maar geen nummer in het bestand', rap.zonderNummerInBestand)}
+        ${lijst('Nummer komt niet door de elfproef — mogelijk een typefout in de bron', rap.verdacht, 'var(--amber)')}
+        ${lijst('Klanten in dit dashboard die nog geen omzetbelastingnummer hebben', zonder)}
+      </div>`;
+    }
+    toast(`Fiscale nummers bijgewerkt: ${rap.ingevuld} ingevuld, ${rap.gewijzigd} gewijzigd — klantenaantal onveranderd (${RAW_KLANTEN.length}).`);
+    e.target.value = '';
+  });
+}
+
 function handleKlantenCSVUpload(e){
   const file = e.target.files[0]; if(!file) return;
   const resultBox = document.getElementById('klantImportResult');
@@ -13080,6 +13151,32 @@ function handleKlantenCSVUpload(e){
   readTabularFile(file, (rows, err)=>{
     if(err){ toast(err); if(resultBox) resultBox.innerHTML=''; return; }
     if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(resultBox) resultBox.innerHTML=''; return; }
+
+    /* Vooraf tellen welke rijen géén bestaande klant raken. Een export met meer klanten dan het
+       dashboard zou anders ongemerkt het klantenbestand laten groeien; daarom eerst expliciet
+       laten bevestigen, met de namen erbij, zodat de aanwas te verantwoorden is. */
+    const zouNieuwZijn = [];
+    rows.forEach(row=>{
+      const naamP = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
+      if(!naamP) return;
+      const extIdP = (findField(row,['Klantnummer']) || findField(row,['Id'])||'').trim();
+      let match = extIdP ? RAW_KLANTEN.find(k=>k.extId===extIdP) : null;
+      if(!match) match = vindKlantOpNaam(naamP);
+      if(!match) zouNieuwZijn.push(naamP);
+    });
+    if(zouNieuwZijn.length){
+      const voorbeeld = zouNieuwZijn.slice(0,15).join('\n· ');
+      const melding = `Dit bestand bevat ${zouNieuwZijn.length} klant(en) die nog niet in het dashboard staan.\n\n`
+        + `Je gaat van ${RAW_KLANTEN.length} naar ${RAW_KLANTEN.length + zouNieuwZijn.length} klanten.\n\n`
+        + `· ${voorbeeld}${zouNieuwZijn.length>15?`\n· … en nog ${zouNieuwZijn.length-15} andere`:''}\n\n`
+        + `Wil je deze klanten echt aanmaken?\n\n`
+        + `Wil je alleen bestaande klanten bijwerken, kies dan Annuleren en gebruik de knop "Fiscale nummers" — die maakt nooit nieuwe klanten aan.`;
+      if(!confirm(melding)){
+        if(resultBox) resultBox.innerHTML = `<div class="banner">Import geannuleerd — er is niets gewijzigd. Het klantenaantal is nog steeds <b>${RAW_KLANTEN.length}</b>.</div>`;
+        e.target.value = '';
+        return;
+      }
+    }
 
     const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, gecorrigeerdKlantnr:0, obIngevuld:0, obGewijzigd:0, obVerdacht:[], nieuweBoekhouders:[], nieuweTeams:[] };
     let fallbackBhId = null;
