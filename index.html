@@ -690,7 +690,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.21.3';
+const APP_VERSION = '2026.08.21.4';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1042,6 +1042,66 @@ function defaultFiscaleEenheid(){
     contactpersoonFunctie: '',
   };
 }
+/* ============================= OMZETBELASTINGNUMMER & FISCAAL NUMMER =============================
+   Een omzetbelastingnummer heeft de vorm NL123456789B01. De negen cijfers in het midden ZIJN het
+   fiscaal nummer: bij een rechtspersoon (B.V., V.O.F.) is dat het RSIN van de onderneming, bij een
+   eenmanszaak het BSN van de ondernemer zelf. Het nummer wordt daarom één keer per klant vastgelegd
+   (klant.obNummer) en overal waar een fiscaal nummer nodig is hieruit afgeleid, in plaats van per
+   document opnieuw ingetypt.
+
+   LET OP bij de IB-akkoordverklaring: alleen bij een eenmanszaak is het afgeleide nummer het BSN van
+   de persoon die aangifte doet. Bij een B.V. of V.O.F. hoort daar het RSIN van de onderneming in, en
+   dat is beslist NIET het fiscaal nummer van de DGA of de vennoot privé — daar wordt dus bewust niets
+   voorgevuld.
+
+   Omdat een BSN een persoonsgegeven is, wordt het nummer in de interface standaard afgeschermd
+   getoond (······1234) en pas volledig zichtbaar na een klik; in de gegenereerde brieven staat het
+   uiteraard voluit. */
+function fiscaalNummerUitOb(ruw){
+  let t = String(ruw||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  if(t.slice(0,2)==='NL') t = t.slice(2);
+  const m = t.match(/^(\d{9})(B\d{2})?$/);
+  return m ? m[1] : '';
+}
+function normaliseerObNummer(ruw){
+  let t = String(ruw||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  if(t.slice(0,2)==='NL') t = t.slice(2);
+  const m = t.match(/^(\d{9})(B\d{2})?$/);
+  if(!m) return String(ruw||'').trim();
+  return 'NL' + m[1] + (m[2] || '');
+}
+/* Elfproef op een BSN/RSIN: 9×d1 + 8×d2 + … + 2×d8 − d9 moet deelbaar zijn door 11. Wordt alleen
+   gebruikt om een zachte waarschuwing te tonen bij een vermoedelijke typefout in de bron. */
+function elfproefOk(negen){
+  if(!/^\d{9}$/.test(negen||'')) return false;
+  const d = String(negen).split('').map(Number);
+  let som = 0;
+  for(let i=0;i<8;i++) som += d[i]*(9-i);
+  som -= d[8];
+  return som % 11 === 0;
+}
+function maskeerNummer(waarde){
+  const t = String(waarde||'');
+  if(t.length <= 4) return t;
+  return '\u00b7'.repeat(Math.min(9, t.length-4)) + t.slice(-4);
+}
+/* Het effectieve omzetbelastingnummer voor een document: wat er expliciet is ingevuld, anders het
+   nummer dat bij de klant zelf staat. */
+function effObNummer(klant, expliciet){
+  const e = String(expliciet||'').trim();
+  if(e) return e;
+  return klant && klant.obNummer ? normaliseerObNummer(klant.obNummer) : '';
+}
+function effVpbFiscaalnummer(klant){
+  if(klant && klant.vpb && String(klant.vpb.fiscaalnummer||'').trim()) return String(klant.vpb.fiscaalnummer).trim();
+  return klant ? fiscaalNummerUitOb(klant.obNummer) : '';
+}
+function effIbFiscaalnummer(klant, persoonKey){
+  const p = klant && klant.ib ? klant.ib[persoonKey] : null;
+  if(p && String(p.fiscaalnummer||'').trim()) return String(p.fiscaalnummer).trim();
+  if(persoonKey === 'persoon1' && klant && /eenmanszaak/i.test(String(klant.vorm||''))) return fiscaalNummerUitOb(klant.obNummer);
+  return '';
+}
 function normaliseerFiscaleEenheid(fe){
   if(!fe || typeof fe !== 'object') fe = {};
   const defaults = defaultFiscaleEenheid();
@@ -1132,7 +1192,7 @@ function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
   const klant = {
-    id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'',
+    id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'', obNummer:data.obNummer||'',
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
@@ -5005,6 +5065,8 @@ function migrateData(){
       k.ib = normaliseerIbData(k.ib);
       k.vpb = normaliseerVpbData(k.vpb);
       k.fiscaleEenheid = normaliseerFiscaleEenheid(k.fiscaleEenheid);
+    if(typeof k.obNummer !== 'string') k.obNummer = '';
+    if(k.obNummer) k.obNummer = normaliseerObNummer(k.obNummer);
       k.betalingsuitstel = normaliseerBetalingsuitstel(k.betalingsuitstel);
       k.arbeidsovereenkomstDga = normaliseerArbeidsovereenkomstDga(k.arbeidsovereenkomstDga);
       k.managementovereenkomstDga = normaliseerManagementovereenkomstDga(k.managementovereenkomstDga);
@@ -9497,7 +9559,7 @@ function akkoordverklaringValidatie(klant){
   if(!ib.postcode) ontbreekt.push('postcode');
   if(!ib.plaats) ontbreekt.push('plaats');
   if(!ib.persoon1.voorletters || !ib.persoon1.achternaam) ontbreekt.push('naam persoon 1');
-  if(!ib.persoon1.fiscaalnummer) ontbreekt.push('fiscaalnummer persoon 1');
+  if(!effIbFiscaalnummer(klant,'persoon1')) ontbreekt.push('fiscaalnummer persoon 1');
   if(ib.tweePersonen){
     if(!ib.persoon2.voorletters || !ib.persoon2.achternaam) ontbreekt.push('naam persoon 2');
     if(!ib.persoon2.fiscaalnummer) ontbreekt.push('fiscaalnummer persoon 2');
@@ -9516,7 +9578,7 @@ function akkoordverklaringHTML(klant){
   const persoon1Weergave = ibPersoonWeergave(ib.persoon1);
   const persoon2Weergave = meerdere ? ibPersoonWeergave(ib.persoon2) : '';
   const ondergetekendenNamen = meerdere ? `${persoon1Weergave}, &amp; ${persoon2Weergave}` : persoon1Weergave;
-  const fiscaalRegel = meerdere ? `${ib.persoon1.fiscaalnummer} &amp; ${ib.persoon2.fiscaalnummer}` : ib.persoon1.fiscaalnummer;
+  const fiscaalRegel = meerdere ? `${effIbFiscaalnummer(klant,'persoon1')} &amp; ${effIbFiscaalnummer(klant,'persoon2')}` : effIbFiscaalnummer(klant,'persoon1');
   const gr = meerdere
     ? {naamZin:'De ondergetekenden', hebben:'Hebben', ondergetekendeCap:'Ondergetekenden', gaan:'gaan', verklarenWw:'verklaren'}
     : {naamZin:'De ondergetekende', hebben:'Heeft', ondergetekendeCap:'Ondergetekende', gaan:'gaat', verklarenWw:'verklaart'};
@@ -9601,7 +9663,7 @@ function vpbAkkoordverklaringValidatie(klant){
   if(!vpb) return 'Geen VPB-gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
   const ontbreekt = [];
   if(!vpb.boekjaar) ontbreekt.push('boekjaar');
-  if(!vpb.fiscaalnummer) ontbreekt.push('fiscaalnummer');
+  if(!effVpbFiscaalnummer(klant)) ontbreekt.push('fiscaalnummer');
   if(!vpb.straat) ontbreekt.push('vestigingsadres');
   if(!vpb.postcode) ontbreekt.push('postcode');
   if(!vpb.plaats) ontbreekt.push('plaats');
@@ -9643,7 +9705,7 @@ function vpbAkkoordverklaringHTML(klant){
     ${labelRij('Betreft:', ['Akkoordverklaring aangifte vennootschapsbelasting.', 'Akkoordverklaring deponering publicatiestukken in het handelsregister.'])}
     ${labelRij('Terzake van:', [`Aangifte vennootschapsbelasting over boekjaar ${jaar}.`, `Opgemaakt d.d. ${vandaag}.`])}
     <div style="margin-bottom:12px;"></div>
-    ${labelRij('Fiscaalnummer:', vpb.fiscaalnummer)}
+    ${labelRij('Fiscaalnummer:', effVpbFiscaalnummer(klant))}
     <div style="margin-bottom:12px;"></div>
 
     <p style="margin:0 0 12px;">De ondergetekende, ${klant.naam}, gevestigd te ${vpb.plaats}; ${vpb.straat}; ${vpb.postcode}, hierbij vertegenwoordigd door ${vertegenwoordigerWeergave} (${vt.functie || 'Directeur'}),</p>
@@ -9762,7 +9824,7 @@ function fiscaleEenheidValidatie(klant){
   const ontbreekt = [];
   const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
   if(!dochter) ontbreekt.push('dochteronderneming (koppel een bestaande klant)');
-  if(!fe.moederOmzetbelastingnummer) ontbreekt.push('eigen omzetbelastingnummer');
+  if(!effObNummer(klant, fe.moederOmzetbelastingnummer)) ontbreekt.push('eigen omzetbelastingnummer');
   if(!fe.dochterOmzetbelastingnummer) ontbreekt.push('omzetbelastingnummer dochteronderneming');
   if(!fe.kantoorId || !belastingkantoor(fe.kantoorId)) ontbreekt.push('belastingkantoor');
   if(!fe.contactpersoon) ontbreekt.push('contactpersoon');
@@ -9821,7 +9883,7 @@ function fiscaleEenheidVerzoekHTML(klant){
     <p style="margin:0 0 12px;">Tevens verzoeken wij u <b>subnummers te verstrekken</b> zodanig dat beide B.V&rsquo;s afzonderlijk hun eigen aangiften kunnen verrichten (i.v.m. administratieve automatisering).</p>
 
     <ul style="margin:0 0 12px; padding-left:20px;">
-      <li>${klant.naam} Omzetbelastingnummer ${fe.moederOmzetbelastingnummer} en haar 100% deelneming:</li>
+      <li>${klant.naam} Omzetbelastingnummer ${effObNummer(klant, fe.moederOmzetbelastingnummer)} en haar 100% deelneming:</li>
       <li>${dochterNaam} Omzetbelastingnummer ${fe.dochterOmzetbelastingnummer}</li>
     </ul>
 
@@ -9857,7 +9919,7 @@ function betalingsuitstelValidatie(klant){
   const ontbreekt = [];
   if(!bu.soortAangifte) ontbreekt.push('soort aangifte');
   if(!bu.periode) ontbreekt.push('periode');
-  if(!bu.omzetbelastingnummer) ontbreekt.push('omzetbelastingnummer');
+  if(!effObNummer(klant, bu.omzetbelastingnummer)) ontbreekt.push('omzetbelastingnummer');
   if(!bu.datumOorspronkelijkeAangifte) ontbreekt.push('datum oorspronkelijke aangifte');
   if(!bu.datumSuppletieaangifte) ontbreekt.push('datum suppletieaangifte');
   if(!bu.origineelBedrag) ontbreekt.push('oorspronkelijk bedrag');
@@ -9901,7 +9963,7 @@ function betalingsuitstelHTML(klant){
     ${labelRij('Betreft:', `Verzoek om betalingsuitstel aangifte ${bu.soortAangifte} ${bu.periode}`)}
     <div style="margin-bottom:12px;"></div>
     ${labelRij('Belastingplichtige:', klant.naam)}
-    ${labelRij('Omzetbelastingnummer:', bu.omzetbelastingnummer)}
+    ${labelRij('Omzetbelastingnummer:', effObNummer(klant, bu.omzetbelastingnummer))}
     <div style="margin-bottom:12px;"></div>
 
     <p style="margin:0 0 12px;">Geachte heer / mevrouw,</p>
@@ -10298,7 +10360,7 @@ function panelHTML(klant){
   <div class="panel-head">
     <div class="panel-head-top">
       <div>
-        <div class="panel-klant-meta" style="margin-top:0; color:rgba(255,255,255,.8);">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}</div>
+        <div class="panel-klant-meta" style="margin-top:0; color:rgba(255,255,255,.8);">${klant.vorm}${klant.extId?` · Klantnr. ${klant.extId}`:''}${klant.kvk?` · KvK ${klant.kvk}`:''}${klant.obNummer?` · <span data-fisc-toon="${klant.id}" title="Klik om het volledige nummer te tonen" style="cursor:pointer; border-bottom:1px dotted rgba(255,255,255,.5);">Fiscaalnr. <span id="fiscWaarde-${klant.id}">${maskeerNummer(fiscaalNummerUitOb(klant.obNummer))}</span></span>`:''}</div>
         <div class="panel-klant-name">${klant.naam}</div>
         <div class="panel-klant-meta">
           <span><i class="ti ti-user" aria-hidden="true"></i> ${klant.contact}</span>
@@ -10686,6 +10748,8 @@ function editKlantFormHTML(klant){
       <div class="field-row"><label>Boekhouder*</label><select id="editKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${bhOptions}</select></div>
       <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="editKlantExtId" value="${klant.extId||''}" placeholder="bv. 1147"></div>
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="editKlantKvk" value="${klant.kvk||''}"></div>
+      <div class="field-row"><label>Omzetbelastingnr.</label><input type="text" id="editKlantOb" value="${(klant.obNummer||'').replace(/"/g,'&quot;')}" placeholder="NL123456789B01"></div>
+      ${klant.obNummer ? `<div style="font-size:11px; color:var(--muted); margin:-4px 0 10px 160px;">Fiscaal nummer hieruit: <b>${fiscaalNummerUitOb(klant.obNummer)||'—'}</b>${fiscaalNummerUitOb(klant.obNummer) && !elfproefOk(fiscaalNummerUitOb(klant.obNummer)) ? ` <span style="color:var(--amber);">· komt niet door de elfproef, controleer het nummer</span>` : ''}</div>` : ''}
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
       ${magLhBewerken() ? `<div class="field-row"><label>E-mail loonheffing</label><input type="text" id="editKlantLhEmail" value="${klant.lhEmail||''}" placeholder="alleen als dit afwijkt van het algemene adres"></div>
@@ -10736,6 +10800,7 @@ function addKlantFormHTML(){
       <div class="field-row"><label>Boekhouder*</label><select id="newKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${bhOptions || '<option value="">Voeg eerst een boekhouder toe</option>'}</select></div>
       <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="newKlantExtId" placeholder="bv. 1147"></div>
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="newKlantKvk"></div>
+      <div class="field-row"><label>Omzetbelastingnr.</label><input type="text" id="newKlantOb" placeholder="NL123456789B01"></div>
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="newKlantEmail" placeholder="naam@bedrijf.nl"></div>
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="newKlantTel" placeholder="+316..."></div>
@@ -10868,6 +10933,7 @@ function openAddKlantPanel(silent){
     addKlant({
       naam, vorm:document.getElementById('newKlantVorm').value, bh:bhId,
       kvk:document.getElementById('newKlantKvk').value.trim(),
+      obNummer: normaliseerObNummer((document.getElementById('newKlantOb')||{}).value||''),
       extId:document.getElementById('newKlantExtId').value.trim(),
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
@@ -11001,6 +11067,7 @@ function attachEditKlantHandlers(klant){
     klant.vorm = document.getElementById('editKlantVorm').value;
     klant.bh = bhId;
     klant.kvk = document.getElementById('editKlantKvk').value.trim();
+    klant.obNummer = normaliseerObNummer((document.getElementById('editKlantOb')||{}).value||'');
     klant.extId = document.getElementById('editKlantExtId').value.trim();
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
@@ -13014,7 +13081,7 @@ function handleKlantenCSVUpload(e){
     if(err){ toast(err); if(resultBox) resultBox.innerHTML=''; return; }
     if(!rows || !rows.length){ toast('Geen rijen gevonden in het bestand.'); if(resultBox) resultBox.innerHTML=''; return; }
 
-    const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, gecorrigeerdKlantnr:0, nieuweBoekhouders:[], nieuweTeams:[] };
+    const report = { nieuw:0, bijgewerkt:0, overgeslagen:0, gecorrigeerdKlantnr:0, obIngevuld:0, obGewijzigd:0, obVerdacht:[], nieuweBoekhouders:[], nieuweTeams:[] };
     let fallbackBhId = null;
     const getFallbackBh = ()=>{
       if(fallbackBhId) return fallbackBhId;
@@ -13030,6 +13097,11 @@ function handleKlantenCSVUpload(e){
       const extId = (findField(row,['Klantnummer']) || findField(row,['Id'])||'').trim();
       const vorm = (findField(row,['Rechtsvorm'])||'').trim();
       const kvk = (findField(row,['KvK nummer','KVK nummer','Kvk nummer'])||'').trim();
+      const obNummer = normaliseerObNummer(findField(row,['BTW nummer','BTW-nummer','Btw nummer','Omzetbelastingnummer','BTW','Vat number'])||'');
+      if(obNummer){
+        const negen = fiscaalNummerUitOb(obNummer);
+        if(!negen || !elfproefOk(negen)) report.obVerdacht.push(naam);
+      }
       const contact = (findField(row,['Contactpersoon'])||findField(row,['Voornaam'])||'').trim();
       const email = (findField(row,['E-mail','Email'])||'').trim();
       const tel = (findField(row,['Telefoon'])||'').trim();
@@ -13064,6 +13136,8 @@ function handleKlantenCSVUpload(e){
         bestaand.naam = naam;
         if(vorm) bestaand.vorm = vorm;
         if(kvk) bestaand.kvk = kvk;
+        if(obNummer && !bestaand.obNummer){ bestaand.obNummer = obNummer; report.obIngevuld++; }
+        else if(obNummer && bestaand.obNummer !== obNummer){ bestaand.obNummer = obNummer; report.obGewijzigd++; }
         if(contact) bestaand.contact = contact;
         if(email) bestaand.email = email;
         if(tel) bestaand.tel = tel;
@@ -13077,7 +13151,7 @@ function handleKlantenCSVUpload(e){
       } else {
         const id = nextId(RAW_KLANTEN,'k');
         const klant = {
-          id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, contact, email, tel,
+          id, naam, vorm: vorm||'Onbekend', bh:bhId, kvk, obNummer, contact, email, tel,
           doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', extId,
           ib: defaultIbData(),
           vpb: defaultVpbData(),
@@ -13104,6 +13178,8 @@ function handleKlantenCSVUpload(e){
     if(box){
       box.innerHTML = `<div class="banner">
         <i class="ti ti-circle-check" aria-hidden="true"></i> Import klaar uit <b>${file.name}</b>: <b>${report.nieuw}</b> nieuwe klant(en), <b>${report.bijgewerkt}</b> bijgewerkt${report.gecorrigeerdKlantnr?`, <b>${report.gecorrigeerdKlantnr}</b> klantnummer(s) gecorrigeerd`:''}${report.overgeslagen?`, <b>${report.overgeslagen}</b> overgeslagen (geen naam gevonden)`:''}.<br>
+        ${(report.obIngevuld||report.obGewijzigd) ? `Omzetbelastingnummers: <b>${report.obIngevuld}</b> ingevuld${report.obGewijzigd?`, <b>${report.obGewijzigd}</b> bijgewerkt`:''} — het fiscaal nummer wordt hieruit automatisch afgeleid.<br>` : ''}
+        ${report.obVerdacht && report.obVerdacht.length ? `<span style="color:var(--amber);">Let op: bij <b>${report.obVerdacht.length}</b> klant(en) komt het nummer niet door de elfproef en is er mogelijk een typefout in de bron: ${report.obVerdacht.slice(0,8).join(', ')}${report.obVerdacht.length>8?' …':''}.</span><br>` : ''}
         ${bhList.length ? `Nieuwe boekhouders aangemaakt: ${bhList.join(', ')}.<br>` : ''}
         ${teamList.length ? `Nieuwe teams aangemaakt: ${teamList.join(', ')}.<br>` : ''}
         Let op: deadlinedata (OB/VPB/LH/JR) zaten niet in dit bestand en zijn dus niet ingevuld — die stel je per klant handmatig in (met eventueel een herhaling).
@@ -13193,6 +13269,18 @@ function renderBulkTxnPreview(rows){
 
 function attachPanelHandlers(klant){
   const f = STORE[klant.id];
+  /* Fiscaal nummer staat afgeschermd op de kaart (het bevat bij een eenmanszaak een BSN); één klik
+     toont het volledig, een tweede klik schermt het weer af. */
+  document.querySelectorAll('[data-fisc-toon]').forEach(el=>el.addEventListener('click', ()=>{
+    const kid = el.getAttribute('data-fisc-toon');
+    const veld = document.getElementById('fiscWaarde-'+kid);
+    const k = RAW_KLANTEN.find(x=>x.id===kid);
+    if(!veld || !k) return;
+    const vol = fiscaalNummerUitOb(k.obNummer);
+    const nuZichtbaar = veld.textContent.trim() === vol;
+    veld.textContent = nuZichtbaar ? maskeerNummer(vol) : vol;
+    el.title = nuZichtbaar ? 'Klik om het volledige nummer te tonen' : 'Klik om weer af te schermen';
+  }));
   document.querySelectorAll('[data-panel-focus]').forEach(el=>el.addEventListener('click', ()=>{
     const panel = document.getElementById('panel');
     if(panel){ panel.classList.toggle('is-focus'); }
