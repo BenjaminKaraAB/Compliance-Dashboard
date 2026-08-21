@@ -690,7 +690,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.21.5';
+const APP_VERSION = '2026.08.21.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -7545,7 +7545,7 @@ function klantenHTML(){
   return `
   <div class="section">
     <div class="section-head">
-      <span class="hint">${RAW_KLANTEN.length} klanten · ${BOEKHOUDERS.length} boekhouders</span>
+      <span class="hint">${RAW_KLANTEN.length} klanten · ${BOEKHOUDERS.length} boekhouders · <span title="Aantal klanten met een omzetbelastingnummer, waaruit het fiscaal nummer wordt afgeleid.">${RAW_KLANTEN.filter(k=>k.obNummer).length} met fiscaal nummer</span></span>
       <div style="display:flex; gap:8px; align-items:center;">
         <div class="view-toggle">
           <button data-klanten-view="tabel" class="${STATE.klantenView==='tabel'?'is-active':''}" title="Tabelweergave"><i class="ti ti-list" aria-hidden="true"></i></button>
