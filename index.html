@@ -221,8 +221,38 @@
 
   .ai-launch-btn{background:var(--primary-bg); border:1px solid transparent; color:var(--primary-dark);}
   .ai-launch-btn:hover{background:var(--primary-bg); filter:brightness(0.97);}
-  .nav-badge{margin-left:auto; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; background:var(--amber-bg); color:#8a4b06; padding:2px 6px; border-radius:20px;}
-  html[data-theme="dark"] .nav-badge{background:rgba(250,199,117,.16); color:#facc7a;}
+  .nav-badge{margin-left:auto; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; background:var(--gray-bg); color:var(--muted2); padding:2px 6px; border-radius:20px;}
+  html[data-theme="dark"] .nav-badge{background:#1e293b; color:#64748b;}
+  /* ---- Visuele polish 21-8-2026: rustiger, strakker, minder ruis ---- */
+  /* Verwijderknoppen pas tonen bij hover over de rij/kaart (voorkomt misklikken en oogt rustiger) */
+  tr [data-delete-klant], tr [data-delete-auto], .bh-card [data-delete-bh]{opacity:0; transition:opacity .15s ease;}
+  tr:hover [data-delete-klant], tr:focus-within [data-delete-klant],
+  tr:hover [data-delete-auto], tr:focus-within [data-delete-auto],
+  .bh-card:hover [data-delete-bh], .bh-card:focus-within [data-delete-bh]{opacity:1;}
+  @media (hover:none){ tr [data-delete-klant], tr [data-delete-auto], .bh-card [data-delete-bh]{opacity:1;} }
+  /* N.v.t./leeg: subtiel streepje i.p.v. grijze pill */
+  .nvt-dash{color:var(--muted2); display:inline-block; min-width:22px; text-align:left; opacity:.7;}
+  /* Klantenlijst: 'op schema' en 'ingediend' gedempt zodat alleen afwijkingen opvallen */
+  .klanten-tabel .badge.green, .klanten-tabel .badge.blue{background:transparent; border-color:transparent; color:var(--muted); font-weight:500; padding-left:0;}
+  .klanten-tabel .badge.green .dot{opacity:.75;} .klanten-tabel .badge.blue .dot{opacity:.75;}
+  /* Sync-status als nette chip in de topbar */
+  #syncIndicator{border-radius:20px; font-size:11.5px;}
+  #syncIndicator.sync-fout{background:var(--red-bg); border-color:var(--red-brd); color:var(--red) !important;}
+  #syncIndicator.sync-ok{color:var(--green) !important;}
+  /* KPI-tegels op Overzicht: nul-waarden dempen zodat kleur = signaal */
+  .kpi-card.is-nul{opacity:.55; filter:grayscale(.35);}
+  /* Agenda: één regel per punt, toewijs-dropdown pas bij hover */
+  .agenda-item .agenda-tekst{white-space:nowrap;}
+  .agenda-item select[data-agenda-toewijs]{opacity:0; transition:opacity .15s ease;}
+  .agenda-item:hover select[data-agenda-toewijs], .agenda-item:focus-within select[data-agenda-toewijs]{opacity:1;}
+  @media (hover:none){ .agenda-item select[data-agenda-toewijs]{opacity:1;} }
+  /* Checkboxlijsten (Admin/Instellingen) in kolommen */
+  .check-kolommen{column-count:2; column-gap:28px;}
+  @media(min-width:1500px){ .check-kolommen{column-count:3;} }
+  @media(max-width:800px){ .check-kolommen{column-count:1;} }
+  .check-kolommen label{break-inside:avoid;}
+  /* Rustiger maandbalkjes Loonheffingen */
+  .lh-week-bar{border-radius:4px;}
   #aiHost .ai-overlay{position:fixed; inset:0; z-index:70;}
   #aiHost .ai-panel{position:fixed; top:60px; right:22px; width:380px; max-width:calc(100vw - 44px); height:min(560px, 70vh); background:var(--card); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); z-index:71; overflow:hidden; display:flex; flex-direction:column; animation:notifIn .18s cubic-bezier(.16,1,.3,1);}
   #aiHost .ai-head{padding:12px 14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;}
@@ -347,7 +377,7 @@
   .topbar-right{display:flex; align-items:center; gap:14px;}
   .today-pill{font-size:12px; color:var(--muted); background:var(--bg); border:1px solid var(--border); padding:7px 12px; border-radius:20px;}
 
-  .content{padding:24px 28px 60px; flex:1;}
+  .content{padding:24px 28px 60px; flex:1; max-width:1640px; margin:0 auto; width:100%; box-sizing:border-box;}
 
   /* KPI cards */
   .kpi-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px;}
@@ -652,7 +682,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.20.23';
+const APP_VERSION = '2026.08.21.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1129,7 +1159,10 @@ function addKlant(data){
   persistMeta(); persist();
   return klant;
 }
-const BH_KLEUREN_CYCLUS = ['#2f5dfc','#0e9488','#c9770a','#7c3aed','#dc2626','#0891b2','#65a30d','#be185d'];
+const BH_KLEUREN_CYCLUS = ['#1D9E75','#0E7FA3','#3B6FB6','#6D5BD0','#0F766E','#B25E09','#A2456F','#475569'];
+/* Oude felle avatarkleuren één keer omzetten naar het rustige palet (zelfde tint, gedempt).
+   Handmatig gekozen kleuren die niet in de oude cyclus zaten blijven staan. */
+const BH_KLEUR_REMAP = {'#2f5dfc':'#3B6FB6','#0e9488':'#0F766E','#c9770a':'#B25E09','#7c3aed':'#6D5BD0','#dc2626':'#A85454','#0891b2':'#0E7FA3','#65a30d':'#5F8A3A','#be185d':'#A2456F','#e91e63':'#A2456F','#f59e0b':'#B25E09','#facc15':'#A98A1F','#fde047':'#A98A1F','#eab308':'#A98A1F','#ec4899':'#A2456F','#f472b6':'#A2456F','#a855f7':'#6D5BD0','#22c55e':'#1D9E75','#ef4444':'#A85454','#f97316':'#B25E09'};
 function volgendeAutoKleur(){ return BH_KLEUREN_CYCLUS[BOEKHOUDERS.length % BH_KLEUREN_CYCLUS.length]; }
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
@@ -1959,10 +1992,12 @@ async function fetchRemoteAndMerge(showFeedback){
 function updateSyncIndicator(){
   const el = document.getElementById('syncIndicator');
   if(!el) return;
+  el.classList.remove('sync-fout','sync-ok');
   if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '<i class="ti ti-cloud-off" aria-hidden="true"></i> Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
-  if(SYNC.lastError){ el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt'; el.style.color = 'var(--red)'; return; }
+  if(SYNC.lastError){ el.classList.add('sync-fout'); el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt'; el.style.color = ''; el.title = 'Klik om opnieuw te synchroniseren — details bij Instellingen'; return; }
+  el.classList.add('sync-ok');
   el.innerHTML = '<i class="ti ti-cloud" aria-hidden="true"></i> '+SYNC.account.username+(SYNC.lastSync ? ' · '+new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '');
-  el.style.color = 'var(--green)';
+  el.style.color = '';
 }
 
 /* ============================= BESTANDEN INLEZEN (CSV/Excel, gedeeld door importers) ============================= */
@@ -2094,6 +2129,7 @@ function badge(entry, opts){
   if(opts && opts.days && st.dagen!==undefined){
     extra = st.dagen<0 ? ` · ${Math.abs(st.dagen)}d te laat` : ` · nog ${st.dagen}d`;
   }
+  if(st.key==='na' && !(opts && opts.pill)) return '<span class="nvt-dash" title="Niet van toepassing">—</span>';
   return `<span class="badge ${meta.cls}"><span class="dot ${meta.cls}"></span>${meta.label}${extra}</span>`;
 }
 function worstStatus(klant){
@@ -5127,6 +5163,8 @@ function migrateData(){
     if(!b.teamHistorie.length) b.teamHistorie = [{team:b.team||'', vanaf:''}];
     b.teamHistorie.sort((a,c)=>String(a.vanaf).localeCompare(String(c.vanaf)));
     b.team = teamVanOp(b.id, momentNaarIso());
+    const kMap = BH_KLEUR_REMAP[String(b.kleur||'').toLowerCase()];
+    if(kMap) b.kleur = kMap;
   });
   INVENTARIS_ITEMS.forEach(it=>{
     if(typeof it.naam !== 'string') it.naam = it.naam ? String(it.naam) : '';
@@ -6844,8 +6882,8 @@ function agendaItemHTML(it){
     <button class="btn sm ghost" data-agenda-vink="${it.key}" title="${it.klaar ? `Afgevinkt door ${it.klaarDoor||'onbekend'} — klik om terug te zetten` : 'Afvinken'}" aria-label="Afvinken" style="padding:2px 5px; flex-shrink:0;">
       <i class="ti ${it.klaar?'ti-square-check':'ti-square'}" style="font-size:16px; ${it.klaar?'color:var(--green);':''}" aria-hidden="true"></i>
     </button>
-    <span style="flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; ${it.klaar?'text-decoration:line-through; color:var(--muted);':''} ${klikbaar?'cursor:pointer;':''}"
-      ${it.klantId?`data-agenda-open="${it.klantId}" title="Klantpaneel openen"`:''} ${!it.klantId && it.nav?`data-agenda-nav="${it.nav}" title="Naar de betreffende pagina"`:''}>${String(it.tekst).replace(/</g,'&lt;')}</span>
+    <span class="agenda-tekst" style="flex:1; font-size:12.5px; min-width:0; overflow:hidden; text-overflow:ellipsis; ${it.klaar?'text-decoration:line-through; color:var(--muted);':''} ${klikbaar?'cursor:pointer;':''}"
+      ${it.klantId?`data-agenda-open="${it.klantId}" title="${String(it.tekst).replace(/"/g,'&quot;').replace(/</g,'&lt;')} — klik voor het klantpaneel"`:''} ${!it.klantId && it.nav?`data-agenda-nav="${it.nav}" title="${String(it.tekst).replace(/"/g,'&quot;').replace(/</g,'&lt;')}"`:''} ${!klikbaar?`title="${String(it.tekst).replace(/"/g,'&quot;').replace(/</g,'&lt;')}"`:''}>${String(it.tekst).replace(/</g,'&lt;')}</span>
     ${wie ? `<span title="Toegewezen aan ${wie.naam}" style="width:20px; height:20px; border-radius:50%; background:${wie.kleur||'#9ca3af'}22; color:var(--text); border:1px solid ${wie.kleur||'#9ca3af'}; font-size:9px; font-weight:600; display:flex; align-items:center; justify-content:center; flex-shrink:0;">${initialen}</span>` : ''}
     ${magTakenToewijzen() ? `<select data-agenda-toewijs="${it.key}" title="Toewijzen aan een medewerker" style="width:${wie?'18px':'92px'}; padding:3px 2px; border:1px solid var(--border); border-radius:6px; font-size:10.5px; color:var(--muted); flex-shrink:0;">${wieOpties}</select>` : ''}
     <span style="font-size:9.5px; background:${meta.bg}; color:${meta.fg}; border-radius:10px; padding:2px 8px; white-space:nowrap; flex-shrink:0;">${meta.label}</span>
@@ -7039,7 +7077,7 @@ function mijnWerkHTML(){
   rest.slice().sort((a,b)=>a.datum<b.datum?-1:1).forEach(it=>{ if(!perDag.has(it.datum)) perDag.set(it.datum, []); perDag.get(it.datum).push(it); });
   perDag.forEach(its=>its.sort((a,b)=>{ if(a.klaar!==b.klaar) return a.klaar?1:-1; return sorteer==='prioriteit' ? prioRang[a.prioriteit]-prioRang[b.prioriteit] : 0; }));
 
-  const kpiTegel = (label, n, kleur)=>`<div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 12px;"><div style="font-size:10.5px; color:var(--muted2);">${label}</div><div style="font-size:20px; font-weight:700; margin-top:2px; ${kleur?`color:${kleur};`:''}">${n}</div></div>`;
+  const kpiTegel = (label, n, kleur)=>`<div class="kpi-card ${n?'':'is-nul'}"><div class="kpi-label">${label}</div><div class="kpi-value" style="${kleur&&n?`color:${kleur};`:''}">${n}</div></div>`;
   const chipEl = (id, label, n, kleur)=> chip===id
     ? `<span data-mw-chip="${id}" style="font-size:11px; border-radius:14px; padding:3px 12px; background:#26215C; color:#EEEDFE; cursor:pointer;">${label} ${n}</span>`
     : `<span data-mw-chip="${id}" style="font-size:11px; border:1px solid var(--border); border-radius:14px; padding:3px 12px; cursor:pointer; ${kleur?`color:${kleur};`:''}">${label} ${n}</span>`;
@@ -7097,10 +7135,7 @@ function mijnWerkHTML(){
 
   return `
   <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-    <div>
-      <p style="margin:0; font-size:17px; font-weight:700;"><i class="ti ti-briefcase" aria-hidden="true"></i> Mijn Werk</p>
-      <p style="margin:2px 0 0; font-size:11.5px; color:var(--muted);">Alles waar jij verantwoordelijk voor bent — uit deadlines, meetings, kwartaalthema's en loonheffing</p>
-    </div>
+    <div></div>
     <div style="display:flex; gap:6px; align-items:center;">
       <select id="mwScopeSel" style="padding:6px 10px; border:1px solid var(--border-strong, var(--border)); border-radius:14px; font-size:11px;">
         <option value="mij" ${sc.modus==='mij'?'selected':''}>Alleen ik</option>
@@ -7201,7 +7236,7 @@ function dashboardHTML(){
       <div class="kpi-value">${klantenGefilterd.length}</div>
       <div class="kpi-sub" style="color:var(--muted)">${teamFilter ? boekhoudersOfTeam(teamFilter).length : BOEKHOUDERS.length} boekhouders</div>
     </div>
-    <div class="kpi-card red">
+    <div class="kpi-card red ${cnt.actie?'':'is-nul'}">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
         <div class="kpi-label">Actie vereist</div>
         <i class="ti ti-alert-triangle" style="font-size:16px; color:var(--red);" aria-hidden="true"></i>
@@ -7209,7 +7244,7 @@ function dashboardHTML(){
       <div class="kpi-value">${cnt.actie}</div>
       <div class="kpi-sub" style="color:var(--red)">Verlopen of ≤ 7 dagen</div>
     </div>
-    <div class="kpi-card amber">
+    <div class="kpi-card amber ${cnt.nadert?'':'is-nul'}">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
         <div class="kpi-label">Deadline nadert</div>
         <i class="ti ti-clock" style="font-size:16px; color:var(--amber);" aria-hidden="true"></i>
@@ -7326,7 +7361,7 @@ function boekhoudersHTML(){
   }).join('');
   return `
   <div class="section-head" style="padding:0 0 14px; border-bottom:none;">
-    <h3 style="font-size:15px;">Boekhouders</h3>
+    <span class="hint">${BOEKHOUDERS.length} collega's</span>
     <button class="btn sm primary" data-add-bh-btn>+ Nieuwe boekhouder</button>
   </div>
   ${BOEKHOUDERS.length ? `<div class="bh-grid">${cards}</div>` : `<div class="section"><div class="empty-state">Nog geen boekhouders toegevoegd. Klik op "+ Nieuwe boekhouder" om te beginnen, of koppel Microsoft-sync bij Instellingen om bestaande gegevens op te halen.</div></div>`}`;
@@ -7401,7 +7436,7 @@ function teamsHTML(){
 
   return `
   <div class="section-head" style="padding:0 0 14px; border-bottom:none;">
-    <h3 style="font-size:15px;">Teams</h3>
+    <span class="hint">${TEAMS.length} team(s) · ${BOEKHOUDERS.length} collega's</span>
     <button class="btn sm primary" data-add-team-btn>+ Nieuw team</button>
   </div>
   ${TEAMS.length ? cards : `<div class="section"><div class="empty-state">Nog geen teams aangemaakt. Klik op "+ Nieuw team" om te beginnen.</div></div>`}`;
@@ -7440,7 +7475,7 @@ function klantenHTML(){
   return `
   <div class="section">
     <div class="section-head">
-      <h3>Klantenlijst</h3>
+      <div></div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div class="view-toggle">
           <button data-klanten-view="tabel" class="${STATE.klantenView==='tabel'?'is-active':''}" title="Tabelweergave"><i class="ti ti-list" aria-hidden="true"></i></button>
@@ -7515,8 +7550,8 @@ function klantenHTML(){
             <td>${badge(effDL(k,'VPB'))}</td>
             <td>${badge(effDL(k,'LH'))}</td>
             <td>${badge(effDL(k,'JR'))}</td>
-            <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="badge gray"><span class="dot gray"></span>Geen</span>'}</td>
-            <td style="font-variant-numeric:tabular-nums;">${fmtEUR(STORE[k.id].saldo)}</td>
+            <td>${ov.length? badge(ov.find(o=>statusOf(o).key===ovWorst)) : '<span class="nvt-dash" title="Geen overige deadlines">—</span>'}</td>
+            <td style="font-variant-numeric:tabular-nums;">${STORE[k.id].saldo ? fmtEUR(STORE[k.id].saldo) : '<span class="nvt-dash" title="Geen open saldo">—</span>'}</td>
             <td style="text-align:right; white-space:nowrap;">
               ${magVerwijderen ? `<button class="btn sm ghost" data-delete-klant="${k.id}" title="Klant verwijderen" style="color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>` : ''}
               <button class="btn sm ghost" data-open-klant="${k.id}">Openen <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
@@ -8399,7 +8434,7 @@ function loonheffingHTML(){
 
 /* ============================= VIEW: AUTOLIJST ============================= */
 function autoBedragCel(bedrag){
-  if(bedrag===null) return `<span class="badge gray"><span class="dot gray"></span>N.v.t.</span>`;
+  if(bedrag===null) return `<span class="nvt-dash" title="Niet van toepassing">—</span>`;
   return fmtEUR(bedrag);
 }
 function autoWaarschuwingen(auto){
@@ -8650,24 +8685,24 @@ function adminHTML(){
     ${kop('bevoegdheid','Bevoegdheid Loonheffingen')}
     ${isOpen('bevoegdheid') ? `<div class="section-body pad">
       <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan welke boekhouders de Loonheffingen-pagina mogen bewerken (taken afvinken, aantekeningen, periode afronden, bulk-deadline). Anderen zien de statuslijst alleen ter inzage. Niemand aanvinken = geen restrictie, dan mag iedereen bewerken.</p>
-      ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+      ${BOEKHOUDERS.length ? `<div class="check-kolommen">` : ''}${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
         <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
           <input type="checkbox" data-lh-access-check value="${b.id}" ${(RECHTEN.lhBevoegdeBhIds||[]).includes(b.id)?'checked':''}>
           <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
           ${b.naam}${b.email? ' · '+b.email : ''}
-        </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
+        </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}${BOEKHOUDERS.length ? `</div>` : ''}
       <div style="margin-top:10px;">
         <button class="btn sm primary" data-save-lh-access>Bevoegdheid opslaan</button>
       </div>
       <div style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
         <h4 style="margin:0 0 6px; font-size:13px;">Taken toewijzen (Agenda &amp; Mijn Werk)</h4>
         <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px;">Vink aan wie taken aan collega's mag toewijzen. Anderen kunnen wel taken aanmaken en afvinken, maar alleen voor zichzelf. Niemand aanvinken = geen restrictie. Admins mogen altijd toewijzen.</p>
-        ${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+        ${BOEKHOUDERS.length ? `<div class="check-kolommen">` : ''}${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
           <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; padding:6px 0;">
             <input type="checkbox" data-toewijs-access-check value="${b.id}" ${(RECHTEN.taakToewijzers||[]).includes(b.id)?'checked':''}>
             <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
             ${b.naam}${b.email? ' · '+b.email : ''}
-          </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}
+          </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}${BOEKHOUDERS.length ? `</div>` : ''}
         <div style="margin-top:10px;">
           <button class="btn sm primary" data-save-toewijs-access>Toewijs-bevoegdheid opslaan</button>
         </div>
