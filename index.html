@@ -235,6 +235,10 @@
   #aiHost .ai-msg-bubble{font-size:12.5px; line-height:1.5; padding:8px 11px; border-radius:12px; max-width:78%; background:var(--bg);}
   #aiHost .ai-msg-bubble{white-space:pre-wrap; word-break:break-word;}
   #aiHost .ai-msg-bubble a{color:inherit; text-decoration:underline;}
+  #aiHost .ai-actie-kaart{margin-top:8px; padding:9px 10px; background:var(--card); border:1px solid var(--border); border-radius:9px;}
+  #aiHost .ai-msg.user .ai-actie-kaart{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.3);}
+  #aiHost .ai-actie-kaart.ai-actie-klaar{display:flex; align-items:center; gap:6px; color:var(--green); font-size:12px; font-weight:600;}
+  #aiHost .ai-actie-kaart.ai-actie-weg{display:flex; align-items:center; gap:6px; color:var(--muted2); font-size:12px;}
   #aiHost .ai-msg.user .ai-msg-bubble{background:var(--primary); color:#fff; border-radius:12px 12px 2px 12px;}
   #aiHost .ai-msg.assistant .ai-msg-bubble{border-radius:12px 12px 12px 2px;}
   #aiHost .ai-foot{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--border);}
@@ -648,7 +652,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.20.22';
+const APP_VERSION = '2026.08.20.23';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5111,7 +5115,7 @@ function migrateData(){
   });
   AGENDA.punten.forEach(p=>{
     if(!['hoog','middel','laag'].includes(p.prioriteit)) p.prioriteit = 'middel';
-    if(!['handmatig','meeting','thema','initiatief'].includes(p.bronType)) p.bronType = 'handmatig';
+    if(!['handmatig','meeting','thema','initiatief','ai'].includes(p.bronType)) p.bronType = 'handmatig';
   });
   AGENDA.punten = AGENDA.punten.filter(p=>p && p.id && p.datum && String(p.tekst||'').trim());
   const agGrens = Date.now() - 120*86400000;
@@ -13994,10 +13998,21 @@ function renderAiPanel(){
   let host = document.getElementById('aiHost');
   if(!host){ host = document.createElement('div'); host.id = 'aiHost'; document.body.appendChild(host); }
   if(!AI_STATE.open){ host.innerHTML=''; return; }
-  const berichtenHtml = AI_STATE.messages.length ? AI_STATE.messages.map(m=>`
+  const prioLabel = { hoog:'Hoge', middel:'Gemiddelde', laag:'Lage' };
+  const berichtenHtml = AI_STATE.messages.length ? AI_STATE.messages.map((m,mi)=>`
     <div class="ai-msg ${m.role}">
       ${m.role==='assistant' ? '<div class="ai-msg-avatar"><i class="ti ti-sparkles" aria-hidden="true"></i></div>' : ''}
-      <div class="ai-msg-bubble">${aiLinkify(m.text)}</div>
+      <div class="ai-msg-bubble">${aiLinkify(m.text)}${m.actie && !m.actie.afgehandeld ? `
+        <div class="ai-actie-kaart">
+          <div class="ai-actie-regel"><i class="ti ti-checkbox" aria-hidden="true"></i> <b>${escHtml(m.actie.tekst)}</b></div>
+          <div class="ai-actie-regel hint" style="font-size:11px; color:var(--muted);">${fmtDate(m.actie.datum)} · ${prioLabel[m.actie.prioriteit]||'Gemiddelde'} prioriteit</div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button class="btn sm primary" data-ai-actie-bevestig="${mi}">Taak aanmaken</button>
+            <button class="btn sm ghost" data-ai-actie-annuleer="${mi}">Negeren</button>
+          </div>
+        </div>` : ''}${m.actie && m.actie.afgehandeld && !m.actie.genegeerd ? `
+        <div class="ai-actie-kaart ai-actie-klaar"><i class="ti ti-circle-check" aria-hidden="true"></i> Taak aangemaakt in Mijn Werk.</div>` : ''}${m.actie && m.actie.afgehandeld && m.actie.genegeerd ? `
+        <div class="ai-actie-kaart ai-actie-weg"><i class="ti ti-circle-minus" aria-hidden="true"></i> Voorstel genegeerd.</div>` : ''}</div>
     </div>`).join('') : `
     <div class="ai-empty">
       <i class="ti ti-sparkles" style="font-size:22px; color:var(--muted2);" aria-hidden="true"></i>
@@ -14023,6 +14038,16 @@ function renderAiPanel(){
     </div>
   `;
   host.querySelectorAll('[data-ai-close]').forEach(el=>el.addEventListener('click', aiSluiten));
+  host.querySelectorAll('[data-ai-actie-bevestig]').forEach(el=>el.addEventListener('click', ()=>{
+    aiActieUitvoeren(parseInt(el.getAttribute('data-ai-actie-bevestig'),10));
+  }));
+  host.querySelectorAll('[data-ai-actie-annuleer]').forEach(el=>el.addEventListener('click', ()=>{
+    const mi = parseInt(el.getAttribute('data-ai-actie-annuleer'),10);
+    const m = AI_STATE.messages[mi];
+    if(m && m.actie){ m.actie.afgehandeld = true; m.actie.genegeerd = true; }
+    _aiBewaarBerichten();
+    renderAiPanel();
+  }));
   const input = document.getElementById('aiInput');
   const stuur = ()=>{
     const tekst = (input.value||'').trim();
@@ -14060,11 +14085,31 @@ async function aiVerstuurBericht(tekst){
       throw new Error(`Server gaf status ${res.status}${errBody ? ' — ' + errBody.slice(0,200) : ''}`);
     }
     const data = await res.json();
-    AI_STATE.messages.push({role:'assistant', text: data.reply || data.fout || 'Geen antwoord ontvangen.'});
+    AI_STATE.messages.push({role:'assistant', text: data.reply || data.fout || 'Geen antwoord ontvangen.', actie: data.actie || null});
   }catch(e){
     AI_STATE.messages.push({role:'assistant', text: 'Kon de AI-assistent niet bereiken (' + ((e&&e.message)||'onbekende fout') + '). Controleer of de Cloudflare Worker actief is en het adres in AI_WORKER_URL klopt.'});
   }
   AI_STATE.loading = false;
+  _aiBewaarBerichten();
+  renderAiPanel();
+}
+/* Voert een door de AI voorgestelde actie pas uit na expliciete bevestiging door de gebruiker
+   (zie compliancebox-ai-worker.js: de worker mag zelf niets aanmaken, alleen voorstellen).
+   Op dit moment ondersteund: type 'taak' -> nieuw AGENDA.punten-item, zichtbaar in Mijn Werk/Agenda. */
+function aiActieUitvoeren(mi){
+  const m = AI_STATE.messages[mi];
+  if(!m || !m.actie || m.actie.afgehandeld) return;
+  const actie = m.actie;
+  if(actie.type === 'taak'){
+    if(!Array.isArray(AGENDA.punten)) AGENDA.punten = [];
+    AGENDA.punten.push({ id:'ap'+Date.now()+Math.floor(Math.random()*1000), datum: actie.datum, tekst: String(actie.tekst||'').slice(0,300),
+      toegewezen: mijnBoekhouderId()||null, klaar:false, status:null, prioriteit: actie.prioriteit||'middel',
+      bronType:'ai', bronLabel:'AI-assistent', door: huidigeGebruiker(), ts: Date.now() });
+    logActiviteit(`Taak aangemaakt via AI-assistent (${fmtDate(actie.datum)}): "${String(actie.tekst||'').slice(0,60)}"`);
+    persistMeta();
+    toast('Taak aangemaakt in Mijn Werk.');
+  }
+  actie.afgehandeld = true;
   _aiBewaarBerichten();
   renderAiPanel();
 }
