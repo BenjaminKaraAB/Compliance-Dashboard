@@ -63,7 +63,6 @@
   html[data-theme="dark"] .btn:hover{background:#334155;}
   html[data-theme="dark"] .btn.primary{background:#22c58a; color:#0b1220;}
   html[data-theme="dark"] .btn.primary:hover{background:#4be8a8;}
-  html[data-theme="dark"] .today-pill{background:#1e293b; border-color:#334155; color:#94a0bb;}
   html[data-theme="dark"] .search-wrap input{background:#1e293b; border-color:#334155; color:#f1f5f9;}
   html[data-theme="dark"] .search-wrap input:focus{background:#152036;}
   html[data-theme="dark"] .search-wrap .search-kbd{background:#0f172a; border-color:#334155; color:#94a0bb;}
@@ -236,9 +235,9 @@
   .klanten-tabel .badge.green, .klanten-tabel .badge.blue{background:transparent; border-color:transparent; color:var(--muted); font-weight:500; padding-left:0;}
   .klanten-tabel .badge.green .dot{opacity:.75;} .klanten-tabel .badge.blue .dot{opacity:.75;}
   /* Sync-status als nette chip in de topbar */
-  #syncIndicator{border-radius:20px; font-size:11px;}
+  #syncIndicator{border-radius:20px; font-size:11px; padding:6px 12px; background:var(--gray-bg); border-color:var(--gray-brd); color:var(--muted) !important; white-space:nowrap;}
   #syncIndicator.sync-fout{background:var(--red-bg); border-color:var(--red-brd); color:var(--red) !important;}
-  #syncIndicator.sync-ok{color:var(--green) !important;}
+  #syncIndicator.sync-ok{background:var(--green-bg); border-color:var(--green-brd); color:var(--green) !important;}
   /* KPI-tegels op Overzicht: nul-waarden dempen zodat kleur = signaal */
   .kpi-card.is-nul{opacity:.55; filter:grayscale(.35);}
   /* Agenda: één regel per punt, toewijs-dropdown pas bij hover */
@@ -374,8 +373,16 @@
   .search-wrap input:focus{border-color:var(--primary); background:#fff; box-shadow:0 0 0 3px rgba(34,197,138,.15);}
   .search-wrap svg{position:absolute; left:10px; top:9px; width:15px; height:15px; color:var(--muted2);}
   .search-wrap .search-kbd{position:absolute; right:10px; top:8px; font-size:11px; color:var(--muted); background:#fff; padding:2px 6px; border-radius:4px; border:1px solid var(--border); font-family:ui-monospace,monospace;}
-  .topbar-right{display:flex; align-items:center; gap:14px;}
-  .today-pill{font-size:12px; color:var(--muted); background:transparent; border:1px solid var(--border); padding:7px 12px; border-radius:20px;}
+  .topbar-right{display:flex; align-items:center; gap:12px;}
+  /* De losse icoonknoppen zitten in één omrand groepje, zodat de balk niet uit acht
+     even zware losse elementen bestaat. Het AI-knopje is het enige met reliëf. */
+  .topbar-tools{display:flex; align-items:center; gap:4px; padding:4px 5px; border:1px solid var(--border); border-radius:10px; background:var(--bg);}
+  .topbar-tools .btn.sm{padding:0; width:30px; height:30px; justify-content:center; border-radius:7px; border-color:transparent; background:transparent; color:var(--muted);}
+  .topbar-tools .btn.sm:hover{background:var(--card); color:var(--text);}
+  .topbar-tools .btn.sm i{font-size:16px;}
+  .topbar-tools .btn.ai-launch-btn{background:var(--card); border-color:var(--border); color:var(--primary-dark);}
+  .topbar-tools .btn.ai-launch-btn:hover{background:var(--card); color:var(--primary-dark); border-color:var(--primary);}
+  .topbar-tools .tools-scheiding{width:1px; height:18px; background:var(--border); margin:0 2px; flex:none;}
 
   .content{padding:24px 28px 60px; flex:1; max-width:1640px; margin:0 auto; width:100%; box-sizing:border-box;}
   /* Cijfers in tabellen en tegels op vaste breedte, zodat kolommen rustig uitlijnen */
@@ -690,7 +697,7 @@ html[data-theme="dark"] .tm-mention{background:#3d3f78; color:#c7c9f0;}
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
-const APP_VERSION = '2026.08.21.6';
+const APP_VERSION = '2026.08.21.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -2064,7 +2071,11 @@ function updateSyncIndicator(){
   if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '<i class="ti ti-cloud-off" aria-hidden="true"></i> Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
   if(SYNC.lastError){ el.classList.add('sync-fout'); el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt'; el.style.color = ''; el.title = 'Klik om opnieuw te synchroniseren — details bij Instellingen'; return; }
   el.classList.add('sync-ok');
-  el.innerHTML = '<i class="ti ti-cloud" aria-hidden="true"></i> '+SYNC.account.username+(SYNC.lastSync ? ' · '+new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '');
+  /* Het e-mailadres stond hier voluit en maakte de chip breder dan de rest van de balk;
+     het staat nu in de tooltip, in de balk alleen de status en het tijdstip. */
+  const tijd = SYNC.lastSync ? new Date(SYNC.lastSync).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '';
+  el.innerHTML = '<i class="ti ti-cloud" aria-hidden="true"></i> Gesynchroniseerd'+(tijd?' · '+tijd:'');
+  el.title = 'Gekoppeld als '+SYNC.account.username+(tijd?' — laatste synchronisatie om '+tijd:'')+'. Klik om nu te synchroniseren.';
   el.style.color = '';
 }
 
@@ -2490,13 +2501,15 @@ function render(){
         </div>
         <div class="topbar-right">
           <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/><span class="search-kbd">⌘K</span></div>
+          <div class="topbar-tools">
+            <button class="btn sm ai-launch-btn" id="aiToggleBtn" title="AI-assistent" aria-label="AI-assistent"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
+            <button class="btn sm ghost" id="chatTopBtn" data-top-app="msteams" title="Teams-chat" aria-label="Teams-chat" style="position:relative;"><i class="ti ti-message-circle" aria-hidden="true"></i><span id="topTellerChat" class="app-teller" style="display:none;"></span></button>
+            <button class="btn sm ghost" id="mailTopBtn" data-top-app="outlook" title="Outlook" aria-label="Outlook" style="position:relative;"><i class="ti ti-mail" aria-hidden="true"></i><span id="topTellerMail" class="app-teller" style="display:none;"></span></button>
+            <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
+            <span class="tools-scheiding" aria-hidden="true"></span>
+            <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen"><i class="ti ti-moon" aria-hidden="true"></i></button>
+          </div>
           <button class="btn sm ghost" id="syncIndicator" data-sync-now title="Klik om nu te synchroniseren" style="font-weight:700;"></button>
-          <button class="btn sm ai-launch-btn" id="aiToggleBtn" title="AI-assistent" aria-label="AI-assistent" style="padding:6px 10px;"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
-          <button class="btn sm ghost" id="themeToggleBtn" title="Thema wisselen" aria-label="Thema wisselen" style="padding:6px 10px;"><i class="ti ti-moon" aria-hidden="true"></i></button>
-          <button class="btn sm ghost" id="chatTopBtn" data-top-app="msteams" title="Teams-chat" aria-label="Teams-chat" style="padding:6px 10px; position:relative;"><i class="ti ti-message-circle" aria-hidden="true"></i><span id="topTellerChat" class="app-teller" style="display:none;"></span></button>
-          <button class="btn sm ghost" id="mailTopBtn" data-top-app="outlook" title="Outlook" aria-label="Outlook" style="padding:6px 10px; position:relative;"><i class="ti ti-mail" aria-hidden="true"></i><span id="topTellerMail" class="app-teller" style="display:none;"></span></button>
-          <button class="btn sm ghost" id="notifToggleBtn" title="Meldingen" aria-label="Meldingen" style="padding:6px 10px; position:relative;"><i class="ti ti-bell" aria-hidden="true"></i><span id="notifDot" class="notif-dot" style="display:none;"></span></button>
-          <div class="today-pill"><i class="ti ti-calendar" aria-hidden="true"></i> ${TODAY.toLocaleDateString('nl-NL',{weekday:'long', day:'2-digit', month:'long', year:'numeric'})}</div>
         </div>
       </div>
       <div class="content" id="contentArea"></div>
