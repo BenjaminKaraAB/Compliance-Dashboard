@@ -401,7 +401,11 @@
   .rt-veld{border:1px solid var(--border); border-radius:0 0 8px 8px; background:var(--card); padding:10px 12px; min-height:74px; font-size:12px; color:var(--text); outline:none; overflow-wrap:break-word;}
   .rt-veld:focus{border-color:var(--primary); box-shadow:0 0 0 3px rgba(34,197,138,.15);}
   .rt-veld:empty::before{content:attr(data-leeg); color:var(--muted2);}
-  .rt-veld.rt-kort{min-height:40px;}
+  .rt-veld.rt-kort{min-height:38px;}
+  /* Bij de aantekeningen per taak staat de werkbalk gedempt tot je in het veld klikt — hij blijft
+     wel staan, want laten verdwijnen liet de knop ernaast verspringen op het moment van klikken. */
+  .rt-editor.rt-inklap .rt-balk{opacity:.45; transition:opacity .12s var(--ease);}
+  .rt-editor.rt-inklap:hover .rt-balk, .rt-editor.rt-inklap:focus-within .rt-balk{opacity:1;}
   .topbar-right{display:flex; align-items:center; gap:12px;}
   /* De losse icoonknoppen zitten in één omrand groepje, zodat de balk niet uit acht
      even zware losse elementen bestaat. Het AI-knopje is het enige met reliëf. */
@@ -727,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.25.2';
+const APP_VERSION = '2026.08.25.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -7908,7 +7912,7 @@ function lhNotitiesJaarHTML(k, f){
       ${perMaand[maand].map(n => `
         <div style="padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:8px; margin-top:4px; max-width:460px;">
           <div style="font-size:10px; color:var(--muted); margin-bottom:2px;">${n.taak}</div>
-          <div style="font-size:11px; word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
+          <div class="rt-inhoud" style="font-size:11px;">${rtWeergave(n.tekst)}</div>
           <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
         </div>`).join('')}
     </div>`).join('') : `<div class="hint" style="margin-top:8px;">Geen notities in ${jaarFilter}.</div>`;
@@ -7940,14 +7944,14 @@ function lhVorigePeriodesHTML(k, f){
   };
   const periodeInhoud = (p)=>{
     const taakBlokken = (p.taken||[]).map(t=>{
-      const anten = Array.isArray(t.aantekeningen)&&t.aantekeningen.length ? t.aantekeningen.map(a=>`<div style="padding:6px 10px; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; font-size:11px;"><b style="font-weight:600;">${(a.door||'').replace(/</g,'&lt;')}</b> · ${fmtDatumKort(a.ts)}<div style="margin-top:2px;">${(a.tekst||'').replace(/</g,'&lt;')}</div></div>`).join('') : '<div style="font-size:11px; color:var(--muted); padding:4px 0;">Geen aantekeningen</div>';
+      const anten = Array.isArray(t.aantekeningen)&&t.aantekeningen.length ? t.aantekeningen.map(a=>`<div style="padding:6px 10px; background:var(--card); border:1px solid var(--border); border-radius:8px; margin-top:4px; font-size:11px;"><b style="font-weight:600;">${(a.door||'').replace(/</g,'&lt;')}</b> · ${fmtDatumKort(a.ts)}<div class="rt-inhoud" style="margin-top:2px;">${rtWeergave(a.tekst)}</div></div>`).join('') : '<div style="font-size:11px; color:var(--muted); padding:4px 0;">Geen aantekeningen</div>';
       const dot = t.done ? '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--green); margin-right:6px;"></span>' : '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--border); margin-right:6px;"></span>';
       return `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
         <div style="font-size:12px; font-weight:600;">${dot}${t.naam}${t.done?` · afgevinkt door ${t.door||'?'}`:''}</div>
         ${anten}
       </div>`;
     }).join('');
-    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:var(--amber-bg); border:1px solid var(--amber-brd); border-radius:8px; font-size:11px;"><b>Vaste notitie:</b> ${p.overigeNotitie.replace(/</g,'&lt;')}</div>` : '';
+    const overige = p.overigeNotitie ? `<div style="margin-top:8px; padding:8px 10px; background:var(--amber-bg); border:1px solid var(--amber-brd); border-radius:8px; font-size:11px;"><b>Vaste notitie:</b> <span class="rt-inhoud">${rtWeergave(p.overigeNotitie)}</span></div>` : '';
     return `<div style="padding:10px 12px; background:var(--bg);">${taakBlokken}${overige}</div>`;
   };
   const periodeRijen = periodes.map(p=>{
@@ -7988,7 +7992,7 @@ function loonheffingKlantDetailHTML(k){
       if(bewerkbaar && STATE.lhEditNote === editKey){
         return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
           <input type="month" data-lh-maandnotitie-maand="${n.id}" value="${n.maand}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-          ${rtEditorHTML(`mn-${n.id}`, n.tekst, {maxBreedte:'460px', leeg:'Notitie…', kort:true})}
+          ${rtEditorHTML(`mn-${n.id}`, n.tekst, {maxBreedte:'470px', leeg:'Notitie…', kort:true})}
           <div style="display:flex; flex-direction:column; gap:4px;">
             <button class="btn sm primary" data-lh-maandnotitie-save="${k.id}|${n.id}">Opslaan</button>
             <button class="btn sm ghost" data-lh-maandnotitie-cancel="${k.id}|${n.id}">Annuleren</button>
@@ -8009,7 +8013,7 @@ function loonheffingKlantDetailHTML(k){
     const nieuwKey = `maandnotitie-nieuw|${k.id}`;
     const nieuwForm = (bewerkbaar && STATE.lhEditNote === nieuwKey) ? `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
       <input type="month" data-lh-maandnotitie-nieuw-maand="${k.id}" value="${volgendeMaandKeyDefault()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-      ${rtEditorHTML(`mn-nieuw-${k.id}`, '', {maxBreedte:'460px', leeg:'Notitie voor die maand…', kort:true})}
+      ${rtEditorHTML(`mn-nieuw-${k.id}`, '', {maxBreedte:'470px', leeg:'Notitie voor die maand…', kort:true})}
       <div style="display:flex; flex-direction:column; gap:4px;">
         <button class="btn sm primary" data-lh-maandnotitie-nieuw-save="${k.id}">Opslaan</button>
         <button class="btn sm ghost" data-lh-maandnotitie-nieuw-cancel="${k.id}">Annuleren</button>
@@ -8051,15 +8055,17 @@ function loonheffingKlantDetailHTML(k){
     const noteItems = notes.map(n=>{
       const editKey = `${k.id}|${idx}|${n.id}`;
       if(bewerkbaar && STATE.lhEditNote === editKey){
-        return `<div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
-          <input type="text" data-lh-note-edit-input="${editKey}" value="${(n.tekst||'').replace(/"/g,'&quot;')}" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-          <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
-          <button class="btn sm ghost" data-lh-note-cancel="${editKey}">Annuleren</button>
+        return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:5px; flex-wrap:wrap;">
+          ${rtEditorHTML(`an-${editKey}`, n.tekst, {maxBreedte:'470px', leeg:'Aantekening…', kort:true})}
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <button class="btn sm primary" data-lh-note-save="${editKey}">Opslaan</button>
+            <button class="btn sm ghost" data-lh-note-cancel="${editKey}">Annuleren</button>
+          </div>
         </div>`;
       }
       return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:5px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:8px; max-width:400px;">
         <div style="font-size:11px; min-width:0;">
-          <div style="word-break:break-word;">${(n.tekst||'').replace(/</g,'&lt;')}</div>
+          <div class="rt-inhoud">${rtWeergave(n.tekst)}</div>
           <div style="color:var(--muted); font-size:10px; margin-top:2px;">${n.door||''} · ${n.ts ? new Date(n.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
         </div>
         ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
@@ -8070,9 +8076,9 @@ function loonheffingKlantDetailHTML(k){
     }).join('');
     return `<div style="margin-top:4px;">
       ${noteItems}
-      ${bewerkbaar ? `<div style="display:flex; gap:6px; margin-top:6px;">
-        <input type="text" data-lh-note-new="${k.id}|${idx}" placeholder="Nieuwe aantekening…" style="flex:1; min-width:160px; max-width:320px; padding:5px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-        <button class="btn sm" data-lh-note-add="${k.id}|${idx}">+ Toevoegen</button>
+      ${bewerkbaar ? `<div style="display:flex; gap:6px; margin-top:6px; align-items:flex-start; flex-wrap:wrap;">
+        ${rtEditorHTML(`an-nieuw-${k.id}-${idx}`, '', {maxBreedte:'470px', leeg:'Nieuwe aantekening…', kort:true, inklap:true})}
+        <button class="btn sm" data-lh-note-add="${k.id}|${idx}" style="align-self:flex-end; margin-bottom:1px;">+ Toevoegen</button>
       </div>` : ''}
     </div>`;
   };
@@ -11949,8 +11955,7 @@ function attachHandlers(){
     if(!magLhBewerken()) return;
     const [klantId, idxStr] = el.getAttribute('data-lh-note-add').split('|');
     const idx = +idxStr;
-    const input = document.querySelector(`[data-lh-note-new="${klantId}|${idxStr}"]`);
-    const tekst = input ? input.value.trim() : '';
+    const tekst = rtLees(`an-nieuw-${klantId}-${idxStr}`);
     if(!tekst) return;
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     const f = syncLhTaken(klant);
@@ -11978,8 +11983,7 @@ function attachHandlers(){
     const key = el.getAttribute('data-lh-note-save');
     const [klantId, idxStr, noteId] = key.split('|');
     const idx = +idxStr;
-    const input = document.querySelector(`[data-lh-note-edit-input="${key}"]`);
-    const tekst = input ? input.value.trim() : '';
+    const tekst = rtLees(`an-${key}`);
     if(!tekst) return;
     const f = STORE[klantId];
     const t = f.lh.taken[idx];
@@ -13239,7 +13243,7 @@ function rtEditorHTML(sleutel, waarde, opts){
   const o = opts || {};
   const knop = (cmd, arg, titel, inhoud, extra)=>
     `<button type="button" data-rt-cmd="${cmd}"${arg!==null&&arg!==undefined?` data-rt-arg="${String(arg).replace(/"/g,'&quot;')}"`:''} title="${titel}" aria-label="${titel}"${extra||''}>${inhoud}</button>`;
-  return `<div class="rt-editor" data-rt-editor="${sleutel}" style="flex:1; min-width:240px; ${o.maxBreedte?`max-width:${o.maxBreedte};`:''}">
+  return `<div class="rt-editor${o.inklap?' rt-inklap':''}" data-rt-editor="${sleutel}" style="flex:1; min-width:240px; ${o.maxBreedte?`max-width:${o.maxBreedte};`:''}">
     <div class="rt-balk">
       ${knop('bold', null, 'Vet (Ctrl+B)', '<b style="font-size:12px;">B</b>')}
       <span class="rt-scheiding"></span>
@@ -14337,7 +14341,7 @@ function aiKlantDetailregel(k){
   if(k.doetLoonaangifte && f.lh){
     const gedaan = (f.lh.taken||[]).filter(t=>t.done).length;
     lhInfo = ` | LH-taken ${gedaan}/${(f.lh.taken||[]).length}`;
-    if(f.lh.overigeNotitie) lhInfo += ` | LH-vaste notitie: "${String(f.lh.overigeNotitie).slice(0,100)}"`;
+    if(f.lh.overigeNotitie) lhInfo += ` | LH-vaste notitie: "${rtNaarTekst(f.lh.overigeNotitie).slice(0,100)}"`;
   }
   const autos = AUTOS.filter(a=>a.klant===k.id);
   const autoInfo = autos.length ? ` | auto's: ${autos.slice(0,5).map(a=>`${a.merk||'?'} ${a.kenteken||''} (${a.btwAuto==='ja'?'btw-auto':'marge'}, ${a.elektrisch==='ja'?'elektrisch':'brandstof'})`).join('; ')}` : '';
