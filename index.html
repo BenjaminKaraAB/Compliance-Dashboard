@@ -373,6 +373,35 @@
   .search-wrap input:focus{border-color:var(--primary); background:#fff; box-shadow:0 0 0 3px rgba(34,197,138,.15);}
   .search-wrap svg{position:absolute; left:10px; top:9px; width:15px; height:15px; color:var(--muted2);}
   .search-wrap .search-kbd{position:absolute; right:10px; top:8px; font-size:11px; color:var(--muted); background:#fff; padding:2px 6px; border-radius:4px; border:1px solid var(--border); font-family:ui-monospace,monospace;}
+  /* ---------------------------------------------------------------------------------------------
+     Opmaak in de notitievelden van Loonheffingen. De kleur wordt NIET als kleurcode opgeslagen maar
+     als klasse ("rood"/"groen"), zodat het dashboard er per thema zelf de juiste tint bij kiest —
+     een hard opgeslagen #dc2626 is op een donkere achtergrond bijna onleesbaar.
+  --------------------------------------------------------------------------------------------- */
+  .rt-inhoud{line-height:1.55; word-break:break-word;}
+  .rt-inhoud p{margin:0 0 6px;}
+  .rt-inhoud p:last-child{margin-bottom:0;}
+  .rt-inhoud ul, .rt-inhoud ol{margin:6px 0; padding-left:20px;}
+  .rt-inhoud li{margin:2px 0;}
+  .rt-inhoud b, .rt-inhoud strong{font-weight:700;}
+  .rt-rood{color:var(--red);}
+  .rt-groen{color:var(--green);}
+  .rt-zwart{color:var(--text);}
+  .rt-klein{font-size:.85em;}
+  .rt-groot{font-size:1.25em;}
+  .rt-serif{font-family:Georgia,'Times New Roman',serif;}
+  .rt-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+
+  .rt-balk{display:flex; align-items:center; gap:5px; flex-wrap:wrap; padding:6px 8px; border:1px solid var(--border); border-bottom:none; border-radius:8px 8px 0 0; background:var(--bg);}
+  .rt-balk button{display:flex; align-items:center; justify-content:center; height:26px; min-width:26px; padding:0 7px; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--muted); font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;}
+  .rt-balk button:hover{background:var(--primary-bg); border-color:var(--primary); color:var(--primary-dark);}
+  .rt-balk select{height:26px; padding:0 6px; border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--muted); font-size:11px; font-family:inherit; cursor:pointer;}
+  .rt-balk .rt-scheiding{width:1px; height:16px; background:var(--border); flex:none;}
+  .rt-balk .rt-kleur{width:19px; height:19px; min-width:19px; padding:0; border-radius:50%; border:2px solid var(--card);}
+  .rt-veld{border:1px solid var(--border); border-radius:0 0 8px 8px; background:var(--card); padding:10px 12px; min-height:74px; font-size:12px; color:var(--text); outline:none; overflow-wrap:break-word;}
+  .rt-veld:focus{border-color:var(--primary); box-shadow:0 0 0 3px rgba(34,197,138,.15);}
+  .rt-veld:empty::before{content:attr(data-leeg); color:var(--muted2);}
+  .rt-veld.rt-kort{min-height:40px;}
   .topbar-right{display:flex; align-items:center; gap:12px;}
   /* De losse icoonknoppen zitten in één omrand groepje, zodat de balk niet uit acht
      even zware losse elementen bestaat. Het AI-knopje is het enige met reliëf. */
@@ -698,7 +727,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.25.1';
+const APP_VERSION = '2026.08.25.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -6895,8 +6924,11 @@ function agendaAutoPunten(horizon, klantFilter){
     const f = STORE[k.id];
     (((f||{}).lh||{}).maandNotities||[]).forEach(n=>{
       if(!n || String(n.maand) < huidigeMaand) return;
-      const sleutel = `${n.maand}|${String(n.tekst||'').trim().toLowerCase()}`;
-      if(!perNotitie.has(sleutel)) perNotitie.set(sleutel, {maand:n.maand, tekst:String(n.tekst||'').trim(), n:0});
+      // In de agenda staat de notitie als één regel platte tekst; opmaak hoort alleen op de
+      // Loonheffingen-pagina zelf thuis, niet in een agendaregel.
+      const plat = rtNaarTekst(n.tekst);
+      const sleutel = `${n.maand}|${plat.toLowerCase()}`;
+      if(!perNotitie.has(sleutel)) perNotitie.set(sleutel, {maand:n.maand, tekst:plat, n:0});
       perNotitie.get(sleutel).n++;
     });
   });
@@ -7956,7 +7988,7 @@ function loonheffingKlantDetailHTML(k){
       if(bewerkbaar && STATE.lhEditNote === editKey){
         return `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
           <input type="month" data-lh-maandnotitie-maand="${n.id}" value="${n.maand}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-          <textarea data-lh-maandnotitie-input="${n.id}" rows="2" placeholder="Notitie…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px; resize:vertical;">${(n.tekst||'').replace(/</g,'&lt;')}</textarea>
+          ${rtEditorHTML(`mn-${n.id}`, n.tekst, {maxBreedte:'460px', leeg:'Notitie…', kort:true})}
           <div style="display:flex; flex-direction:column; gap:4px;">
             <button class="btn sm primary" data-lh-maandnotitie-save="${k.id}|${n.id}">Opslaan</button>
             <button class="btn sm ghost" data-lh-maandnotitie-cancel="${k.id}|${n.id}">Annuleren</button>
@@ -7966,7 +7998,7 @@ function loonheffingKlantDetailHTML(k){
       return `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:${isHuidig?'#fff8e1':'var(--bg)'}; border:1px solid ${isHuidig?'#f0d98c':'var(--border)'}; border-radius:8px; max-width:420px;">
         <div style="font-size:11px; min-width:0;">
           <div style="font-weight:700; margin-bottom:2px;">${isHuidig?'⭐':'📅'} ${maandLabelVanKey(n.maand)}${isHuidig?' (deze maand)':''}</div>
-          <div>${(n.tekst||'').replace(/</g,'&lt;')}</div>
+          <div class="rt-inhoud">${rtWeergave(n.tekst)}</div>
         </div>
         ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
           <button class="btn sm ghost" title="Bewerken" data-lh-maandnotitie-edit="${k.id}|${n.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
@@ -7977,7 +8009,7 @@ function loonheffingKlantDetailHTML(k){
     const nieuwKey = `maandnotitie-nieuw|${k.id}`;
     const nieuwForm = (bewerkbaar && STATE.lhEditNote === nieuwKey) ? `<div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px; flex-wrap:wrap;">
       <input type="month" data-lh-maandnotitie-nieuw-maand="${k.id}" value="${volgendeMaandKeyDefault()}" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px;">
-      <textarea data-lh-maandnotitie-nieuw-input="${k.id}" rows="2" placeholder="Notitie voor die maand…" style="flex:1; min-width:220px; max-width:420px; padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:11px; resize:vertical;"></textarea>
+      ${rtEditorHTML(`mn-nieuw-${k.id}`, '', {maxBreedte:'460px', leeg:'Notitie voor die maand…', kort:true})}
       <div style="display:flex; flex-direction:column; gap:4px;">
         <button class="btn sm primary" data-lh-maandnotitie-nieuw-save="${k.id}">Opslaan</button>
         <button class="btn sm ghost" data-lh-maandnotitie-nieuw-cancel="${k.id}">Annuleren</button>
@@ -7992,7 +8024,7 @@ function loonheffingKlantDetailHTML(k){
       return `<div style="padding:12px 0 0;">
         <b style="font-size:12px;">Vaste notities</b>
         <div style="display:flex; gap:6px; align-items:flex-start; margin-top:6px;">
-          <textarea data-lh-klantnotitie-input="${k.id}" rows="3" placeholder="Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert, ook na het afronden van een periode…" style="flex:1; min-width:220px; max-width:520px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; resize:vertical;">${huidigeTekst.replace(/</g,'&lt;')}</textarea>
+          ${rtEditorHTML(`kn-${k.id}`, huidigeTekst, {maxBreedte:'560px', leeg:'Vrije notitie bij deze klant — blijft staan tot je hem zelf verwijdert…'})}
           <div style="display:flex; flex-direction:column; gap:4px;">
             <button class="btn sm primary" data-lh-klantnotitie-save="${k.id}">Opslaan</button>
             <button class="btn sm ghost" data-lh-klantnotitie-cancel="${k.id}">Annuleren</button>
@@ -8004,7 +8036,7 @@ function loonheffingKlantDetailHTML(k){
       return `<div style="padding:12px 0 0;">
         <b style="font-size:12px;">Vaste notities</b>
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-top:6px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; max-width:520px;">
-          <div style="font-size:12px; white-space:pre-wrap; word-break:break-word; min-width:0;">${huidigeTekst.replace(/</g,'&lt;')}</div>
+          <div class="rt-inhoud" style="font-size:12px; min-width:0;">${rtWeergave(huidigeTekst)}</div>
           ${bewerkbaar ? `<div style="display:flex; gap:3px; flex-shrink:0;">
             <button class="btn sm ghost" title="Bewerken" data-lh-klantnotitie-edit="${k.id}" style="padding:3px 7px;"><i class="ti ti-pencil" aria-hidden="true"></i></button>
             <button class="btn sm ghost" title="Verwijderen" data-lh-klantnotitie-delete="${k.id}" style="padding:3px 7px; color:var(--red);"><i class="ti ti-trash" aria-hidden="true"></i></button>
@@ -8081,7 +8113,7 @@ function loonheffingKlantDetailHTML(k){
       </div>
     </div>
     <div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Let op! Loon vandaag openen!</div>
-    ${(f.lh.maandNotities||[]).filter(n=>n.maand===lhBekekenMaand()).map(n=>`<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(n.tekst)}</div>`).join('')}
+    ${(f.lh.maandNotities||[]).filter(n=>n.maand===lhBekekenMaand()).map(n=>`<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; margin-bottom:10px; align-items:flex-start;"><i class="ti ti-alert-triangle" aria-hidden="true" style="margin-top:2px;"></i> <span class="rt-inhoud" style="font-weight:700;">${rtWeergave(n.tekst)}</span></div>`).join('')}
     ${overigeNotitieHTML}
     ${taakRows}
     ${STATE.lhNotitiesKlant === k.id ? lhNotitiesJaarHTML(k, f) : ''}
@@ -11217,6 +11249,7 @@ function bindOnce(el, event, handler){
   el.addEventListener(event, handler);
 }
 function attachHandlers(){
+  bindRtEditors();
   const _ca = document.getElementById('contentArea');
   if(_ca) _ca.dataset.view = STATE.view;
   try{ updateAppBadges(); }catch(e){}
@@ -11995,9 +12028,8 @@ function attachHandlers(){
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     if(!klant) return;
     const maandInput = document.querySelector(`[data-lh-maandnotitie-nieuw-maand="${klantId}"]`);
-    const tekstInput = document.querySelector(`[data-lh-maandnotitie-nieuw-input="${klantId}"]`);
     const maand = maandInput ? maandInput.value : '';
-    const tekst = tekstInput ? tekstInput.value.trim() : '';
+    const tekst = rtLees(`mn-nieuw-${klantId}`);
     if(!maand || !tekst){ toast('Kies een maand en vul een notitie in.'); return; }
     const f = syncLhTaken(klant);
     if(!Array.isArray(f.lh.maandNotities)) f.lh.maandNotities = [];
@@ -12026,9 +12058,8 @@ function attachHandlers(){
     const notitie = (f.lh.maandNotities||[]).find(n=>n.id===notitieId);
     if(!notitie) return;
     const maandInput = document.querySelector(`[data-lh-maandnotitie-maand="${notitieId}"]`);
-    const tekstInput = document.querySelector(`[data-lh-maandnotitie-input="${notitieId}"]`);
     if(maandInput && maandInput.value) notitie.maand = maandInput.value;
-    if(tekstInput) notitie.tekst = tekstInput.value.trim();
+    notitie.tekst = rtLees(`mn-${notitieId}`);
     STATE.lhEditNote = null;
     logActiviteit(`Loonheffingen: notitie voor ${maandLabelVanKey(notitie.maand)} bijgewerkt bij "${klant.naam}"`);
     persist();
@@ -12121,8 +12152,7 @@ function attachHandlers(){
     const klantId = el.getAttribute('data-lh-klantnotitie-save');
     const klant = RAW_KLANTEN.find(k=>k.id===klantId);
     if(!klant) return;
-    const input = document.querySelector(`[data-lh-klantnotitie-input="${klantId}"]`);
-    const tekst = input ? input.value.trim() : '';
+    const tekst = rtLees(`kn-${klantId}`);
     const f = syncLhTaken(klant);
     f.lh.overigeNotitie = tekst;
     STATE.lhEditNote = null;
@@ -13100,6 +13130,175 @@ function voerOpschoningUit(){
    ongemerkt het klantenbestand laten groeien. Rijen zonder match worden niet stil overgeslagen maar
    expliciet in het rapport benoemd, zodat te verantwoorden is wat er niet is verwerkt.
 --------------------------------------------------------------------------------------------------- */
+/* ================= OPMAAK IN LOONHEFFING-NOTITIES (vet, lettertype, grootte, kleur, opsomming) =================
+   Deze notities worden via SharePoint met alle collega's gedeeld en in ieders browser weergegeven. Wat een
+   collega typt is dus in feite HTML van iemand anders: alles gaat daarom eerst door schoonRtHtml(), die
+   uitsluitend een vaste lijst tags en klassen doorlaat en de rest weggooit. De browser levert bij
+   execCommand ouderwetse <font>-tags aan; die worden hier vertaald naar onze eigen klassen, zodat er nooit
+   een losse kleurcode of lettergrootte in de opgeslagen data belandt.
+============================================================================================================== */
+const RT_TAGS = ['B','STRONG','I','EM','U','P','BR','UL','OL','LI','SPAN','DIV'];
+const RT_WEG_MET_INHOUD = ['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','TEMPLATE','NOSCRIPT','SVG','MATH','LINK','META'];
+const RT_KLASSEN = ['rt-rood','rt-groen','rt-zwart','rt-klein','rt-groot','rt-serif','rt-mono'];
+const RT_KLEUREN = { rood:'#dc2626', groen:'#15884f', zwart:'#111111' };
+const RT_KLEUR_KLASSE = { '#dc2626':'rt-rood', '#15884f':'rt-groen', '#111111':'rt-zwart' };
+const RT_MAAT_KLASSE = { '2':'rt-klein', '3':'', '5':'rt-groot' };
+const RT_FONT_KLASSE = { 'georgia':'rt-serif', 'serif':'rt-serif', 'monospace':'rt-mono', 'ui-monospace':'rt-mono' };
+
+function rtNormaliseerKleur(waarde){
+  const t = String(waarde||'').trim().toLowerCase();
+  const rgb = t.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
+  if(rgb){
+    const hex = '#'+[rgb[1],rgb[2],rgb[3]].map(n=>parseInt(n,10).toString(16).padStart(2,'0')).join('');
+    return hex;
+  }
+  return t;
+}
+/* Laat alleen een vaste lijst tags en klassen door en vertaalt <font> naar onze eigen klassen. */
+function schoonRtHtml(ruw){
+  const bron = String(ruw||'');
+  if(!bron.trim()) return '';
+  let doc;
+  try{ doc = new DOMParser().parseFromString('<div id="rt-wortel">'+bron+'</div>', 'text/html'); }
+  catch(e){ return escHtml(bron); }
+  const wortel = doc.getElementById('rt-wortel');
+  if(!wortel) return escHtml(bron);
+
+  const loop = (node)=>{
+    Array.from(node.childNodes).forEach(kind=>{
+      if(kind.nodeType === 3) return;                       // tekst blijft
+      if(kind.nodeType !== 1){ kind.remove(); return; }      // commentaar e.d. weg
+      const tag = kind.tagName;
+
+      if(tag === 'FONT'){
+        const span = doc.createElement('span');
+        const klassen = [];
+        const kleur = RT_KLEUR_KLASSE[rtNormaliseerKleur(kind.getAttribute('color'))];
+        if(kleur) klassen.push(kleur);
+        const maat = RT_MAAT_KLASSE[String(kind.getAttribute('size')||'').trim()];
+        if(maat) klassen.push(maat);
+        const face = String(kind.getAttribute('face')||'').toLowerCase().split(',')[0].trim().replace(/["']/g,'');
+        if(RT_FONT_KLASSE[face]) klassen.push(RT_FONT_KLASSE[face]);
+        if(klassen.length) span.className = klassen.join(' ');
+        while(kind.firstChild) span.appendChild(kind.firstChild);
+        kind.replaceWith(span);
+        loop(span);
+        return;
+      }
+
+      if(RT_WEG_MET_INHOUD.includes(tag)){
+        kind.remove();   // script/style/iframe: ook de inhoud weg, niet alleen het omhulsel
+        return;
+      }
+      if(!RT_TAGS.includes(tag)){
+        // Onbekende maar ongevaarlijke tag (a, img, table…): de tekst behouden, het omhulsel weg.
+        const ouder = kind.parentNode;
+        while(kind.firstChild) ouder.insertBefore(kind.firstChild, kind);
+        kind.remove();
+        return;
+      }
+
+      // Alleen class overleeft, en alleen onze eigen klassen — geen style, geen on*-handlers, geen href.
+      const behouden = String(kind.getAttribute('class')||'').split(/\s+/).filter(c=>RT_KLASSEN.includes(c));
+      Array.from(kind.attributes).forEach(a=>kind.removeAttribute(a.name));
+      if(behouden.length) kind.setAttribute('class', behouden.join(' '));
+      loop(kind);
+    });
+  };
+  loop(wortel);
+
+  let html = wortel.innerHTML.replace(/<div>/g,'<p>').replace(/<\/div>/g,'</p>');
+  html = html.replace(/(<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>)+$/i, '').trim();
+  return html;
+}
+/* Is dit veld opgemaakte tekst of nog gewone tekst van vroeger? */
+function rtIsHtml(waarde){ return /<(b|strong|i|em|u|p|ul|ol|li|span|div|br|font)\b/i.test(String(waarde||'')); }
+/* Weergave van een notitieveld: opgemaakt indien HTML, anders de oude platte tekst netjes ge-escaped. */
+function rtWeergave(waarde){
+  const w = String(waarde||'');
+  if(!w.trim()) return '';
+  if(rtIsHtml(w)) return schoonRtHtml(w);
+  return escHtml(w).replace(/\n/g,'<br>');
+}
+/* Platte tekst uit een notitie — voor logregels, zoeken en de AI-context. */
+function rtNaarTekst(waarde){
+  const w = String(waarde||'');
+  if(!w.trim()) return '';
+  if(!rtIsHtml(w)) return w;
+  try{
+    const html = schoonRtHtml(w).replace(/<\/(p|li|ul|ol|div)>/gi,' ').replace(/<br\s*\/?>/gi,' ');
+    const doc = new DOMParser().parseFromString('<div>'+html+'</div>','text/html');
+    return (doc.body.textContent||'').replace(/\s+/g,' ').trim();
+  }catch(e){ return w.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim(); }
+}
+/* Heeft dit veld daadwerkelijk inhoud (en niet alleen lege tags)? */
+function rtHeeftInhoud(waarde){ return rtNaarTekst(waarde).length > 0; }
+
+/* De werkbalk + het bewerkbare veld. `sleutel` maakt het veld vindbaar bij het opslaan. */
+function rtEditorHTML(sleutel, waarde, opts){
+  const o = opts || {};
+  const knop = (cmd, arg, titel, inhoud, extra)=>
+    `<button type="button" data-rt-cmd="${cmd}"${arg!==null&&arg!==undefined?` data-rt-arg="${String(arg).replace(/"/g,'&quot;')}"`:''} title="${titel}" aria-label="${titel}"${extra||''}>${inhoud}</button>`;
+  return `<div class="rt-editor" data-rt-editor="${sleutel}" style="flex:1; min-width:240px; ${o.maxBreedte?`max-width:${o.maxBreedte};`:''}">
+    <div class="rt-balk">
+      ${knop('bold', null, 'Vet (Ctrl+B)', '<b style="font-size:12px;">B</b>')}
+      <span class="rt-scheiding"></span>
+      <select data-rt-cmd="fontName" title="Lettertype" aria-label="Lettertype">
+        <option value="">Standaard</option>
+        <option value="Georgia">Serif</option>
+        <option value="monospace">Monospace</option>
+      </select>
+      <span class="rt-scheiding"></span>
+      ${knop('fontSize', '2', 'Kleine tekst', 'A', ' style="font-size:10px;"')}
+      ${knop('fontSize', '3', 'Normale tekst', 'A', ' style="font-size:12px;"')}
+      ${knop('fontSize', '5', 'Grote tekst', 'A', ' style="font-size:14px;"')}
+      <span class="rt-scheiding"></span>
+      ${knop('foreColor', RT_KLEUREN.zwart, 'Zwart', '', ` class="rt-kleur" style="background:${RT_KLEUREN.zwart}; box-shadow:0 0 0 1.5px var(--border);"`)}
+      ${knop('foreColor', RT_KLEUREN.groen, 'Groen', '', ` class="rt-kleur" style="background:${RT_KLEUREN.groen}; box-shadow:0 0 0 1.5px var(--border);"`)}
+      ${knop('foreColor', RT_KLEUREN.rood, 'Rood', '', ` class="rt-kleur" style="background:${RT_KLEUREN.rood}; box-shadow:0 0 0 1.5px var(--border);"`)}
+      <span class="rt-scheiding"></span>
+      ${knop('insertUnorderedList', null, 'Opsomming met bolletjes', '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor"/></svg>')}
+      ${knop('insertOrderedList', null, 'Genummerde opsomming', '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 6h1v4M4 10h2"/><path d="M3.8 15.2A1.2 1.2 0 0 1 6 16c0 .9-2 1.4-2 2.6h2.2"/></svg>')}
+      ${knop('removeFormat', null, 'Opmaak wissen', '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5h13M9 19h7"/><path d="M14 5 10 19"/><path d="m4 15 5 5M9 15l-5 5"/></svg>')}
+    </div>
+    <div class="rt-veld rt-inhoud${o.kort?' rt-kort':''}" contenteditable="true" data-rt-veld="${sleutel}" data-leeg="${(o.leeg||'Notitie…').replace(/"/g,'&quot;')}">${rtWeergave(waarde)}</div>
+  </div>`;
+}
+/* Waarde van een editor uitlezen — altijd opgeschoond. */
+function rtLees(sleutel){
+  const el = document.querySelector(`[data-rt-veld="${sleutel}"]`);
+  if(!el) return '';
+  const schoon = schoonRtHtml(el.innerHTML);
+  return rtHeeftInhoud(schoon) ? schoon : '';
+}
+/* Werkbalkknoppen koppelen. Wordt vanuit attachHandlers() aangeroepen. */
+function bindRtEditors(){
+  document.querySelectorAll('[data-rt-editor]').forEach(editor=>{
+    const veld = editor.querySelector('[data-rt-veld]');
+    if(!veld) return;
+    // Plakken altijd als platte tekst: anders komt er opmaak uit Word of een website mee naar binnen.
+    veld.addEventListener('paste', (e)=>{
+      e.preventDefault();
+      const tekst = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, tekst);
+    });
+    const voerUit = (cmd, arg)=>{
+      veld.focus();
+      try{ document.execCommand('styleWithCSS', false, false); }catch(err){}
+      try{ document.execCommand(cmd, false, arg===undefined?null:arg); }catch(err){}
+    };
+    editor.querySelectorAll('button[data-rt-cmd]').forEach(b=>{
+      b.addEventListener('mousedown', e=>e.preventDefault()); // selectie in het veld niet kwijtraken
+      b.addEventListener('click', ()=> voerUit(b.getAttribute('data-rt-cmd'), b.getAttribute('data-rt-arg')));
+    });
+    const keuze = editor.querySelector('select[data-rt-cmd]');
+    if(keuze) keuze.addEventListener('change', ()=>{
+      voerUit('fontName', keuze.value || 'Inter');
+      keuze.selectedIndex = 0;
+    });
+  });
+}
+
 function handleObCSVUpload(e){
   const file = e.target.files[0]; if(!file) return;
   const resultBox = document.getElementById('klantImportResult');
