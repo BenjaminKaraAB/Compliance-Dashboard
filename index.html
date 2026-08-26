@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.2';
+const APP_VERSION = '2026.08.26.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -4999,6 +4999,9 @@ function sidebarFootHTML(){
 function isTypingInField(){
   const el = document.activeElement;
   if(!el) return false;
+  // Ook de opmaak-editors (contenteditable, o.a. bij Loonheffingen-notities) tellen als "aan het
+  // typen": de live-verversing hieronder mag nooit een halfgetypte tekst onder iemands handen weghalen.
+  if(el.isContentEditable) return true;
   const tag = el.tagName;
   if(tag === 'TEXTAREA') return true;
   if(tag === 'INPUT'){
@@ -13437,7 +13440,7 @@ async function cfDuw(){
       const wie = [...new Set(botsingen.map(c=>c.door).filter(Boolean))].join(', ');
       CF.conflicten = botsingen.map(c=>({ sleutel:c.sleutel, soort:c.soort, door:c.door, ts:c.gewijzigd })).concat(CF.conflicten).slice(0,20);
       toast(`Je wijziging bij ${uniek.slice(0,3).join(', ')}${uniek.length>3?` en ${uniek.length-3} andere`:''} is niet opgeslagen — ${wie||'een collega'} was net eerder. Het scherm toont nu hun versie; pas het zo nodig opnieuw aan.`, { duration: 12000 });
-      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+      render();
     }
 
     CF.fout = null;
@@ -13470,7 +13473,9 @@ async function cfHaal(toonMelding){
     if(veranderd){
       try{ migrateData(); }catch(e){ console.error('migrateData na ophalen mislukt:', e); }
       persistMeta(); flushPersistStore();
-      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+      /* Volledige render: zet ook een open klantpaneel terug met de verse gegevens, zodat je live
+         ziet wat een collega heeft gewijzigd zonder de pagina te hoeven verversen. */
+      render();
       if(toonMelding) toast(`${veranderd} wijziging(en) van collega's opgehaald.`);
     }
     cfBewaar(); updateSyncIndicator();
@@ -14408,13 +14413,26 @@ setInterval(()=>{
   }
 }, 45000);
 /* Cloudflare-poll: vaker dan SharePoint (20s in plaats van 45s), want er komt per keer alleen langs
-   wat er daadwerkelijk is gewijzigd in plaats van de hele dataset. */
+   wat er daadwerkelijk is gewijzigd in plaats van de hele dataset.
+   Bewust WEL doorpollen terwijl een klantpaneel openstaat: juist dan zit je te kijken of je collega
+   iets heeft gewijzigd, en render() zet het open paneel na afloop gewoon terug met de verse gegevens.
+   Alleen als je daadwerkelijk ergens aan het typen bent (invoerveld of opmaak-editor) wachten we een
+   rondje, zodat er nooit tekst onder je handen verdwijnt. */
 setInterval(()=>{
   if(!CF.actief || !SYNC.account) return;
-  if(STATE.panelKlant || STATE.showAddKlant || STATE.showAddBh || isTypingInField()) return;
+  /* Het volledige klant-bewerkformulier (STATE.editKlant) blijft wél beschermd: dat formulier zou
+     bij een render() zijn nog-niet-opgeslagen invulwerk kwijtraken. Het gewone klantpaneel niet. */
+  if(STATE.showAddKlant || STATE.showAddBh || STATE.editKlant || isTypingInField()) return;
   try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
   catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
 }, 20000);
+/* Wie terugkeert naar dit tabblad wil meteen de actuele stand zien, niet pas na het volgende rondje. */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible') return;
+  if(!CF.actief || !SYNC.account || STATE.editKlant || isTypingInField()) return;
+  try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
+  catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
+});
 
 
 /* ============================= COMMAND PALETTE (⌘K) =============================
