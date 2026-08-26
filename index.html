@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.25.3';
+const APP_VERSION = '2026.08.26.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -983,6 +983,7 @@ function flushPersistMeta(){
   try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE})); }catch(e){}
 }
 function persistMeta(){
+  if(typeof CF !== 'undefined' && CF.actief) cfDuwLater();
   clearTimeout(persistMetaTimer);
   persistMetaTimer = setTimeout(flushPersistMeta, 400);
   pushRemoteDebounced();
@@ -1693,7 +1694,7 @@ function persist(){
   // gaat: bij het sluiten van het tabblad wordt alsnog direct weggeschreven (zie beforeunload hieronder).
   clearTimeout(persistStoreTimer);
   persistStoreTimer = setTimeout(flushPersistStore, 400);
-  pushRemoteDebounced();
+  if(CF.actief) cfDuwLater(); else pushRemoteDebounced();
 }
 
 /* ============================= CLOUD SYNC (Microsoft-login via Graph API) =============================
@@ -1703,6 +1704,7 @@ function persist(){
    en "Azure AD app-registratie". Werkt alléén als het dashboard vanaf een echte https-URL wordt geopend
    (niet als lokaal dubbelgeklikt bestand) — dat is een vereiste van Microsoft's inlogscherm. */
 const SYNC_KEY = 'compliance_dashboard_sync_v1';
+let CF_GELADEN = false;
 let SYNC = {
   clientId:'', tenantId:'', siteUrl:'', listName:'ComplianceDashboardData',
   enabled:false, lastSync:null, lastError:null, account:null, siteId:null, listId:null,
@@ -2102,6 +2104,21 @@ function updateSyncIndicator(){
   const el = document.getElementById('syncIndicator');
   if(!el) return;
   el.classList.remove('sync-fout','sync-ok');
+  if(typeof CF !== 'undefined' && CF.actief){
+    if(CF.fout){
+      el.classList.add('sync-fout');
+      el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt';
+      el.title = 'Cloudflare-database: ' + CF.fout + ' — klik om opnieuw te proberen.';
+      el.style.color = '';
+      return;
+    }
+    el.classList.add('sync-ok');
+    const t = CF.laatsteDuw ? new Date(CF.laatsteDuw).toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'}) : '';
+    el.innerHTML = '<i class="ti ti-database" aria-hidden="true"></i> Gedeeld' + (t?' · '+t:'');
+    el.title = 'Gedeelde Cloudflare-database — iedereen werkt live in dezelfde gegevens.' + (t?' Laatst weggeschreven om '+t+'.':'');
+    el.style.color = '';
+    return;
+  }
   if(!SYNC.enabled || !SYNC.account){ el.innerHTML = '<i class="ti ti-cloud-off" aria-hidden="true"></i> Niet gekoppeld'; el.style.color = 'var(--muted)'; return; }
   if(SYNC.lastError){ el.classList.add('sync-fout'); el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt'; el.style.color = ''; el.title = 'Klik om opnieuw te synchroniseren — details bij Instellingen'; return; }
   el.classList.add('sync-ok');
@@ -9538,6 +9555,48 @@ function instellingenHTML(){
   </div>
 
   <div class="section">
+    <div class="section-head">
+      <h3>Gedeelde database (Cloudflare)</h3>
+      <span class="hint">${CF.actief ? 'Actief — iedereen werkt live in dezelfde gegevens' : 'Nog niet in gebruik'}</span>
+    </div>
+    <div class="section-body pad">
+      <p style="font-size:12px; color:var(--muted); line-height:1.7; margin:0 0 14px;">
+        Bij SharePoint stuurt elke browser de <b>volledige</b> dataset over de vorige heen. Werken twee collega's
+        tegelijk, dan wint wie het laatst opslaat en verdwijnt het werk van de ander zonder melding. In de
+        Cloudflare-database heeft elke klant een eigen regel met een versienummer: je schrijft alleen weg wat je
+        zelf hebt aangeraakt, en botst dat met een collega dan krijg je dat te zien in plaats van dat het stil
+        misgaat. SharePoint blijft daarnaast gewoon staan als reservekopie.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn sm" data-cf-status><i class="ti ti-refresh" aria-hidden="true"></i> Status ophalen</button>
+        <button class="btn sm primary" data-cf-overzetten><i class="ti ti-database-import" aria-hidden="true"></i> Gegevens overzetten</button>
+        ${CF.actief ? `<button class="btn sm" data-cf-nu><i class="ti ti-cloud-download" aria-hidden="true"></i> Nu ophalen</button>` : ''}
+      </div>
+      <div id="cfOverzetResultaat"></div>
+      <div class="field-row" style="margin-top:12px;"><label>Gebruik deze database</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+          <input type="checkbox" id="cfActief" ${CF.actief?'checked':''}> Inschakelen in plaats van SharePoint
+        </label>
+      </div>
+      ${CF.fout ? `<div class="banner" style="border-left-color:var(--red); margin-top:10px;"><b>Laatste fout:</b> ${escHtml(CF.fout)}</div>` : ''}
+      ${CF.conflicten && CF.conflicten.length ? `<div style="margin-top:12px;">
+        <b style="font-size:12px;">Recente botsingen</b>
+        <div style="font-size:11px; color:var(--muted); margin-top:4px; line-height:1.7;">
+          ${CF.conflicten.slice(0,6).map(c=>{
+            const k = RAW_KLANTEN.find(x=>x.id===c.sleutel);
+            return `${escHtml(k?k.naam:c.sleutel)} — ${escHtml(c.door||'onbekend')} was eerder${c.ts?` (${new Date(c.ts).toLocaleString('nl-NL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})})`:''}`;
+          }).join('<br>')}
+        </div>
+      </div>` : ''}
+      <div style="margin-top:14px; font-size:11px; color:var(--muted); line-height:1.7;">
+        <b>Volgorde:</b> eerst "Gegevens overzetten" (kan maar één keer), dan met één collega tegelijk testen op
+        verschillende klanten, en pas daarna de schakelaar bij iedereen omzetten. Zolang de schakelaar uit staat
+        verandert er niets aan de manier waarop je nu werkt.
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
     <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
     <div class="section-body pad" style="font-size:12px; color:var(--text); line-height:1.7;">
       1. Een SharePoint-lijst <code>ComplianceDashboardData</code> met kolom <code>Data</code> (tekst zonder opmaak) en één item (Id 1) — zie de handleiding "SharePoint-koppeling stap voor stap", Deel A.<br>
@@ -11744,6 +11803,32 @@ function attachHandlers(){
     if(box) box.innerHTML = `<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> Notitie verwijderd bij <b>${verslag.klanten}</b> klanten.</div>`;
     toast(`Maandnotitie verwijderd bij ${verslag.klanten} klanten.`);
   });
+  /* --- Gedeelde Cloudflare-database --- */
+  const cfStatusBtn = document.querySelector('[data-cf-status]');
+  if(cfStatusBtn) cfStatusBtn.addEventListener('click', async ()=>{
+    const doel = document.getElementById('cfOverzetResultaat');
+    if(doel) doel.innerHTML = '<div class="banner">Bezig met opvragen…</div>';
+    try{
+      const st = await cfFetch('/status');
+      if(doel) doel.innerHTML = `<div class="banner"><i class="ti ti-database" aria-hidden="true"></i> `
+        + `<b>${st.totaal}</b> record(s) in de database — ${st.klanten} klanten, ${st.dossiers} dossiers, ${st.meta} instellingen-onderdelen.`
+        + (st.laatste ? ` Laatst gewijzigd: ${new Date(st.laatste).toLocaleString('nl-NL')}.` : ' Nog niets gewijzigd.')
+        + ` Je bent herkend als ${escHtml(st.jij||'')}.</div>`;
+    }catch(e){
+      if(doel) doel.innerHTML = `<div class="banner" style="border-left-color:var(--red);"><b>Kon de database niet bereiken:</b> ${escHtml(e.message||String(e))}</div>`;
+    }
+  });
+  const cfOverzetBtn = document.querySelector('[data-cf-overzetten]');
+  if(cfOverzetBtn) cfOverzetBtn.addEventListener('click', ()=>{ cfOverzetten(cfOverzetBtn); });
+  const cfNuBtn = document.querySelector('[data-cf-nu]');
+  if(cfNuBtn) cfNuBtn.addEventListener('click', ()=>{ cfHaal(true); });
+  const cfActiefBox = document.getElementById('cfActief');
+  if(cfActiefBox) cfActiefBox.addEventListener('change', async ()=>{
+    const aan = cfActiefBox.checked;
+    const gelukt = await cfAanzetten(aan);
+    if(!gelukt) cfActiefBox.checked = !aan;
+  });
+
   const lhBannerBtn = document.querySelector('[data-lh-banner-plaatsen]');
   if(lhBannerBtn) lhBannerBtn.addEventListener('click', ()=>{
     const maand = document.getElementById('lhBannerMaand').value;
@@ -12439,6 +12524,14 @@ function attachHandlers(){
   }));
 
   document.querySelectorAll('[data-sync-now]').forEach(el=>bindOnce(el, 'click', async ()=>{
+    if(CF.actief){
+      // Bij de gedeelde database: eerst het eigen werk wegschrijven, dan pas ophalen — zodat een
+      // handmatige klik nooit een wijziging opzij zet die nog niet verstuurd was.
+      clearTimeout(cfDuwTimer);
+      await cfDuw();
+      await cfHaal(true);
+      return;
+    }
     if(!SYNC.enabled || !SYNC.account){ toast('Stel eerst de Microsoft-koppeling in bij Instellingen en log in.'); return; }
     // Wanneer de gebruiker expliciet op "Nu synchroniseren" klikt geldt: eerst ongesynct lokaal werk
     // pushen, dan pas fetchen — zodat een handmatige refresh nooit een pending wijziging weggooit.
@@ -13134,6 +13227,291 @@ function voerOpschoningUit(){
    ongemerkt het klantenbestand laten groeien. Rijen zonder match worden niet stil overgeslagen maar
    expliciet in het rapport benoemd, zodat te verantwoorden is wat er niet is verwerkt.
 --------------------------------------------------------------------------------------------------- */
+/* ================= GEDEELDE OPSLAG VIA CLOUDFLARE (D1) =================================================
+
+   Het probleem dat dit oplost
+   ---------------------------
+   Bij de SharePoint-sync stuurt elke browser bij elke wijziging de VOLLEDIGE dataset naar één regel,
+   zonder te kijken of iemand anders er intussen ook iets in heeft gezet. Werkten twee collega's tegelijk,
+   dan won wie het laatst opsloeg en verdween het werk van de ander zonder melding.
+
+   Hier gaat alleen wat jíj hebt aangeraakt naar de database, met een versienummer erbij. Is een collega
+   je voor geweest bij datzelfde record, dan wordt jouw schrijfactie geweigerd, komt zijn versie terug in
+   beeld en krijg jij dat te zien. Niemands werk verdwijnt nog stil.
+
+   Wat is een record?
+   ------------------
+   klant/<id>   de klantgegevens
+   store/<id>   het dossier bij die klant (deadlines, taken, notities, logboek)
+   meta/<naam>  alles wat niet klantgebonden is (boekhouders, teams, agenda, KPI's, strategie, ...)
+
+   Doordat elke klant zijn eigen record is, raken twee collega's die aan verschillende klanten werken
+   elkaar nooit. Alleen exact dezelfde klant op exact hetzelfde moment geeft een botsing, en die wordt
+   gemeld in plaats van stil opgelost.
+======================================================================================================== */
+
+const CF_URL = 'https://compliancebox-data.benjamin-092.workers.dev';
+const CF_KEY = 'compliance_dashboard_cf_v1';
+
+/* De niet-klantgebonden onderdelen, elk als eigen meta-record zodat de agenda van de een niet de
+   KPI's van de ander overschrijft. */
+const CF_META = {
+  boekhouders:      { lees: ()=>BOEKHOUDERS,        zet: v=>{ BOEKHOUDERS = v; invalidateBhIndex(); } },
+  teams:            { lees: ()=>TEAMS,              zet: v=>{ TEAMS = v; } },
+  rechten:          { lees: ()=>RECHTEN,            zet: v=>{ RECHTEN = v; } },
+  autos:            { lees: ()=>AUTOS,              zet: v=>{ AUTOS = v; } },
+  bijtellingTabel:  { lees: ()=>BIJTELLING_TABEL,   zet: v=>{ BIJTELLING_TABEL = v; } },
+  activiteitenlog:  { lees: ()=>ACTIVITEITENLOG,    zet: v=>{ ACTIVITEITENLOG = v; } },
+  kpiOperationeel:  { lees: ()=>KPI_OPERATIONEEL,   zet: v=>{ KPI_OPERATIONEEL = v; } },
+  kpiTactisch:      { lees: ()=>KPI_TACTISCH,       zet: v=>{ KPI_TACTISCH = v; } },
+  kpiCommercieel:   { lees: ()=>KPI_COMMERCIEEL,    zet: v=>{ KPI_COMMERCIEEL = v; } },
+  kennisbank:       { lees: ()=>KENNISBANK,         zet: v=>{ KENNISBANK = v; } },
+  rdwHercheckCfg:   { lees: ()=>RDW_HERCHECK_CFG,   zet: v=>{ RDW_HERCHECK_CFG = v; } },
+  inventarisItems:  { lees: ()=>INVENTARIS_ITEMS,   zet: v=>{ INVENTARIS_ITEMS = v; } },
+  lhMaandBanners:   { lees: ()=>LH_MAAND_BANNERS,   zet: v=>{ LH_MAAND_BANNERS = v; } },
+  agenda:           { lees: ()=>AGENDA,             zet: v=>{ AGENDA = v; } },
+  kwartaalthemas:   { lees: ()=>KWARTAALTHEMAS,     zet: v=>{ KWARTAALTHEMAS = v; } },
+  initiatieven:     { lees: ()=>INITIATIEVEN,       zet: v=>{ INITIATIEVEN = v; } },
+  leerpad:          { lees: ()=>LEERPAD,            zet: v=>{ LEERPAD = v; } },
+  leerpadVoortgang: { lees: ()=>LEERPAD_VOORTGANG,  zet: v=>{ LEERPAD_VOORTGANG = v; } },
+  notionCfg:        { lees: ()=>NOTION_CFG,         zet: v=>{ NOTION_CFG = v; } },
+  afdelingen:       { lees: ()=>AFDELINGEN,         zet: v=>{ AFDELINGEN = v; } },
+  strategie:        { lees: ()=>STRATEGIE,          zet: v=>{ STRATEGIE = v; } },
+};
+
+let CF = {
+  actief: false,        // staat de gedeelde database aan in plaats van SharePoint?
+  laatste: null,        // tijdstempel van de laatste keer ophalen
+  versies: {},          // 'soort|sleutel' -> versienummer zoals de database het kent
+  verzonden: {},        // 'soort|sleutel' -> de JSON die we het laatst met succes hebben weggeschreven
+  fout: null,
+  bezig: false,
+  laatsteDuw: null,
+  conflicten: [],       // recente botsingen, om in Instellingen te tonen
+};
+function cfLaad(){
+  try{
+    const raw = localStorage.getItem(CF_KEY);
+    if(raw) CF = Object.assign(CF, JSON.parse(raw));
+  }catch(e){}
+}
+function cfBewaar(){
+  try{
+    localStorage.setItem(CF_KEY, JSON.stringify({
+      actief: CF.actief, laatste: CF.laatste, versies: CF.versies, verzonden: CF.verzonden,
+    }));
+  }catch(e){}
+}
+
+/* --- praten met de worker; hetzelfde Microsoft-token als de rest van het dashboard gebruikt --- */
+async function cfFetch(pad, opts){
+  const token = await getGraphToken(false);
+  const res = await fetch(CF_URL + pad, Object.assign({}, opts||{}, {
+    headers: Object.assign({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, (opts&&opts.headers)||{}),
+  }));
+  const tekst = await res.text();
+  let data = null;
+  try{ data = tekst ? JSON.parse(tekst) : null; }catch(e){ throw new Error('Onleesbaar antwoord van de database: ' + tekst.slice(0,160)); }
+  if(!res.ok) throw new Error((data && data.fout) || ('Fout ' + res.status));
+  return data;
+}
+
+/* --- de huidige toestand als records --- */
+function cfHuidigeRecords(){
+  const uit = [];
+  RAW_KLANTEN.forEach(k=>{
+    uit.push({ soort:'klant', sleutel:k.id, data: JSON.stringify(k) });
+    if(STORE[k.id]) uit.push({ soort:'store', sleutel:k.id, data: JSON.stringify(STORE[k.id]) });
+  });
+  Object.keys(CF_META).forEach(naam=>{
+    uit.push({ soort:'meta', sleutel:naam, data: JSON.stringify(CF_META[naam].lees()) });
+  });
+  return uit;
+}
+function cfId(r){ return r.soort + '|' + r.sleutel; }
+
+/* --- een binnengekomen record in het geheugen zetten --- */
+function cfPasToe(r){
+  if(!r || r.data === null || r.data === undefined) return false;
+  let waarde;
+  try{ waarde = JSON.parse(r.data); }catch(e){ return false; }
+  if(r.soort === 'klant'){
+    const idx = RAW_KLANTEN.findIndex(k=>k.id===r.sleutel);
+    if(idx === -1) RAW_KLANTEN.push(waarde); else RAW_KLANTEN[idx] = waarde;
+  } else if(r.soort === 'store'){
+    STORE[r.sleutel] = waarde;
+  } else if(r.soort === 'meta'){
+    const m = CF_META[r.sleutel];
+    if(!m) return false;
+    m.zet(waarde);
+  } else return false;
+  CF.versies[cfId(r)] = r.versie;
+  CF.verzonden[cfId(r)] = r.data;
+  return true;
+}
+
+/* --- wegschrijven wat er lokaal veranderd is ----------------------------------------------------
+   Alleen records waarvan de JSON afwijkt van wat we het laatst hebben weggeschreven gaan mee. Bij een
+   botsing wint de versie die al in de database staat: die wordt in beeld gezet en jij krijgt te horen
+   welke klant het betrof, zodat je jouw wijziging bewust opnieuw kunt doen.
+------------------------------------------------------------------------------------------------- */
+let cfDuwTimer = null;
+function cfDuwLater(){
+  if(!CF.actief) return;
+  clearTimeout(cfDuwTimer);
+  cfDuwTimer = setTimeout(()=>{ cfDuw().catch(e=>console.error('Cloudflare-sync mislukt:', e)); }, 900);
+}
+async function cfDuw(){
+  if(!CF.actief || CF.bezig) return false;
+  const alles = cfHuidigeRecords();
+  const gewijzigd = alles.filter(r => CF.verzonden[cfId(r)] !== r.data);
+  if(!gewijzigd.length) return true;
+
+  CF.bezig = true;
+  try{
+    let botsingen = [];
+    for(let i=0; i<gewijzigd.length; i+=200){
+      const blok = gewijzigd.slice(i, i+200).map(r=>({
+        soort:r.soort, sleutel:r.sleutel, data:r.data, versie: CF.versies[cfId(r)] || 0
+      }));
+      const antwoord = await cfFetch('/schrijf', { method:'POST', body: JSON.stringify({ records: blok }) });
+      (antwoord.opgeslagen||[]).forEach(o=>{
+        const id = o.soort + '|' + o.sleutel;
+        CF.versies[id] = o.versie;
+        const bron = gewijzigd.find(r=>cfId(r)===id);
+        if(bron) CF.verzonden[id] = bron.data;
+      });
+      (antwoord.conflicten||[]).forEach(c=>{ if(c) botsingen.push(c); });
+    }
+
+    if(botsingen.length){
+      botsingen.forEach(c=>cfPasToe(c));
+      const namen = botsingen.map(c=>{
+        if(c.soort === 'klant' || c.soort === 'store'){
+          const k = RAW_KLANTEN.find(x=>x.id===c.sleutel);
+          return k ? k.naam : c.sleutel;
+        }
+        return c.sleutel;
+      });
+      const uniek = [...new Set(namen)];
+      const wie = [...new Set(botsingen.map(c=>c.door).filter(Boolean))].join(', ');
+      CF.conflicten = botsingen.map(c=>({ sleutel:c.sleutel, soort:c.soort, door:c.door, ts:c.gewijzigd })).concat(CF.conflicten).slice(0,20);
+      toast(`Je wijziging bij ${uniek.slice(0,3).join(', ')}${uniek.length>3?` en ${uniek.length-3} andere`:''} is niet opgeslagen — ${wie||'een collega'} was net eerder. Het scherm toont nu hun versie; pas het zo nodig opnieuw aan.`, { duration: 12000 });
+      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+    }
+
+    CF.fout = null;
+    CF.laatsteDuw = new Date().toISOString();
+    cfBewaar(); updateSyncIndicator();
+    return true;
+  }catch(e){
+    CF.fout = e.message || String(e);
+    updateSyncIndicator();
+    return false;
+  }finally{
+    CF.bezig = false;
+  }
+}
+
+/* --- ophalen wat collega's hebben gewijzigd --- */
+async function cfHaal(toonMelding){
+  if(!CF.actief || CF.bezig) return false;
+  CF.bezig = true;
+  try{
+    const antwoord = await cfFetch('/haal' + (CF.laatste ? '?sinds=' + encodeURIComponent(CF.laatste) : ''));
+    let veranderd = 0;
+    (antwoord.records||[]).forEach(r=>{
+      // Eigen zojuist weggeschreven records overslaan; die staan al goed in beeld.
+      if(CF.verzonden[cfId(r)] === r.data){ CF.versies[cfId(r)] = r.versie; return; }
+      if(cfPasToe(r)) veranderd++;
+    });
+    CF.laatste = antwoord.nu;
+    CF.fout = null;
+    if(veranderd){
+      try{ migrateData(); }catch(e){ console.error('migrateData na ophalen mislukt:', e); }
+      persistMeta(); flushPersistStore();
+      document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+      if(toonMelding) toast(`${veranderd} wijziging(en) van collega's opgehaald.`);
+    }
+    cfBewaar(); updateSyncIndicator();
+    return true;
+  }catch(e){
+    CF.fout = e.message || String(e);
+    updateSyncIndicator();
+    if(toonMelding) toast('Ophalen mislukt: ' + CF.fout);
+    return false;
+  }finally{
+    CF.bezig = false;
+  }
+}
+
+/* --- de eenmalige overzetting ------------------------------------------------------------------
+   Draait vanuit deze browser: de gegevens gaan rechtstreeks van jouw scherm naar jullie eigen
+   Cloudflare-database. De worker weigert een tweede overzetting zolang er al iets in staat.
+------------------------------------------------------------------------------------------------ */
+async function cfOverzetten(knop){
+  const doel = document.getElementById('cfOverzetResultaat');
+  const meld = (html)=>{ if(doel) doel.innerHTML = html; };
+  const records = cfHuidigeRecords();
+  if(!records.length){ meld('<div class="banner">Er is nog niets om over te zetten.</div>'); return; }
+
+  if(!confirm(`Je staat op het punt ${records.length} record(s) naar de Cloudflare-database te schrijven:\n\n`
+    + `· ${RAW_KLANTEN.length} klanten\n· ${Object.keys(STORE).length} dossiers\n· ${Object.keys(CF_META).length} instellingen-onderdelen\n\n`
+    + `SharePoint blijft ongemoeid — daar wordt niets gewijzigd of verwijderd.\n\nDoorgaan?`)) return;
+
+  if(knop) knop.disabled = true;
+  try{
+    let gedaan = 0;
+    for(let i=0; i<records.length; i+=200){
+      const blok = records.slice(i, i+200);
+      meld(`<div class="banner">Bezig… ${gedaan} van ${records.length} records overgezet.</div>`);
+      const antwoord = await cfFetch('/import', { method:'POST', body: JSON.stringify({ records: blok, eersteBlok: i === 0 }) });
+      gedaan += antwoord.geplaatst || blok.length;
+      blok.forEach(r=>{ CF.versies[cfId(r)] = 1; CF.verzonden[cfId(r)] = r.data; });
+    }
+    CF.laatste = null;
+    cfBewaar();
+    meld(`<div class="banner"><i class="ti ti-circle-check" aria-hidden="true"></i> <b>${gedaan}</b> record(s) overgezet. `
+      + `Zet hieronder de schakelaar om zodra je met een collega hebt getest.</div>`);
+    toast('Overzetten gelukt: ' + gedaan + ' records.');
+  }catch(e){
+    meld(`<div class="banner" style="border-left-color:var(--red);"><b>Overzetten gestopt:</b> ${escHtml(e.message||String(e))}</div>`);
+  }finally{
+    if(knop) knop.disabled = false;
+    document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }
+}
+
+/* --- aan- en uitzetten --- */
+async function cfAanzetten(aan){
+  if(aan){
+    try{
+      const st = await cfFetch('/status');
+      if(!st.totaal){
+        toast('De database is nog leeg — zet eerst de gegevens over.');
+        return false;
+      }
+      CF.actief = true;
+      CF.laatste = null;
+      cfBewaar();
+      await cfHaal(false);
+      logActiviteit('Gedeelde opslag omgezet naar de Cloudflare-database');
+      toast('Het dashboard werkt nu met de Cloudflare-database. SharePoint blijft als reservekopie staan.');
+    }catch(e){
+      toast('Kon niet omschakelen: ' + (e.message||e));
+      return false;
+    }
+  } else {
+    CF.actief = false;
+    cfBewaar();
+    logActiviteit('Gedeelde opslag teruggezet naar SharePoint');
+    toast('Terug op SharePoint.');
+  }
+  document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  updateSyncIndicator();
+  return true;
+}
+
 /* ================= OPMAAK IN LOONHEFFING-NOTITIES (vet, lettertype, grootte, kleur, opsomming) =================
    Deze notities worden via SharePoint met alle collega's gedeeld en in ieders browser weergegeven. Wat een
    collega typt is dus in feite HTML van iemand anders: alles gaat daarom eerst door schoonRtHtml(), die
@@ -13968,7 +14346,10 @@ try{ render(); }catch(e){
     + '<p>Technische foutmelding: ' + (e && e.message ? e.message : e) + '</p>'
     + '<p>Probeer de pagina te verversen. Blijft dit gebeuren, stuur deze foutmelding door.</p></div>';
 }
-if(SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
+try{ cfLaad(); CF_GELADEN = true; }catch(e){ console.error('Cloudflare-instellingen laden mislukt:', e); }
+if(CF.actief){
+  try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
+} else if(SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
 try{ if(rdwHercheckAutoNodig()) rdwHercheckAutoUitvoeren(); }catch(e){ console.error('RDW auto-hercheck controle mislukt:', e); }
 // Teams & Outlook automatisch mee laden zodra er een Microsoft-login is (stil, nooit een popup):
 // badges en mini-panelen werken dan overal, zonder eerst de app-pagina's te hoeven openen.
@@ -13980,11 +14361,20 @@ try{
   tmStartGlobalePoll();
 }catch(e){ console.error('Apps auto-verbinden mislukt:', e); }
 setInterval(()=>{
+  if(CF.actief) return;   // de Cloudflare-poll hieronder neemt het dan over
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
     try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }
     catch(e){ console.error('Sync mislukt:', e); }
   }
 }, 45000);
+/* Cloudflare-poll: vaker dan SharePoint (20s in plaats van 45s), want er komt per keer alleen langs
+   wat er daadwerkelijk is gewijzigd in plaats van de hele dataset. */
+setInterval(()=>{
+  if(!CF.actief || !SYNC.account) return;
+  if(STATE.panelKlant || STATE.showAddKlant || STATE.showAddBh || isTypingInField()) return;
+  try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
+  catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
+}, 20000);
 
 
 /* ============================= COMMAND PALETTE (⌘K) =============================
