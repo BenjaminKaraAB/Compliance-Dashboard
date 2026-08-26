@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.1';
+const APP_VERSION = '2026.08.26.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -1301,8 +1301,21 @@ function deleteKlant(id){
   if(idx===-1) return false;
   RAW_KLANTEN.splice(idx,1);
   delete STORE[id];
+  cfMeldVerwijderd(id);
   persistMeta(); persist();
   return true;
+}
+/* Onthoudt dat deze klant uit de gedeelde database moet. Wordt bij de eerstvolgende synchronisatie
+   als grafsteen doorgegeven, zodat de klant ook bij collega's verdwijnt en niet terugkomt. */
+function cfMeldVerwijderd(id){
+  if(typeof CF === 'undefined' || !CF.actief) return;
+  if(!Array.isArray(CF.teVerwijderen)) CF.teVerwijderen = [];
+  [['klant',id],['store',id]].forEach(([soort,sleutel])=>{
+    if(!CF.teVerwijderen.some(v=>v.soort===soort && v.sleutel===sleutel)){
+      CF.teVerwijderen.push({soort, sleutel});
+    }
+  });
+  cfBewaar();
 }
 function deleteBoekhouder(id){
   if(RAW_KLANTEN.some(k=>k.bh===id)) return 'heeft-klanten';
@@ -13288,6 +13301,7 @@ let CF = {
   bezig: false,
   laatsteDuw: null,
   conflicten: [],       // recente botsingen, om in Instellingen te tonen
+  teVerwijderen: [],    // records die lokaal weg zijn en nog uit de database moeten
 };
 function cfLaad(){
   try{
@@ -13299,6 +13313,7 @@ function cfBewaar(){
   try{
     localStorage.setItem(CF_KEY, JSON.stringify({
       actief: CF.actief, laatste: CF.laatste, versies: CF.versies, verzonden: CF.verzonden,
+      teVerwijderen: CF.teVerwijderen,
     }));
   }catch(e){}
 }
@@ -13333,6 +13348,21 @@ function cfId(r){ return r.soort + '|' + r.sleutel; }
 /* --- een binnengekomen record in het geheugen zetten --- */
 function cfPasToe(r){
   if(!r || r.data === null || r.data === undefined) return false;
+  /* Een record met een lege inhoud is een grafsteen: een collega heeft deze klant verwijderd. Zonder
+     dit zou een verwijderde klant bij de volgende volledige ophaalronde weer opduiken. Het
+     versienummer blijft bewaard, zodat "Ongedaan maken" de klant gewoon weer tot leven wekt. */
+  if(r.data === ''){
+    if(r.soort === 'klant'){
+      const idx = RAW_KLANTEN.findIndex(k=>k.id===r.sleutel);
+      if(idx !== -1) RAW_KLANTEN.splice(idx,1);
+      delete STORE[r.sleutel];
+    } else if(r.soort === 'store'){
+      delete STORE[r.sleutel];
+    }
+    CF.versies[cfId(r)] = r.versie;
+    delete CF.verzonden[cfId(r)];
+    return true;
+  }
   let waarde;
   try{ waarde = JSON.parse(r.data); }catch(e){ return false; }
   if(r.soort === 'klant'){
@@ -13365,6 +13395,11 @@ async function cfDuw(){
   if(!CF.actief || CF.bezig) return false;
   const alles = cfHuidigeRecords();
   const gewijzigd = alles.filter(r => CF.verzonden[cfId(r)] !== r.data);
+  /* Verwijderde klanten staan niet meer in cfHuidigeRecords(), dus die zouden nooit worden
+     doorgegeven. Ze gaan mee als grafsteen — een record met lege inhoud. */
+  (CF.teVerwijderen||[]).forEach(v=>{
+    if(CF.versies[v.soort+'|'+v.sleutel]) gewijzigd.push({ soort:v.soort, sleutel:v.sleutel, data:'' });
+  });
   if(!gewijzigd.length) return true;
 
   CF.bezig = true;
@@ -13379,7 +13414,12 @@ async function cfDuw(){
         const id = o.soort + '|' + o.sleutel;
         CF.versies[id] = o.versie;
         const bron = gewijzigd.find(r=>cfId(r)===id);
-        if(bron) CF.verzonden[id] = bron.data;
+        if(bron && bron.data === ''){
+          delete CF.verzonden[id];
+          CF.teVerwijderen = (CF.teVerwijderen||[]).filter(v=>(v.soort+'|'+v.sleutel) !== id);
+        } else if(bron){
+          CF.verzonden[id] = bron.data;
+        }
       });
       (antwoord.conflicten||[]).forEach(c=>{ if(c) botsingen.push(c); });
     }
