@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.5';
+const APP_VERSION = '2026.08.26.6';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -13332,6 +13332,9 @@ function cfBewaar(){
 /* --- praten met de worker; hetzelfde Microsoft-token als de rest van het dashboard gebruikt --- */
 async function cfFetch(pad, opts){
   const token = await getGraphToken(false);
+  /* Token gelukt: ruim een eventueel achtergebleven valse opstartfout op, anders blijft
+     "Kon de Microsoft-inlogbibliotheek niet laden" eeuwig in de status staan. */
+  if(SYNC.lastError){ SYNC.lastError = null; try{ persistSync(); }catch(_e){} }
   const res = await fetch(CF_URL + pad, Object.assign({}, opts||{}, {
     headers: Object.assign({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, (opts&&opts.headers)||{}),
   }));
@@ -14402,9 +14405,17 @@ try{ render(); }catch(e){
     + '<p>Probeer de pagina te verversen. Blijft dit gebeuren, stuur deze foutmelding door.</p></div>';
 }
 try{ cfLaad(); CF_GELADEN = true; }catch(e){ console.error('Cloudflare-instellingen laden mislukt:', e); }
-if(CF.actief && SYNC.account){
-  try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
-} else if(!CF.actief && SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
+/* De eerste sync-ronde pas draaien als ALLE scripts geladen zijn: de Microsoft-bibliotheek (msal)
+   staat in een <script src> ónder dit script en is hier dus nog niet beschikbaar. Direct starten gaf
+   bij elke start een gegarandeerd valse foutmelding ("inlogbibliotheek niet laden" / "Geen App ID"),
+   die daarna in beeld bleef hangen terwijl de sync allang weer liep. */
+function startEersteSync(){
+  if(CF.actief && SYNC.account){
+    try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
+  } else if(!CF.actief && SYNC.enabled){ try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }catch(e){ console.error('Sync mislukt:', e); } }
+}
+if(document.readyState === 'complete') startEersteSync();
+else window.addEventListener('load', startEersteSync);
 try{ if(rdwHercheckAutoNodig()) rdwHercheckAutoUitvoeren(); }catch(e){ console.error('RDW auto-hercheck controle mislukt:', e); }
 // Teams & Outlook automatisch mee laden zodra er een Microsoft-login is (stil, nooit een popup):
 // badges en mini-panelen werken dan overal, zonder eerst de app-pagina's te hoeven openen.
