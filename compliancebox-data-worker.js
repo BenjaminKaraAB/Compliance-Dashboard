@@ -26,6 +26,7 @@ const TOEGESTAAN_DOMEIN = '@administratiebox.nl';
 
 /* Alleen deze adressen mogen de worker aanroepen. Nieuw dashboard-adres erbij? Hier toevoegen. */
 const TOEGESTANE_HERKOMST = [
+  'https://dashboard.administratiebox.com',
   'https://drop-fd5271a2-be0.benjamin-092.workers.dev',
   'https://benjaminkaraab.github.io',
 ];
