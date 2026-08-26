@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.4';
+const APP_VERSION = '2026.08.26.5';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -9570,7 +9570,7 @@ function instellingenHTML(){
     </div>
   </div>
 
-  <div class="section">
+  ${isAdmin() ? `<div class="section">
     <div class="section-head">
       <h3>Gedeelde database (Cloudflare)</h3>
       <span class="hint">${CF.actief ? 'Actief — iedereen werkt live in dezelfde gegevens' : 'Uitgezet in deze browser — je werkt nu via SharePoint'}</span>
@@ -9605,12 +9605,12 @@ function instellingenHTML(){
         </div>
       </div>` : ''}
       <div style="margin-top:14px; font-size:11px; color:var(--muted); line-height:1.7;">
-        De gedeelde database staat sinds v2026.08.26.4 <b>standaard aan</b> voor iedereen: inloggen met Microsoft
-        is genoeg, verder hoeft niemand iets te doen. SharePoint blijft ongemoeid staan als reservekopie.
-        Het vinkje hierboven is alleen een noodrem per browser.
+        De gedeelde database staat <b>standaard aan</b> voor iedereen: inloggen met Microsoft is genoeg,
+        verder hoeft niemand iets te doen. SharePoint blijft ongemoeid staan als reservekopie. Dit blok is
+        alleen zichtbaar voor beheerders; het vinkje hierboven is een noodrem per browser.
       </div>
     </div>
-  </div>
+  </div>` : ''}
 
   <div class="section">
     <div class="section-head"><h3>Wat moet er klaarstaan?</h3></div>
@@ -11835,11 +11835,15 @@ function attachHandlers(){
     }
   });
   const cfOverzetBtn = document.querySelector('[data-cf-overzetten]');
-  if(cfOverzetBtn) cfOverzetBtn.addEventListener('click', ()=>{ cfOverzetten(cfOverzetBtn); });
+  if(cfOverzetBtn) cfOverzetBtn.addEventListener('click', ()=>{
+    if(!isAdmin()){ toast('Alleen beheerders kunnen gegevens overzetten.'); return; }
+    cfOverzetten(cfOverzetBtn);
+  });
   const cfNuBtn = document.querySelector('[data-cf-nu]');
   if(cfNuBtn) cfNuBtn.addEventListener('click', ()=>{ cfHaal(true); });
   const cfActiefBox = document.getElementById('cfActief');
   if(cfActiefBox) cfActiefBox.addEventListener('change', async ()=>{
+    if(!isAdmin()){ toast('Alleen beheerders kunnen de gedeelde database aan- of uitzetten.'); cfActiefBox.checked = CF.actief; return; }
     const aan = cfActiefBox.checked;
     const gelukt = await cfAanzetten(aan);
     if(!gelukt) cfActiefBox.checked = !aan;
