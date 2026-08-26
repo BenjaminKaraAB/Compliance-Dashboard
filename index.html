@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.9';
+const APP_VERSION = '2026.08.26.10';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -3921,10 +3921,42 @@ function tmOngelezenTotaal(){
 function tmMailOngelezen(){
   return (MSMAIL.mails||[]).filter(m=>!m.isRead).length;
 }
+/* ---- Persoonlijke meldingsvoorkeuren (Teams / Outlook) --------------------------------------
+   Wie geen rode tellertjes wil, zet ze hier uit. Dit is een PERSOONLIJKE keuze en wordt alleen in
+   deze browser bewaard — niet gedeeld met collega's en niet naar de database gestuurd. Uitgezet
+   betekent: geen badge in de zijbalk/bovenbalk, geen aantal in de tabbladtitel en geen
+   bureaubladmelding. De pagina's Teams-chat en Outlook zelf blijven gewoon werken als je ze opent. */
+const MELDING_KEY = 'cd_meldingen_v1';
+let _meldingPrefs = null;
+function meldingPrefs(){
+  if(_meldingPrefs) return _meldingPrefs;
+  let p = {};
+  try{ p = JSON.parse(localStorage.getItem(MELDING_KEY)||'{}') || {}; }catch(e){ p = {}; }
+  // Standaard staan meldingen AAN, zodat er voor bestaande gebruikers niets verandert.
+  _meldingPrefs = { teams: p.teams !== false, outlook: p.outlook !== false };
+  return _meldingPrefs;
+}
+function meldingPrefsZet(sleutel, aan){
+  const p = meldingPrefs();
+  p[sleutel] = !!aan;
+  try{ localStorage.setItem(MELDING_KEY, JSON.stringify(p)); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
+  try{ updateAppBadges(); }catch(e){}
+  return p;
+}
+
 /* Browsermelding bij nieuw chatbericht (alleen als de gebruiker dat heeft toegestaan). */
 function tmMeldNieuweBerichten(){
   try{
     if(typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    /* Meldingen uitgezet: wel de stand bijhouden (zodat je bij weer aanzetten geen stortvloed aan
+       oude berichten krijgt), maar niets tonen. */
+    if(!meldingPrefs().teams){
+      (MSCHAT.chats||[]).forEach(c=>{
+        const t = c.lastMessagePreview && c.lastMessagePreview.createdDateTime;
+        if(t) MSCHAT.vorigeOngelezen[c.id] = t;
+      });
+      return;
+    }
     (MSCHAT.chats||[]).forEach(c=>{
       const laatste = c.lastMessagePreview && c.lastMessagePreview.createdDateTime;
       if(!laatste || !mschatIsOngelezen(c)) return;
@@ -3941,8 +3973,9 @@ function tmMeldNieuweBerichten(){
 /* Badges in sidebar + tabbladtitel, vanaf elke pagina actueel. */
 function updateAppBadges(){
   try{
-    const chatN = tmOngelezenTotaal();
-    const mailN = tmMailOngelezen();
+    const prefs = meldingPrefs();
+    const chatN = prefs.teams   ? tmOngelezenTotaal() : 0;
+    const mailN = prefs.outlook ? tmMailOngelezen()   : 0;
     const zet = (nav, n)=>{
       const el = document.querySelector(`[data-nav="${nav}"]`);
       if(!el) return;
@@ -3970,8 +4003,9 @@ function tmStartGlobalePoll(){
   setInterval(async ()=>{
     if(!SYNC.account) return;
     try{
-      if(MSCHAT.chats && !MSCHAT.laden && STATE.view!=='msteams'){ await mschatLaadChats(false); }
-      if(MSMAIL.mails && !MSMAIL.laden && STATE.view!=='outlook'){ await msmailLaadInbox(false); }
+      const prefs = meldingPrefs();
+      if(prefs.teams   && MSCHAT.chats && !MSCHAT.laden && STATE.view!=='msteams'){ await mschatLaadChats(false); }
+      if(prefs.outlook && MSMAIL.mails && !MSMAIL.laden && STATE.view!=='outlook'){ await msmailLaadInbox(false); }
       tmMeldNieuweBerichten();
       updateAppBadges();
     }catch(e){}
@@ -9672,6 +9706,28 @@ function instellingenHTML(){
     </div>
   </div>
 
+  <div class="section">
+    <div class="section-head"><h3>Meldingen</h3><span class="hint">Persoonlijke keuze — geldt alleen voor jou, in deze browser</span></div>
+    <div class="section-body pad">
+      <p style="font-size:12px; color:var(--muted); line-height:1.7; margin:0 0 12px;">
+        Geen zin in de rode tellertjes van Teams en Outlook? Zet ze hier uit. Je ziet dan geen rood bolletje meer
+        in de zijbalk en bovenbalk, geen aantal in de tabbladtitel en geen bureaubladmelding bij een nieuw bericht.
+        De pagina's <b>Teams-chat</b> en <b>Outlook</b> blijven gewoon werken als je ze zelf opent — je mist dus niets,
+        je wordt er alleen niet meer op geattendeerd. Collega's merken hier niets van; iedereen kiest dit voor zichzelf.
+      </p>
+      <div class="field-row"><label>Teams-chat</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+          <input type="checkbox" id="meldingTeams" ${meldingPrefs().teams?'checked':''}> Meldingen en tellers weergeven
+        </label>
+      </div>
+      <div class="field-row"><label>Outlook</label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
+          <input type="checkbox" id="meldingOutlook" ${meldingPrefs().outlook?'checked':''}> Meldingen en tellers weergeven
+        </label>
+      </div>
+    </div>
+  </div>
+
   ${isAdmin() ? `<div class="section">
     <div class="section-body pad" style="font-size:12px; color:var(--muted); line-height:1.7;">
       <i class="ti ti-database" aria-hidden="true"></i> De <b>gedeelde database (Cloudflare)</b> beheer je op de
@@ -11909,6 +11965,18 @@ function attachHandlers(){
   });
   const cfNuBtn = document.querySelector('[data-cf-nu]');
   if(cfNuBtn) cfNuBtn.addEventListener('click', ()=>{ cfHaal(true); });
+  /* Persoonlijke meldingsvoorkeuren (Teams / Outlook) — direct effect, geen opslaan-knop nodig. */
+  const meldTeamsBox = document.getElementById('meldingTeams');
+  if(meldTeamsBox) meldTeamsBox.addEventListener('change', ()=>{
+    meldingPrefsZet('teams', meldTeamsBox.checked);
+    toast(meldTeamsBox.checked ? 'Teams-meldingen staan weer aan.' : 'Teams-meldingen uitgezet — alleen voor jou.');
+  });
+  const meldOutlookBox = document.getElementById('meldingOutlook');
+  if(meldOutlookBox) meldOutlookBox.addEventListener('change', ()=>{
+    meldingPrefsZet('outlook', meldOutlookBox.checked);
+    toast(meldOutlookBox.checked ? 'Outlook-meldingen staan weer aan.' : 'Outlook-meldingen uitgezet — alleen voor jou.');
+  });
+
   const cfActiefBox = document.getElementById('cfActief');
   if(cfActiefBox) cfActiefBox.addEventListener('change', async ()=>{
     if(!isAdmin()){ toast('Alleen beheerders kunnen de gedeelde database aan- of uitzetten.'); cfActiefBox.checked = CF.actief; return; }
@@ -14571,8 +14639,11 @@ try{ if(rdwHercheckAutoNodig()) rdwHercheckAutoUitvoeren(); }catch(e){ console.e
 // badges en mini-panelen werken dan overal, zonder eerst de app-pagina's te hoeven openen.
 try{
   if(SYNC.account){
-    if(!MSCHAT.chats && !MSCHAT.laden) mschatInit(false);
-    if(!MSMAIL.mails && !MSMAIL.laden && typeof msmailInit === 'function') msmailInit(false);
+    /* Alleen vooraf inladen waarvoor de meldingen aanstaan — staat een app uit, dan hoeft er bij het
+       opstarten niets opgehaald te worden. De pagina's zelf laden hun gegevens gewoon zodra je ze opent. */
+    const _mp = meldingPrefs();
+    if(_mp.teams   && !MSCHAT.chats && !MSCHAT.laden) mschatInit(false);
+    if(_mp.outlook && !MSMAIL.mails && !MSMAIL.laden && typeof msmailInit === 'function') msmailInit(false);
   }
   tmStartGlobalePoll();
 }catch(e){ console.error('Apps auto-verbinden mislukt:', e); }
