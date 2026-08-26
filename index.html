@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.6';
+const APP_VERSION = '2026.08.26.7';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -980,13 +980,16 @@ function loadMeta(){
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE})); }catch(e){}
+  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE})); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
 }
 function persistMeta(){
-  if(typeof CF !== 'undefined' && CF.actief) cfDuwLater();
   clearTimeout(persistMetaTimer);
   persistMetaTimer = setTimeout(flushPersistMeta, 400);
-  pushRemoteDebounced();
+  /* Bij een actieve Cloudflare-database gaat de wijziging daarheen; dan NIET óók de volledige dataset
+     naar SharePoint pushen (dubbele netwerklast + flikkerende "Sync mislukt"-status). Staat CF uit,
+     dan is SharePoint de enige route. */
+  if(typeof CF !== 'undefined' && CF.actief) cfDuwLater();
+  else pushRemoteDebounced();
 }
 loadMeta();
 
@@ -1234,7 +1237,7 @@ function addKlant(data){
   const id = nextId(RAW_KLANTEN,'k');
   const dateOrNa = (v, herhaling)=> v ? Object.assign(DL(v), {herhaling:herhaling||'geen'}) : NA();
   const klant = {
-    id, naam:data.naam, vorm:data.vorm, bh:data.bh, kvk:data.kvk||'', obNummer:data.obNummer||'',
+    id, naam:veiligeNaam(data.naam), vorm:veiligeNaam(data.vorm), bh:data.bh, kvk:data.kvk||'', obNummer:data.obNummer||'',
     contact:data.contact||'', email:data.email||'', tel:data.tel||'',
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
@@ -1276,7 +1279,7 @@ const BH_KLEUR_REMAP = {'#2f5dfc':'#3B6FB6','#0e9488':'#0F766E','#c9770a':'#B25E
 function volgendeAutoKleur(){ return BH_KLEUREN_CYCLUS[BOEKHOUDERS.length % BH_KLEUREN_CYCLUS.length]; }
 function addBoekhouder(data){
   const id = nextId(BOEKHOUDERS,'bh');
-  const b = {id, naam:data.naam, rol:data.rol||'Boekhouder', email:data.email||'', team:data.team||'', teamHistorie:[{team:data.team||'', vanaf:''}], kleur: data.kleur || volgendeAutoKleur()};
+  const b = {id, naam:veiligeNaam(data.naam), rol:veiligeNaam(data.rol||'Boekhouder'), email:data.email||'', team:data.team||'', teamHistorie:[{team:data.team||'', vanaf:''}], kleur: data.kleur || volgendeAutoKleur()};
   BOEKHOUDERS.push(b); invalidateBhIndex();
   logActiviteit(`Boekhouder toegevoegd: "${b.naam}"`);
   persistMeta();
@@ -1443,7 +1446,7 @@ function confirmDeleteBoekhouder(id){
 }
 function addTeam(data){
   const id = nextId(TEAMS,'team');
-  const t = {id, naam:data.naam};
+  const t = {id, naam:veiligeNaam(data.naam)};
   TEAMS.push(t);
   logActiviteit(`Team toegevoegd: "${t.naam}"`);
   persistMeta();
@@ -1698,7 +1701,7 @@ try{ migrateData(); }catch(e){ console.error('migrateData() mislukt bij het opst
 let persistStoreTimer = null;
 function flushPersistStore(){
   clearTimeout(persistStoreTimer); persistStoreTimer = null;
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
 }
 function persist(){
   // De lokale opslag-write (JSON.stringify van de volledige STORE) is de duurste stap bij elke
@@ -1740,6 +1743,20 @@ function saveSyncConfig(cfg){
 }
 function persistSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }catch(e){} updateSyncIndicator(); }
 
+/* Beveiligt het gedeelde RECHTEN-record tegen een binnenkomende (gesynchroniseerde) waarde die de
+   beheerderslijst zou leegmaken of vervangen door rommel — dat zou iedereen tegelijk uit de
+   beheerdersrechten sluiten (lockout). Een lege of ontbrekende adminEmails valt terug op de huidige
+   lijst, en als die ook leeg is op de vaste eigenaar. */
+function veiligeRechten(v){
+  const uit = (v && typeof v === 'object') ? v : {};
+  let lijst = Array.isArray(uit.adminEmails) ? uit.adminEmails.filter(e=>typeof e==='string' && e.includes('@')) : null;
+  if(!lijst || !lijst.length){
+    const huidig = (typeof RECHTEN !== 'undefined' && Array.isArray(RECHTEN.adminEmails)) ? RECHTEN.adminEmails.filter(Boolean) : [];
+    lijst = huidig.length ? huidig : ['benjamin@administratiebox.nl'];
+  }
+  uit.adminEmails = lijst;
+  return uit;
+}
 function isAdmin(){
   if(!SYNC.account || !SYNC.account.username) return false;
   const list = (RECHTEN.adminEmails||[]).map(e=>e.toLowerCase().trim());
@@ -2118,6 +2135,16 @@ function updateSyncIndicator(){
   if(!el) return;
   el.classList.remove('sync-fout','sync-ok');
   if(typeof CF !== 'undefined' && CF.actief){
+    /* Actief maar niet ingelogd bij Microsoft = er kan niets worden opgehaald of weggeschreven.
+       Dan géén groen "Gedeeld" tonen (dat suggereert ten onrechte dat je live meekijkt), maar een
+       duidelijke waarschuwing om in te loggen. */
+    if(!SYNC.account){
+      el.classList.add('sync-fout');
+      el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Niet ingelogd';
+      el.title = 'De gedeelde database staat aan, maar je bent niet ingelogd bij Microsoft — log in om live mee te werken (Instellingen).';
+      el.style.color = '';
+      return;
+    }
     if(CF.fout){
       el.classList.add('sync-fout');
       el.innerHTML = '<i class="ti ti-alert-triangle" aria-hidden="true"></i> Sync mislukt';
@@ -2233,6 +2260,12 @@ function readTabularFile(file, callback){
 /* ============================= HELPERS ============================= */
 function fmtEUR(n){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(n||0); }
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+/* Namen (klant, boekhouder, team) worden op tientallen plekken rechtstreeks in innerHTML gezet en
+   synchroniseren naar alle collega's. Bedrijfs-/persoonsnamen bevatten nooit < of >, dus die strippen
+   we bij het opslaan weg — zo kan een besmette import ("<img src=x onerror=…>") nooit als HTML in
+   iemands browser belanden. Dit is de bron-afdichting; losse weergaveplekken hoeven dan niet elk
+   afzonderlijk ge-escaped te worden. */
+function veiligeNaam(s){ return String(s==null?'':s).replace(/[<>]/g,'').trim(); }
 function fmtDate(str){ if(!str) return '—'; const dt=new Date(str+'T00:00:00'); if(isNaN(dt.getTime())) return '—'; return dt.toLocaleDateString('nl-NL',{day:'2-digit',month:'short',year:'numeric'}); }
 function datumNaarInvoer(iso){
   // Zet interne ISO-datum (JJJJ-MM-DD) om naar het invoerformaat DD-MM-JJJJ voor formuliervelden.
@@ -2564,7 +2597,7 @@ function render(){
           <div class="page-sub">${pageSub()}</div>
         </div>
         <div class="topbar-right">
-          <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${STATE.search}"/><span class="search-kbd">⌘K</span></div>
+          <div class="search-wrap">${ICONS.search}<input id="searchInput" placeholder="Zoek klant of boekhouder…" value="${escHtml(STATE.search)}"/><span class="search-kbd">⌘K</span></div>
           <div class="topbar-tools">
             <button class="btn sm ai-launch-btn" id="aiToggleBtn" title="AI-assistent" aria-label="AI-assistent"><i class="ti ti-sparkles" aria-hidden="true"></i></button>
             <button class="btn sm ghost" id="chatTopBtn" data-top-app="msteams" title="Teams-chat" aria-label="Teams-chat" style="position:relative;"><i class="ti ti-message-circle" aria-hidden="true"></i><span id="topTellerChat" class="app-teller" style="display:none;"></span></button>
@@ -4982,7 +5015,7 @@ function klantAvatarHTML(klant){
   const kleur = (b && b.kleur) ? b.kleur : '#94a0bb';
   const initialen = initialenVoor(klant.naam);
   const initialenEsc = String(initialen).replace(/[<>&"']/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
-  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?b.naam:'—'}">${initialenEsc}</div>`;
+  return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?escHtml(b.naam):'—'}">${initialenEsc}</div>`;
 }
 function sidebarFootHTML(){
   const naam = SYNC.account ? (SYNC.account.name || 'Benjamin') : 'Benjamin';
@@ -4996,6 +5029,13 @@ function sidebarFootHTML(){
     </div>
   </div>`;
 }
+/* Staat er een formulier open dat bij een re-render nog-niet-opgeslagen invoer zou verliezen?
+   Deze formulieren worden vers uit STATE opgebouwd, dus een tussentijdse render() gooit half-ingevulde
+   velden weg. Het gewone klantpaneel (alleen bekijken) mag wél live verversen. */
+function heeftOpenFormulier(){
+  return !!(STATE.showAddKlant || STATE.showAddBh || STATE.showAddTeam || STATE.showAddAuto
+    || STATE.editAuto || STATE.editBh || STATE.editKlant || STATE.afdPanel);
+}
 function isTypingInField(){
   const el = document.activeElement;
   if(!el) return false;
@@ -5003,7 +5043,7 @@ function isTypingInField(){
   // typen": de live-verversing hieronder mag nooit een halfgetypte tekst onder iemands handen weghalen.
   if(el.isContentEditable) return true;
   const tag = el.tagName;
-  if(tag === 'TEXTAREA') return true;
+  if(tag === 'TEXTAREA' || tag === 'SELECT') return true;
   if(tag === 'INPUT'){
     const t = (el.type||'text').toLowerCase();
     return t !== 'checkbox' && t !== 'radio' && t !== 'file' && t !== 'button' && t !== 'submit';
@@ -5028,9 +5068,18 @@ function boekhouderKleurVoorNaam(naam){
 }
 function advanceDate(datum, herhaling){
   const dt = new Date(datum+'T00:00:00');
-  if(herhaling==='maandelijks') dt.setMonth(dt.getMonth()+1);
-  else if(herhaling==='kwartaal') dt.setMonth(dt.getMonth()+3);
-  else if(herhaling==='jaarlijks') dt.setFullYear(dt.getFullYear()+1);
+  /* Maand-toevoegen via setMonth "overloopt" bij dag 29-31: 31 jan +1 maand wordt in JS 3 maart
+     (februari heeft geen 31e). Fiscale deadlines staan juist vaak op de laatste dag van de maand
+     (31-01, 30-04, 31-07, 31-10). Daarom de dag apart bewaren, naar de 1e springen, de maand ophogen
+     en de dag terugzetten op min(oorspronkelijke dag, laatste dag van de doelmaand). */
+  const stapMaanden = herhaling==='maandelijks' ? 1 : (herhaling==='kwartaal' ? 3 : (herhaling==='jaarlijks' ? 12 : 0));
+  if(stapMaanden){
+    const dag = dt.getDate();
+    dt.setDate(1);
+    dt.setMonth(dt.getMonth()+stapMaanden);
+    const laatsteDag = new Date(dt.getFullYear(), dt.getMonth()+1, 0).getDate();
+    dt.setDate(Math.min(dag, laatsteDag));   // 29-02 +jaar -> 28-02, 31-01 +maand -> 28/29-02
+  }
   else return datum;
   // Let op: bewust geen toISOString() — dat rekent om naar UTC en zou de datum een dag
   // kunnen laten verschuiven in de Nederlandse tijdzone. We bouwen de datumstring op uit
@@ -9369,15 +9418,21 @@ function leesExcelGetal(v){
   let s = String(v).trim().replace(/[^\d.,-]/g,'');
   const laatsteKomma = s.lastIndexOf(',');
   const laatstePunt = s.lastIndexOf('.');
-  if(laatsteKomma > -1 && laatsteKomma > laatstePunt){
-    // Nederlandse notatie: "." = duizendtallen, "," = decimaal (bijv. "42.170,00").
-    s = s.replace(/\./g,'').replace(',', '.');
-  } else if(laatstePunt > -1 && laatstePunt > laatsteKomma){
-    // Engelse/Excel-notatie: "," = duizendtallen, "." = decimaal (bijv. "42,170.00").
-    s = s.replace(/,/g,'');
-  } else {
-    // Geen duizendtalscheiding, hooguit één scheidingsteken dat als decimaal bedoeld is.
-    s = s.replace(',', '.');
+  if(laatsteKomma > -1 && laatstePunt > -1){
+    // Beide scheidingstekens aanwezig: het láátste is de decimaal, de andere de duizendtallen.
+    if(laatsteKomma > laatstePunt) s = s.replace(/\./g,'').replace(',', '.');   // "42.170,00"
+    else s = s.replace(/,/g,'');                                                // "42,170.00"
+  } else if(laatsteKomma > -1){
+    // Alleen komma('s): NL-decimaal, tenzij het duidelijk een duizendtalgroepering is ("1,234").
+    const naKomma = s.length - laatsteKomma - 1;
+    if((s.match(/,/g)||[]).length > 1 || (naKomma === 3 && /^\d{1,3}(,\d{3})+$/.test(s))) s = s.replace(/,/g,'');
+    else s = s.replace(',', '.');
+  } else if(laatstePunt > -1){
+    // Alleen punt('en): NL gebruikt de punt als DUIZENDTAL. "42.170" = 42170, niet 42,17.
+    // Meerdere punten, of precies 3 cijfers achter de punt zonder komma → duizendtalgroepering.
+    const naPunt = s.length - laatstePunt - 1;
+    if((s.match(/\./g)||[]).length > 1 || naPunt === 3) s = s.replace(/\./g,'');
+    // Anders (1-2 cijfers achter de punt, bijv. "1.5" of "1234.56") is het een decimaal — laat staan.
   }
   const n = Number(s);
   return isNaN(n) ? 0 : n;
@@ -9528,7 +9583,7 @@ function instellingenHTML(){
       <div class="field-row"><label>SharePoint site-adres</label><input type="text" id="syncSiteUrl" value="${SYNC.siteUrl||''}" placeholder="https://jullietenant.sharepoint.com/sites/Compliance-Dashboard"></div>
       <div class="field-row"><label>Lijstnaam</label><input type="text" id="syncListName" value="${SYNC.listName||'ComplianceDashboardData'}"></div>
       ${isAdmin() || !(RECHTEN.adminEmails||[]).length
-        ? `<div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${(RECHTEN.adminEmails||[]).join(', ')}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>`
+        ? `<div class="field-row"><label>Beheerders</label><input type="text" id="syncAdminEmails" value="${escHtml((RECHTEN.adminEmails||[]).join(', '))}" placeholder="naam@administratiebox.nl, collega@administratiebox.nl"></div>`
         : `<div class="field-row"><label>Beheerders</label><span class="hint" style="align-self:center;">${(RECHTEN.adminEmails||[]).length} beheerder(s) ingesteld — alleen een beheerder kan dit wijzigen</span></div>`}
       <div class="field-row"><label>Synchronisatie</label>
         <label style="display:flex; align-items:center; gap:8px; font-size:12px;"><input type="checkbox" id="syncEnabled" ${SYNC.enabled?'checked':''}> Inschakelen</label>
@@ -10644,7 +10699,7 @@ function panelHTML(klant){
     <div class="panel-section">
       <div class="panel-section-head"><i class="ti ti-notes" aria-hidden="true"></i><span class="t">Notities</span></div>
       <div class="inner">
-        <textarea id="notitiesInput" placeholder="Interne notities over deze klant…">${f.notities||''}</textarea>
+        <textarea id="notitiesInput" placeholder="Interne notities over deze klant…">${escHtml(f.notities||'')}</textarea>
         <div style="margin-top:8px;"><button class="btn sm" data-save-notities>Opslaan</button></div>
       </div>
     </div>
@@ -10871,7 +10926,7 @@ function editKlantFormHTML(klant){
   </div>
   <div class="panel-body">
     <div class="panel-section"><h4>Klantgegevens</h4><div class="inner">
-      <div class="field-row"><label>Naam*</label><input type="text" id="editKlantNaam" value="${klant.naam}"></div>
+      <div class="field-row"><label>Naam*</label><input type="text" id="editKlantNaam" value="${escHtml(klant.naam)}"></div>
       <div class="field-row"><label>Rechtsvorm</label>${vormSelectHTML('editKlantVorm', klant.vorm)}</div>
       <div class="field-row"><label>Boekhouder*</label><select id="editKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${bhOptions}</select></div>
       <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="editKlantExtId" value="${klant.extId||''}" placeholder="bv. 1147"></div>
@@ -11114,7 +11169,7 @@ function openEditBhPanel(bhId, silent){
     const naam = document.getElementById('editBhNaam').value.trim();
     if(!naam){ toast('Vul een naam in.'); return; }
     updateBoekhouder(b.id, {
-      naam, rol:document.getElementById('editBhRol').value.trim(),
+      naam:veiligeNaam(naam), rol:veiligeNaam(document.getElementById('editBhRol').value.trim()),
       email:document.getElementById('editBhEmail').value.trim(),
       team:document.getElementById('editBhTeam').value,
       teamVanaf:(document.getElementById('editBhTeamDatum')||{}).value || '',
@@ -11191,8 +11246,8 @@ function attachEditKlantHandlers(klant){
     if(!naam){ toast('Vul een klantnaam in.'); return; }
     const bhId = document.getElementById('editKlantBh').value;
     if(!bhId){ toast('Kies een boekhouder.'); return; }
-    klant.naam = naam;
-    klant.vorm = document.getElementById('editKlantVorm').value;
+    klant.naam = veiligeNaam(naam);
+    klant.vorm = veiligeNaam(document.getElementById('editKlantVorm').value);
     klant.bh = bhId;
     klant.kvk = document.getElementById('editKlantKvk').value.trim();
     klant.obNummer = normaliseerObNummer((document.getElementById('editKlantOb')||{}).value||'');
@@ -13278,7 +13333,7 @@ const CF_KEY = 'compliance_dashboard_cf_v1';
 const CF_META = {
   boekhouders:      { lees: ()=>BOEKHOUDERS,        zet: v=>{ BOEKHOUDERS = v; invalidateBhIndex(); } },
   teams:            { lees: ()=>TEAMS,              zet: v=>{ TEAMS = v; } },
-  rechten:          { lees: ()=>RECHTEN,            zet: v=>{ RECHTEN = v; } },
+  rechten:          { lees: ()=>RECHTEN,            zet: v=>{ RECHTEN = veiligeRechten(v); } },
   autos:            { lees: ()=>AUTOS,              zet: v=>{ AUTOS = v; } },
   bijtellingTabel:  { lees: ()=>BIJTELLING_TABEL,   zet: v=>{ BIJTELLING_TABEL = v; } },
   activiteitenlog:  { lees: ()=>ACTIVITEITENLOG,    zet: v=>{ ACTIVITEITENLOG = v; } },
@@ -13320,13 +13375,22 @@ function cfLaad(){
      automatisch mee. Alleen wie de database in deze browser bewust heeft uitgezet, blijft uit. */
   if(!CF.uitgezet) CF.actief = true;
 }
+let _opslagVolGemeld = false;
+/* Meldt één keer als de browseropslag vol zit. Zonder deze melding zouden de localStorage-writers
+   stil falen en op een oude stand blijven staan — wat na een herlaad valse conflicten geeft. */
+function meldOpslagVol(){
+  if(_opslagVolGemeld) return;
+  _opslagVolGemeld = true;
+  try{ toast('Let op: de opslag van deze browser zit vol. Sluit oude tabbladen of leeg de browsercache; je laatste wijzigingen staan wel in de gedeelde database, maar deze browser kan ze lokaal niet meer bewaren.', { duration: 15000 }); }catch(_e){}
+  console.error('localStorage-quota overschreden.');
+}
 function cfBewaar(){
   try{
     localStorage.setItem(CF_KEY, JSON.stringify({
       actief: CF.actief, uitgezet: CF.uitgezet, laatste: CF.laatste, versies: CF.versies,
       verzonden: CF.verzonden, teVerwijderen: CF.teVerwijderen,
     }));
-  }catch(e){}
+  }catch(e){ meldOpslagVol(); }
 }
 
 /* --- praten met de worker; hetzelfde Microsoft-token als de rest van het dashboard gebruikt --- */
@@ -13406,13 +13470,21 @@ function cfDuwLater(){
   cfDuwTimer = setTimeout(()=>{ cfDuw().catch(e=>console.error('Cloudflare-sync mislukt:', e)); }, 900);
 }
 async function cfDuw(){
-  if(!CF.actief || CF.bezig) return false;
+  if(!CF.actief) return false;
+  /* Staat er al een duw/haal in flight (bv. de 20s-poll), probeer dan zo dadelijk opnieuw i.p.v. de
+     wijziging stil te laten liggen — anders kan een lokale bewerking ongesynct blijven en later door
+     een pull overschreven worden. */
+  if(CF.bezig){ cfDuwLater(); return false; }
   const alles = cfHuidigeRecords();
   const gewijzigd = alles.filter(r => CF.verzonden[cfId(r)] !== r.data);
   /* Verwijderde klanten staan niet meer in cfHuidigeRecords(), dus die zouden nooit worden
-     doorgegeven. Ze gaan mee als grafsteen — een record met lege inhoud. */
-  (CF.teVerwijderen||[]).forEach(v=>{
-    if(CF.versies[v.soort+'|'+v.sleutel]) gewijzigd.push({ soort:v.soort, sleutel:v.sleutel, data:'' });
+     doorgegeven. Ze gaan mee als grafsteen — een record met lege inhoud. Een klant die lokaal is
+     aangemaakt én verwijderd vóór hij ooit is geduwd heeft geen versie-entry: die grafsteen hoeft
+     niet weg (staat ook niet in de database) en halen we meteen uit de lijst zodat hij niet blijft
+     hangen. */
+  CF.teVerwijderen = (CF.teVerwijderen||[]).filter(v=>{
+    if(CF.versies[v.soort+'|'+v.sleutel]){ gewijzigd.push({ soort:v.soort, sleutel:v.sleutel, data:'' }); return true; }
+    return false;
   });
   if(!gewijzigd.length) return true;
 
@@ -13436,10 +13508,20 @@ async function cfDuw(){
         }
       });
       (antwoord.conflicten||[]).forEach(c=>{ if(c) botsingen.push(c); });
+      /* Na elk geslaagd blok de nieuwe versienummers vastleggen: breekt blok 3 van 5, dan mogen
+         blok 1-2 na een herlaad niet opnieuw met oude versienummers worden geduwd (dat gaf tot 200
+         valse conflictmeldingen over al opgeslagen data). */
+      cfBewaar();
     }
 
     if(botsingen.length){
       botsingen.forEach(c=>cfPasToe(c));
+      /* De winnende (remote) versie ook naar localStorage schrijven — net als cfHaal doet. Zonder dit
+         staat na een crash de verliezende lokale data nog in localStorage mét het nieuwe versienummer,
+         en zou die bij de eerstvolgende duw de collega alsnog stil overschrijven. Direct flushen (niet
+         via persistMeta) zodat we geen nieuwe duw-lus starten. */
+      try{ migrateData(); }catch(e){ console.error('migrateData na conflict mislukt:', e); }
+      flushPersistMeta(); flushPersistStore();
       const namen = botsingen.map(c=>{
         if(c.soort === 'klant' || c.soort === 'store'){
           const k = RAW_KLANTEN.find(x=>x.id===c.sleutel);
@@ -13460,7 +13542,11 @@ async function cfDuw(){
     return true;
   }catch(e){
     CF.fout = e.message || String(e);
+    /* Versienummers uit al geslaagde blokken bewaren en zo dadelijk opnieuw proberen, zodat een
+       netwerkhik halverwege niet leidt tot verloren of dubbel-geduwde wijzigingen. */
+    try{ cfBewaar(); }catch(_e){}
     updateSyncIndicator();
+    setTimeout(()=>{ if(CF.actief && !CF.bezig) cfDuwLater(); }, 4000);
     return false;
   }finally{
     CF.bezig = false;
@@ -13473,14 +13559,26 @@ async function cfHaal(toonMelding){
   CF.bezig = true;
   try{
     const antwoord = await cfFetch('/haal' + (CF.laatste ? '?sinds=' + encodeURIComponent(CF.laatste) : ''));
-    let veranderd = 0;
+    // Huidige lokale stand per record, om te herkennen of we een nóg niet verzonden eigen wijziging
+    // zouden overschrijven.
+    const lokaal = {}; cfHuidigeRecords().forEach(r=>{ lokaal[cfId(r)] = r.data; });
+    let veranderd = 0, uitgesteld = false;
     (antwoord.records||[]).forEach(r=>{
+      const id = cfId(r);
       // Eigen zojuist weggeschreven records overslaan; die staan al goed in beeld.
-      if(CF.verzonden[cfId(r)] === r.data){ CF.versies[cfId(r)] = r.versie; return; }
+      if(CF.verzonden[id] === r.data){ CF.versies[id] = r.versie; return; }
+      /* Heb je zelf een nog-niet-verzonden wijziging op dit record (lokaal ≠ laatst verzonden) én
+         wijkt die af van wat de collega net stuurde, dan NIET stil overschrijven: laat je eigen
+         versie staan en duw hem — de server beslist dan wie wint en je krijgt bij verlies netjes de
+         conflictmelding in plaats van geluidloos werk kwijt te raken. */
+      if(lokaal[id] !== undefined && lokaal[id] !== CF.verzonden[id] && lokaal[id] !== r.data){
+        uitgesteld = true; return;
+      }
       if(cfPasToe(r)) veranderd++;
     });
     CF.laatste = antwoord.nu;
     CF.fout = null;
+    if(uitgesteld) cfDuwLater();
     if(veranderd){
       try{ migrateData(); }catch(e){ console.error('migrateData na ophalen mislukt:', e); }
       persistMeta(); flushPersistStore();
@@ -13631,7 +13729,11 @@ function schoonRtHtml(ruw){
         return;
       }
       if(!RT_TAGS.includes(tag)){
-        // Onbekende maar ongevaarlijke tag (a, img, table…): de tekst behouden, het omhulsel weg.
+        // Onbekende tag (a, img, table…): de tekst behouden, het omhulsel weg.
+        // BELANGRIJK: eerst de inhoud saneren en pas daarna uitpakken. Zou je eerst uitpakken,
+        // dan zou een <img onerror=…> die in de forEach-snapshot van vóór het verplaatsen zit
+        // nooit meer bezocht worden en dus ongefilterd doorglippen (stored XSS via collega-notitie).
+        loop(kind);
         const ouder = kind.parentNode;
         while(kind.firstChild) ouder.insertBefore(kind.firstChild, kind);
         kind.remove();
@@ -13842,10 +13944,10 @@ function handleKlantenCSVUpload(e){
     };
 
     rows.forEach(row=>{
-      const naam = (findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'').trim();
+      const naam = veiligeNaam(findField(row, ['Bedrijfsnaam','Naam','Klantnaam'])||'');
       if(!naam){ report.overgeslagen++; return; }
       const extId = (findField(row,['Klantnummer']) || findField(row,['Id'])||'').trim();
-      const vorm = (findField(row,['Rechtsvorm'])||'').trim();
+      const vorm = veiligeNaam(findField(row,['Rechtsvorm'])||'');
       const kvk = (findField(row,['KvK nummer','KVK nummer','Kvk nummer'])||'').trim();
       const obNummer = normaliseerObNummer(findField(row,['BTW nummer','BTW-nummer','Btw nummer','Omzetbelastingnummer','BTW','Vat number'])||'');
       if(obNummer){
@@ -14441,16 +14543,16 @@ setInterval(()=>{
    rondje, zodat er nooit tekst onder je handen verdwijnt. */
 setInterval(()=>{
   if(!CF.actief || !SYNC.account) return;
-  /* Het volledige klant-bewerkformulier (STATE.editKlant) blijft wél beschermd: dat formulier zou
-     bij een render() zijn nog-niet-opgeslagen invulwerk kwijtraken. Het gewone klantpaneel niet. */
-  if(STATE.showAddKlant || STATE.showAddBh || STATE.editKlant || isTypingInField()) return;
+  /* Een open bewerk-/toevoegformulier beschermen; het gewone klantpaneel (alleen bekijken) mag wél
+     live verversen. */
+  if(heeftOpenFormulier() || isTypingInField()) return;
   try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
   catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
 }, 20000);
 /* Wie terugkeert naar dit tabblad wil meteen de actuele stand zien, niet pas na het volgende rondje. */
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState !== 'visible') return;
-  if(!CF.actief || !SYNC.account || STATE.editKlant || isTypingInField()) return;
+  if(!CF.actief || !SYNC.account || heeftOpenFormulier() || isTypingInField()) return;
   try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
   catch(e){ console.error('Cloudflare-ophalen mislukt:', e); }
 });
