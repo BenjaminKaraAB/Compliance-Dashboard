@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.27.1';
+const APP_VERSION = '2026.08.27.2';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -8695,8 +8695,8 @@ function loonheffingHTML(){
   })()}
   ${loonheffingOverzichtHTML(list.filter(k=>k.heeftDga && !k.toekomstigeKlant), true, 'DGA-klanten')}
   ${loonheffingOverzichtHTML(list.filter(k=>!k.heeftDga && !k.toekomstigeKlant), false, 'Geen-DGA-klanten')}
-  ${loonheffingOpHoldHTML()}
   ${loonheffingToekomstHTML()}
+  ${loonheffingOpHoldHTML()}
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
