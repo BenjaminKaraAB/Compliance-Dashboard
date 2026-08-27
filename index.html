@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.10';
+const APP_VERSION = '2026.08.26.11';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -5029,7 +5029,26 @@ function syncLhTaken(klant){
   f.lh.taken = definitie.map(t => bestaand.find(x=>x.naam===t.naam) || {naam:t.naam, done:false, door:null, ts:null, aantekeningen:[]});
   return f;
 }
-function huidigeGebruiker(){ return SYNC.account ? (SYNC.account.name || SYNC.account.username) : 'Onbekende gebruiker'; }
+/* ---- Wie is er ingelogd? -------------------------------------------------------------------
+   Belangrijk: hier staat GEEN vaste naam als terugval. Stond die er wel (zoals eerder
+   'Benjamin'), dan ziet een collega die nog niet met Microsoft is ingelogd de naam van iemand
+   anders onder in beeld — dat wekt de indruk dat hij als die persoon werkt. Niet ingelogd hoort
+   zichtbaar 'niet ingelogd' te zijn. */
+function gebruikersNaam(){
+  if(!SYNC.account) return '';
+  const n = String(SYNC.account.name||'').trim();
+  if(n) return n;
+  const u = String(SYNC.account.username||'').trim();
+  if(!u) return '';
+  // Microsoft gaf geen weergavenaam terug: maak iets leesbaars van het e-mailadres.
+  const lokaal = u.split('@')[0].replace(/[._-]+/g,' ').trim();
+  return lokaal ? lokaal.replace(/\b\w/g, c=>c.toUpperCase()) : u;
+}
+function voornaamGebruiker(){
+  const n = gebruikersNaam();
+  return n ? n.split(/\s+/)[0] : '';
+}
+function huidigeGebruiker(){ return gebruikersNaam() || 'Onbekende gebruiker'; }
 function fmtBytes(n){
   if(!n && n !== 0) return '—';
   if(n < 1024) return n + ' B';
@@ -5052,13 +5071,14 @@ function klantAvatarHTML(klant){
   return `<div class="klant-avatar" style="background:${kleur};" title="Boekhouder: ${b?escHtml(b.naam):'—'}">${initialenEsc}</div>`;
 }
 function sidebarFootHTML(){
-  const naam = SYNC.account ? (SYNC.account.name || 'Benjamin') : 'Benjamin';
+  const naam = gebruikersNaam();
+  const ingelogd = !!naam;
   const mail = huidigeGebruikerEmail();
   return `<div class="nav-foot">
-    <div class="avatar">${initialenVoor(naam)}</div>
+    <div class="avatar">${ingelogd ? initialenVoor(naam) : '?'}</div>
     <div class="user">
-      <div class="user-name">${naam}</div>
-      <div class="user-mail">${mail}</div>
+      <div class="user-name">${ingelogd ? escHtml(naam) : 'Niet ingelogd'}</div>
+      <div class="user-mail">${ingelogd ? escHtml(mail) : 'Log in bij Instellingen'}</div>
       <div class="app-version" title="Versie van het dashboard dat nu open staat">v${APP_VERSION}</div>
     </div>
   </div>`;
@@ -6880,9 +6900,8 @@ function heroGroet(){
   return 'Goedenavond';
 }
 function heroBannerHTML(rows, klantenGefilterd, cnt){
-  const naamVol = huidigeGebruiker();
-  const voornaam = (naamVol||'Benjamin').split(' ')[0];
-  const initiaal = voornaam.slice(0,1).toUpperCase();
+  const voornaam = voornaamGebruiker();
+  const initiaal = voornaam ? voornaam.slice(0,1).toUpperCase() : '?';
   const flagged = klantenGefilterd.filter(k=>heeftUrgenteHerinneringNodig(k));
   const lhBinnenkort = klantenGefilterd.filter(k=>{
     const entry = STORE[k.id] && STORE[k.id].dl && STORE[k.id].dl.LH;
@@ -6898,7 +6917,7 @@ function heroBannerHTML(rows, klantenGefilterd, cnt){
     <div class="hero-top" style="margin-bottom:0;">
       <div>
         <p class="hero-date">${fmtDagVolledig(new Date())}</p>
-        <h1 class="hero-greeting" style="font-size:20px;">${heroGroet()}, ${voornaam}</h1>
+        <h1 class="hero-greeting" style="font-size:20px;">${heroGroet()}${voornaam ? ', ' + escHtml(voornaam) : ''}</h1>
       </div>
       <div class="hero-avatar">${initiaal}</div>
     </div>
