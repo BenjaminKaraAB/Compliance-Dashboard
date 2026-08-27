@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.26.11';
+const APP_VERSION = '2026.08.27.1';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -8272,6 +8272,14 @@ function loonheffingKlantDetailHTML(k){
     </div>`;
 }
 function lhBekekenMaand(){ return STATE.lhMaand || huidigeMaandKey(); }
+/* Klein, rustig label achter de naam van een inactieve klant. Zonder dit lijkt de afwijkende
+   volgorde onderaan de lijst willekeurig. */
+function lhInactiefLabel(k){
+  if(!k || !k.staatOpHold) return '';
+  const reden = String(k.opHoldReden||'').trim();
+  const titel = reden ? 'Inactief — ' + reden : 'Inactief';
+  return ` <span title="${escHtml(titel)}" style="margin-left:6px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:1px 7px; vertical-align:middle;">inactief</span>`;
+}
 function loonheffingOverzichtHTML(list, heeftDga, titel){
   if(!list.length) return '';
   const jaarNu = TODAY.getFullYear();
@@ -8319,8 +8327,11 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
       <div class="section-body pad"><div class="empty-state" style="padding:20px; font-size:12px;">Geen klanten in deze maand.</div></div>
     </div>`;
   }
-  open.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
-  afgerond.sort((a,b)=>a.k.naam.localeCompare(b.k.naam,'nl'));
+  /* Inactieve klanten ("op hold") zakken naar de onderkant van de lijst: ze vragen geen actie meer,
+     maar moeten wel zichtbaar blijven. Binnen elke groep blijft de volgorde gewoon alfabetisch. */
+  const lhInactief = k => (k && k.staatOpHold) ? 1 : 0;
+  open.sort((a,b)=> lhInactief(a) - lhInactief(b) || a.naam.localeCompare(b.naam,'nl'));
+  afgerond.sort((a,b)=> lhInactief(a.k) - lhInactief(b.k) || a.k.naam.localeCompare(b.k.naam,'nl'));
 
   // Voortgangsfilter per tabel: alle / niets afgevinkt / bezig / alles klaar
   const groepSleutel = String(titel||'').toLowerCase().replace(/[^a-z]+/g,'');
@@ -8367,7 +8378,7 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
     const ster = notitieDezeMaand ? `<span title="Notitie voor ${maandLabelVanKey(bekeken)}" style='margin-right:4px;'>⭐</span>` : (anderMaandNotities ? `<span title="Notitie klaargezet voor een andere maand" style='margin-right:4px; opacity:.45;'>⭐</span>` : '');
     const hoofdRij = `<tr class="row-click" data-lh-toggle-detail="${k.id}" style="${expanded?'background:var(--bg);':''}">
       <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${expanded?'▾':'▸'} ${k.extId||'—'}</td>
-      <td><div class="klant-name">${ster}${k.naam}</div><div class="klant-meta">${bh(k.bh).naam}</div></td>
+      <td><div class="klant-name">${ster}${escHtml(k.naam)}${lhInactiefLabel(k)}</div><div class="klant-meta">${escHtml(bh(k.bh).naam)}</div></td>
       ${taakCellen}
       <td style="text-align:center;">${periodesDitJaar}</td>
       <td>${lhEntry.na ? 'n.v.t.' : fmtDate(lhEntry.datum)}</td>
