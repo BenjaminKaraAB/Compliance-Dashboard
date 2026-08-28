@@ -731,7 +731,7 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 // Versienummer van het dashboard: wordt getoond onder de profielnaam linksonder in de sidebar,
 // zodat direct te zien is welke build er open staat (handig bij het testen na een nieuwe deploy).
 // Opbouw: jaar.maand.dag van de deploy, plus een volgnummer voor de zoveelste deploy van die dag.
-const APP_VERSION = '2026.08.27.2';
+const APP_VERSION = '2026.08.28.3';
 
 /* Dark mode: bewaar keuze in localStorage, val terug op systeem-voorkeur. */
 function _themeRoot(){ return (typeof document!=='undefined' && document.documentElement) ? document.documentElement : null; }
@@ -796,7 +796,7 @@ let TEAMS = [];
    geldt zodra ze synchroniseren.
    Heette tot voor kort 'akkoordverklaringActief' (toen er nog maar één documenttype was) — migrateData()
    neemt de oude sleutel over als iemand nog gesynchroniseerde data heeft van vóór de hernoeming. */
-let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], taakToewijzers:[], documentenVersturenActief:false };
+let RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], taakToewijzers:[], administratieBhIds:[], documentenVersturenActief:false };
 /* Auto's (Autolijst) horen, net als klanten/boekhouders, bij de GEDEELDE data. */
 let AUTOS = [];
 /* Kennisbank (opleiding voor nieuwe/junior boekhouders): categorieën + artikelen (stappenplannen,
@@ -946,10 +946,47 @@ function NA(){ return {na:true}; }
 let RAW_KLANTEN = [];
 
 /* Nieuw toegevoegde klanten/boekhouders (lokaal, per browser) worden hier bovenop de voorbeelddata geladen. */
-const META_KEY = 'compliance_dashboard_meta_v1';
+/* ===================== TESTMODUS =====================
+   Het dashboard draait in testmodus zodra het vanaf /test.html wordt geopend (of met ?test=1).
+   In die stand:
+   - schrijft het NIETS terug naar de gedeelde database en niets naar SharePoint;
+   - gebruikt het eigen localStorage-sleutels, zodat je echte dashboard in hetzelfde browserprofiel
+     onaangeroerd blijft;
+   - staat er een oranje balk bovenin die je er permanent aan herinnert;
+   - staat het aanmaken van SharePoint-mappen standaard in de proefstand: het dashboard laat zien
+     wat het zou aanmaken zonder het echt te doen.
+   Zo kun je alles uitproberen zonder dat een collega er iets van merkt. */
+const TESTMODUS = (function(){
+  try{
+    return /(^|\/)test(\.html)?$/i.test(location.pathname) || /(^|[?&])test=1(&|$)/.test(location.search);
+  }catch(e){ return false; }
+})();
+const TEST_SUFFIX = TESTMODUS ? '_test' : '';
+/* Wie mag de testversie gebruiken? Leeg = iedereen die door Cloudflare Access komt. */
+const TEST_TOEGESTAAN = ['benjamin@administratiebox.nl'];
+function testMagGebruiken(){
+  if(!TESTMODUS) return true;
+  if(!TEST_TOEGESTAAN.length) return true;
+  const u = (SYNC.account && SYNC.account.username || '').trim().toLowerCase();
+  if(!u) return true;                       // nog niet ingelogd: laat de inlogpagina gewoon werken
+  return TEST_TOEGESTAAN.includes(u);
+}
+/* Mag de testversie echt mappen aanmaken in SharePoint? Standaard nee (proefstand). */
+function testMagSchrijvenSharePoint(){
+  if(!TESTMODUS) return true;
+  try{ return localStorage.getItem('cd_test_sharepoint') === '1'; }catch(e){ return false; }
+}
+/* De testversie draait op hetzelfde webadres als het echte dashboard en deelt dus dezelfde
+   localStorage-ruimte (~5 MB). Twee volledige datasets passen daar niet in — de tweede loopt tegen
+   "opslag vol" aan. De testkopie gaat daarom naar sessionStorage: eigen ruimte, blijft staan zolang
+   het tabblad open is (ook bij verversen) en verdwijnt vanzelf als je het sluit. */
+const OPSLAG = TESTMODUS
+  ? (function(){ try{ sessionStorage.setItem('_t','1'); sessionStorage.removeItem('_t'); return sessionStorage; }catch(e){ return localStorage; } })()
+  : localStorage;
+const META_KEY = 'compliance_dashboard_meta_v1' + TEST_SUFFIX;
 function loadMeta(){
   try{
-    const raw = localStorage.getItem(META_KEY);
+    const raw = OPSLAG.getItem(META_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed.boekhouders && parsed.boekhouders.length){ BOEKHOUDERS = parsed.boekhouders; invalidateBhIndex(); }
@@ -974,13 +1011,14 @@ function loadMeta(){
       if(parsed.notionCfg && typeof parsed.notionCfg==='object') NOTION_CFG = Object.assign({workerUrl:''}, parsed.notionCfg);
       if(parsed.leerpad) LEERPAD = parsed.leerpad;
       if(parsed.leerpadVoortgang) LEERPAD_VOORTGANG = parsed.leerpadVoortgang;
+      if(Array.isArray(parsed.standaardteksten) && parsed.standaardteksten.length) STANDAARDTEKSTEN = parsed.standaardteksten;
     }
   }catch(e){}
 }
 let persistMetaTimer = null;
 function flushPersistMeta(){
   clearTimeout(persistMetaTimer); persistMetaTimer = null;
-  try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE})); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
+  try{ OPSLAG.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE, standaardteksten:STANDAARDTEKSTEN})); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
 }
 function persistMeta(){
   clearTimeout(persistMetaTimer);
@@ -1160,10 +1198,43 @@ function normaliseerFiscaleEenheid(fe){
    is een brief AAN DE BELASTINGDIENST — geen automatisch e-mailen, alleen downloaden (zie "E-mails" op
    de klantkaart). ondertekenaarNaam/-Functie zijn losse velden i.p.v. een vaste constante, omdat deze
    brieven door verschillende medewerkers ondertekend kunnen worden. */
+/* De periode van de aangifte wordt sinds 28-08-2026 met twee keuzelijsten gekozen (kwartaal + jaar)
+   i.p.v. vrij te typen; periode blijft de samengestelde tekst die in de brief komt ("2e kwartaal 2025"),
+   zodat oude gegevens en de brieftemplate ongewijzigd blijven werken. */
+const BU_KWARTALEN = [
+  {waarde:'1', label:'1e kwartaal'},
+  {waarde:'2', label:'2e kwartaal'},
+  {waarde:'3', label:'3e kwartaal'},
+  {waarde:'4', label:'4e kwartaal'},
+];
+function buJaarOpties(){
+  const nu = new Date().getFullYear();
+  const jaren = [];
+  for(let j = nu-2; j <= nu+3; j++) jaren.push(String(j));
+  return jaren;
+}
+function buPeriodeTekst(bu){
+  if(!bu) return '';
+  const kw = BU_KWARTALEN.find(k=>k.waarde===String(bu.periodeKwartaal||''));
+  if(kw && bu.periodeJaar) return `${kw.label} ${bu.periodeJaar}`;
+  return bu.periode || '';
+}
+/* Zet een oude, met de hand getypte periode ("2e kwartaal 2025", "Q3 2026", "kwartaal 4 2025") om naar
+   de twee losse velden, zodat bestaande klantgegevens niet leeglopen bij het openen van het formulier. */
+function buLeesPeriodeUitTekst(tekst){
+  const t = String(tekst||'').toLowerCase();
+  let kwartaal = '';
+  let m = t.match(/([1-4])\s*e?\s*kwartaal/) || t.match(/kwartaal\s*([1-4])/) || t.match(/\bq\s*([1-4])\b/);
+  if(m) kwartaal = m[1];
+  const j = t.match(/\b(20\d{2})\b/);
+  return { periodeKwartaal: kwartaal, periodeJaar: j ? j[1] : '' };
+}
 function defaultBetalingsuitstel(){
   return {
     soortAangifte: '',
     periode: '',
+    periodeKwartaal: '',
+    periodeJaar: '',
     omzetbelastingnummer: '',
     datumOorspronkelijkeAangifte: '',
     datumSuppletieaangifte: '',
@@ -1182,6 +1253,13 @@ function normaliseerBetalingsuitstel(bu){
   Object.keys(defaults).forEach(key=>{
     if(bu[key]===undefined || bu[key]===null) bu[key] = defaults[key];
   });
+  // eenmalige omzetting van een oude vrij getypte periode naar kwartaal + jaar
+  if(bu.periode && (!bu.periodeKwartaal || !bu.periodeJaar)){
+    const uit = buLeesPeriodeUitTekst(bu.periode);
+    if(!bu.periodeKwartaal) bu.periodeKwartaal = uit.periodeKwartaal;
+    if(!bu.periodeJaar) bu.periodeJaar = uit.periodeJaar;
+  }
+  bu.periode = buPeriodeTekst(bu);
   return bu;
 }
 /* Zesde/zevende documenttype: een arbeidsovereenkomst en een managementovereenkomst voor een DGA
@@ -1242,6 +1320,10 @@ function addKlant(data){
     doetLoonaangifte: !!data.doetLoonaangifte,
     heeftDga: !!data.heeftDga,
     salarisdossierWerknemer: data.salarisdossierWerknemer !== false,
+    salarisdossierDga: data.salarisdossierDga === true,
+    beeindigdPer: (data.beeindigdPer||'').trim(),
+    taal: data.taal === 'en' ? 'en' : 'nl',
+    boekhoudingVanaf: (data.boekhoudingVanaf||'').trim(),
     staatOpHold: !!data.staatOpHold,
     toekomstigeKlant: !!data.toekomstigeKlant,
     toekomstNotitie: data.toekomstNotitie || '',
@@ -1660,10 +1742,10 @@ function confirmDeleteTeam(id){
 const FIN_SEED = {};
 
 /* load persisted state (saldo edits, checklist, reminder log, notities) from localStorage, seeded from above */
-const STORE_KEY = 'compliance_dashboard_v1';
+const STORE_KEY = 'compliance_dashboard_v1' + TEST_SUFFIX;
 function loadStore(){
   try{
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = OPSLAG.getItem(STORE_KEY);
     if(raw) return JSON.parse(raw);
   }catch(e){}
   const seed = {};
@@ -1689,6 +1771,9 @@ const LH_TAKEN_DGA = [
   {naam:'Aangifte in dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'},
   {naam:'LJP dossier (Loondossier, dossier AB, uploaden in AB)', hint:'In de 2e week van de eerstvolgende maand'}
 ];
+/* Taak 5 staat standaard alleen bij geen-DGA klanten, maar kan per klant ook bij een DGA-klant
+   worden aangezet (uitzondering, bv. Manico Holding B.V.) — zie lhTakenVoorKlant(). */
+const LH_TAAK_SALARISDOSSIER = {naam:'Salarisdossier werknemer', hint:'Geen vaste deadline — pas aanleveren zodra de werkgever heeft betaald'};
 const LH_TAKEN_GEEN_DGA = [
   {naam:'Salarissen verwerken', hint:'Tussen de 20e en 30e van de huidige maand'},
   {naam:'Salaris- en betaallijst dossier werkgever', hint:'Tussen de 20e en 30e van de huidige maand'},
@@ -1701,7 +1786,7 @@ try{ migrateData(); }catch(e){ console.error('migrateData() mislukt bij het opst
 let persistStoreTimer = null;
 function flushPersistStore(){
   clearTimeout(persistStoreTimer); persistStoreTimer = null;
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
+  try{ OPSLAG.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){ if(typeof meldOpslagVol==='function') meldOpslagVol(); }
 }
 function persist(){
   // De lokale opslag-write (JSON.stringify van de volledige STORE) is de duurste stap bij elke
@@ -1761,6 +1846,53 @@ function isAdmin(){
   if(!SYNC.account || !SYNC.account.username) return false;
   const list = (RECHTEN.adminEmails||[]).map(e=>e.toLowerCase().trim());
   return list.includes(SYNC.account.username.toLowerCase());
+}
+/* ===================== BEEINDIGDE KLANTEN =====================
+   Een klant kan worden beeindigd per een datum ("beeindigd per 10-10-2026"). Tot die datum verandert
+   er niets. Vanaf die datum verdwijnt de klant uit de gewone lijsten en telt hij nergens meer mee,
+   maar blijft hij zichtbaar zolang er nog een openstaande deadline is - anders kan het lopende werk
+   niet worden afgemaakt. Zodra zo'n deadline wordt afgerond schuift hij NIET door naar de volgende
+   periode maar springt hij op n.v.t.: voor een beeindigde klant komt er geen werk meer.
+   Let op: dit staat helemaal los van het vinkje "Inactief" bij Loonheffingen (klant.staatOpHold),
+   dat juist gaat over klanten die nog moeten beginnen. */
+function datumISOVandaag(){
+  const d = TODAY;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function klantBeeindigd(k){
+  return !!(k && k.beeindigdPer && k.beeindigdPer <= datumISOVandaag());
+}
+function klantBeeindigingGepland(k){
+  return !!(k && k.beeindigdPer && k.beeindigdPer > datumISOVandaag());
+}
+/* Heeft deze klant ergens nog werk openstaan? Bepaalt of een beeindigde klant nog zichtbaar blijft. */
+function klantHeeftOpenDeadline(k){
+  if(!k) return false;
+  const f = STORE[k.id];
+  const bron = (f && f.dl) ? f.dl : k.dl;
+  if(!bron) return false;
+  const vast = ['OB','VPB','LH','JR'].some(t=>bron[t] && !bron[t].na);
+  const overig = Array.isArray(bron.overige) && bron.overige.some(o=>o && !o.na);
+  return vast || overig;
+}
+/* De klanten die in de gewone lijsten en tellingen horen. Beeindigde klanten vallen eruit, behalve
+   zolang er nog een openstaande deadline is. */
+function actieveKlanten(lijst){
+  const bron = lijst || RAW_KLANTEN;
+  return bron.filter(k=>!klantBeeindigd(k) || klantHeeftOpenDeadline(k));
+}
+function beeindigdeKlanten(){
+  return RAW_KLANTEN.filter(klantBeeindigd);
+}
+/* Wie mag bij de Administratiepagina? Beheerders altijd, plus de collega's die daar in het
+   Bevoegdheid-blok voor zijn aangevinkt. Dit is bewust een APARTE lijst van de beheerders:
+   de Admin-pagina zelf blijft voorbehouden aan de beheerders. */
+function magAdministratie(){
+  if(isAdmin()) return true;
+  const ids = RECHTEN.administratieBhIds;
+  if(!Array.isArray(ids) || !ids.length) return false;
+  const huidige = huidigeBoekhouder();
+  return !!(huidige && ids.includes(huidige.id));
 }
 function huidigeBoekhouder(){
   if(!SYNC.account) return null;
@@ -2009,10 +2141,11 @@ function pushRemoteDebounced(){
   pushTimer = setTimeout(pushRemote, 900);
 }
 async function pushRemote(allowInteractive){
+  if(TESTMODUS) return false;   // testmodus schrijft ook niet naar SharePoint
   if(!SYNC.enabled || !SYNC.account) return false;
   try{
     await resolveSiteAndList(!!allowInteractive);
-    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, agenda: AGENDA, kwartaalthemas: KWARTAALTHEMAS, initiatieven: INITIATIEVEN, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG, afdelingen: AFDELINGEN, strategie: STRATEGIE });
+    const rawJson = JSON.stringify({ boekhouders: BOEKHOUDERS, klanten: RAW_KLANTEN, teams: TEAMS, store: STORE, rechten: RECHTEN, autos: AUTOS, bijtellingTabel: BIJTELLING_TABEL, activiteitenlog: ACTIVITEITENLOG, kpiOperationeel: KPI_OPERATIONEEL, kpiTactisch: KPI_TACTISCH, kpiCommercieel: KPI_COMMERCIEEL, kennisbank: KENNISBANK, rdwHercheckCfg: RDW_HERCHECK_CFG, inventarisItems: INVENTARIS_ITEMS, lhMaandBanners: LH_MAAND_BANNERS, agenda: AGENDA, kwartaalthemas: KWARTAALTHEMAS, initiatieven: INITIATIEVEN, leerpad: LEERPAD, leerpadVoortgang: LEERPAD_VOORTGANG, notionCfg: NOTION_CFG, afdelingen: AFDELINGEN, strategie: STRATEGIE, standaardteksten: STANDAARDTEKSTEN });
     // Gzip + base64. Als de browser CompressionStream niet ondersteunt val je terug op plain JSON
     // (met alle risico op de SharePoint-limiet); dat gebeurt alleen in echt oude browsers.
     let dataStr = await gzipEncodeTekst(rawJson);
@@ -2115,8 +2248,8 @@ async function fetchRemoteAndMerge(showFeedback){
         LEERPAD = json.leerpad || LEERPAD;
         LEERPAD_VOORTGANG = json.leerpadVoortgang || LEERPAD_VOORTGANG;
         migrateData();
-        try{ localStorage.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE})); }catch(e){}
-        try{ localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
+        try{ OPSLAG.setItem(META_KEY, JSON.stringify({boekhouders:BOEKHOUDERS, klanten:RAW_KLANTEN, teams:TEAMS, rechten:RECHTEN, autos:AUTOS, bijtellingTabel:BIJTELLING_TABEL, activiteitenlog:ACTIVITEITENLOG, kpiOperationeel:KPI_OPERATIONEEL, kpiTactisch:KPI_TACTISCH, kpiCommercieel:KPI_COMMERCIEEL, kennisbank:KENNISBANK, rdwHercheckCfg:RDW_HERCHECK_CFG, inventarisItems:INVENTARIS_ITEMS, lhMaandBanners:LH_MAAND_BANNERS, agenda:AGENDA, kwartaalthemas:KWARTAALTHEMAS, initiatieven:INITIATIEVEN, leerpad:LEERPAD, leerpadVoortgang:LEERPAD_VOORTGANG, notionCfg:NOTION_CFG, afdelingen:AFDELINGEN, strategie:STRATEGIE, standaardteksten:STANDAARDTEKSTEN})); }catch(e){}
+        try{ OPSLAG.setItem(STORE_KEY, JSON.stringify(STORE)); }catch(e){}
         if(typeof rawData === 'string') laatstVerwerkteSyncData = rawData;
         SYNC.lastSync = new Date().toISOString(); SYNC.lastError = null;
         if(!STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()) render(); else updateSyncIndicator();
@@ -2349,7 +2482,7 @@ function bh(id){
   // crashte de hele pagina dan op undefined.naam — nu tonen we "Onbekende boekhouder".
   return { id: id||'', naam:'Onbekende boekhouder', kleur:'#9ca3af', email:'', team:'' };
 }
-function klantsOf(bhId){ return RAW_KLANTEN.filter(k=>k.bh===bhId); }
+function klantsOf(bhId){ return actieveKlanten().filter(k=>k.bh===bhId); }
 function initials(naam){ return naam.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
 function toast(msg, opts){
@@ -2503,7 +2636,7 @@ function berekenBtwCorrectieProRata(auto){
 function klantVanAuto(auto){ return RAW_KLANTEN.find(k=>k.id===auto.klant) || null; }
 
 /* ============================= STATE ============================= */
-const GELDIGE_VIEWS = ['dashboard','strategie','performance','mijnwerk','boekhouders','teams','klanten','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','outlook','notion'];
+const GELDIGE_VIEWS = ['dashboard','strategie','performance','mijnwerk','boekhouders','teams','klanten','administratie','aanlevering','loonheffing','autolijst','instellingen','archief','kennisbank','msteams','outlook','notion'];
 const LAATSTE_PAGINA_KEY = 'complianceDashboardLaatstePagina_v1';
 function onthoudHuidigePagina(view){
   // Onthoudt de huidige pagina in localStorage zodat een refresh je erop laat staan. Bewust géén
@@ -2517,7 +2650,7 @@ function laatstBekekenPagina(){
     return GELDIGE_VIEWS.includes(v) ? v : null;
   }catch(e){ return null; }
 }
-let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbTab:'leerpad', lpModule:0, lpStap:0, lpAntwoord:null, notionActief:0, notionBeheerOpen:false, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null, perfAfd:'', afdPanel:null, stratEdit:null };
+let STATE = { view:'dashboard', lhPeriodesKlant:null, lhPeriodeExpanded:null, selectedKlanten: new Set(), klantenView: (function(){try{return localStorage.getItem('cd_klanten_view')||'tabel';}catch(e){return 'tabel';}})(), sidebarCollapsed: (function(){try{return localStorage.getItem('cd_sidebar_collapsed')==='1';}catch(e){return false;}})(), search:'', bhFilter:'', statusFilter:'', typeFilter:'', panelKlant:null, editKlant:null, showAddKlant:false, showAddBh:false, showAddTeam:false, lhEditNote:null, lhExpandedKlant:null, lhNotitiesKlant:null, lhNotitiesJaar:null, lhActiviteitExpanded:false, showAddAuto:false, editAuto:null, autoKlantFilter:'', autoElektrischFilter:'', showBijtellingBeheer:false, logboekLimiet:50, editBh:null, kpiOpEdit:false, kpiCommEdit:false, kpiTactKwartaal:null, kpiTactDoelEdit:null, kpiPijlerForm:null, kpiExpanded:false, dashboardTeamFilter:'', lhImportExpanded:false, lhMaand:null, kbTab:'leerpad', lpModule:0, lpStap:0, lpAntwoord:null, notionActief:0, notionBeheerOpen:false, kbCatNieuwOpen:false, kbArtikelForm:null, kbOpenArtikel:null, kbCatFilter:'', msteamsBerichtOpen:false, msteamsCollegasOpen:false, aanleverImportOpen:false, aanleverKlant:null, autoBeheerOpen:false, dashActieTegel:'urgent', lhVoortgangFilter:{}, rdwHercheckOpen:false, kvkBewakingOpen:false, inventarisFilter:'in_bezit', showAddInventaris:false, editInventaris:null, perfAfd:'', afdPanel:null, stratEdit:null, admTab:'actief', admZoek:'', admBhFilter:'', admBeeindigKlant:null, admVerwijderKlant:null, stTekstId:null, stTaal:null, stStand:null, stStandVoor:null, stBeheerTaal:'nl', stBeheerOpen:null, invImportPlan:null };
 let searchDebounceTimer = null;
 
 /* ============================= ICONS ============================= */
@@ -2544,12 +2677,74 @@ const ICONS = {
   box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8l9-5 9 5-9 5-9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
   msteams:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="12" height="12" rx="2"/><path d="M6.5 10h5M9 10v6"/><path d="M15 9h4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4"/></svg>',
   sparkle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6z"/></svg>',
+  dossier:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4.5" rx="1.2"/><path d="M4.5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V8.5"/><path d="M10 12.5h4"/></svg>',
 };
 
 /* ============================= RENDER ROOT ============================= */
+/* De oranje balk bovenin de testversie. Bewust niet weg te klikken: het moet onmogelijk zijn om per
+   ongeluk te denken dat je in het echte dashboard zit. */
+function testBalkHTML(){
+  if(!TESTMODUS) return '';
+  const spOn = testMagSchrijvenSharePoint();
+  return `<div style="background:#fff4e0; border-bottom:1px solid #f0d9a8; padding:10px 22px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+    <span style="font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; background:#c9770a; color:#fff; border-radius:20px; padding:3px 11px; flex:none;">Testversie</span>
+    <span style="font-size:12px; color:#7a4a06; flex:1; min-width:240px; line-height:1.5;">
+      Dit is een eigen kopie om nieuwe functies uit te proberen. Wat je hier doet blijft in dit tabblad:
+      er gaat <b>niets</b> naar de gedeelde database, naar SharePoint of naar je collega's. Sluit je het
+      tabblad, dan is de testkopie weg.
+    </span>
+    <button class="btn sm ghost" data-test-verversen title="Haalt de actuele gegevens uit de gedeelde database op en overschrijft je testkopie">
+      <i class="ti ti-refresh" aria-hidden="true"></i> Verse kopie ophalen
+    </button>
+    <label style="display:flex; align-items:center; gap:7px; font-size:12px; color:#7a4a06; cursor:pointer;" title="Uit = het dashboard laat alleen zien welke map het zou aanmaken. Aan = de map wordt echt in SharePoint gezet.">
+      <input type="checkbox" data-test-sharepoint ${spOn?'checked':''}> Echt mappen aanmaken in SharePoint
+    </label>
+    <button class="btn sm ghost" data-test-legen style="color:var(--red);" title="Gooit de testkopie weg en begint opnieuw">
+      <i class="ti ti-trash" aria-hidden="true"></i> Testkopie wissen
+    </button>
+  </div>`;
+}
+/* Haalt de actuele gegevens uit de gedeelde database en zet ze in de testkopie. Leest alleen; er wordt
+   niets teruggeschreven (cfDuw stopt in testmodus meteen). */
+async function testVerseKopie(){
+  if(!TESTMODUS) return;
+  if(!confirm('Je testkopie wordt overschreven met de actuele gegevens uit de gedeelde database. Wijzigingen die je in de testversie hebt gemaakt gaan verloren. Doorgaan?')) return;
+  try{
+    toast('Gegevens ophalen…');
+    CF.actief = true; CF.versies = {}; CF.verzonden = {}; CF.laatste = null;
+    await cfHaal(true);
+    persistMeta(); persist();
+    render();
+    toast('Testkopie bijgewerkt met de actuele gegevens.');
+  }catch(e){
+    toast('Ophalen mislukt: ' + String(e && e.message ? e.message : e).slice(0,120), {duration:8000});
+  }
+}
+function testKopieWissen(){
+  if(!TESTMODUS) return;
+  if(!confirm('De hele testkopie wordt gewist. Je echte dashboard blijft ongemoeid. Doorgaan?')) return;
+  try{
+    [META_KEY, STORE_KEY, CF_KEY].forEach(k=>{ try{ OPSLAG.removeItem(k); }catch(e){} });
+  }catch(e){}
+  location.reload();
+}
 function render(){
   onthoudHuidigePagina(STATE.view);
   const app = document.getElementById('app');
+  if(TESTMODUS && !testMagGebruiken()){
+    app.innerHTML = `<div style="min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px;">
+      <div style="max-width:460px; text-align:center;">
+        <div style="font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; background:#c9770a; color:#fff; border-radius:20px; padding:3px 11px; display:inline-block; margin-bottom:14px;">Testversie</div>
+        <h2 style="margin:0 0 10px; font-size:20px;">Deze versie is niet voor jou bedoeld</h2>
+        <p style="color:var(--muted); font-size:14px; line-height:1.6; margin:0 0 18px;">
+          Dit is een testomgeving waarin nieuwe functies worden uitgeprobeerd. De gegevens hierin zijn
+          niet actueel en wat je hier doet komt nergens terecht.
+        </p>
+        <a class="btn primary" href="https://dashboard.administratiebox.com/">Naar het echte dashboard</a>
+      </div>
+    </div>`;
+    return;
+  }
   app.innerHTML = `
     <div class="sidebar ${STATE.sidebarCollapsed?'is-collapsed':''}">
       <div class="brand">
@@ -2572,6 +2767,7 @@ function render(){
         <button class="nav-sub ${STATE.view==='strategie'?'active':''}" data-nav="strategie"><i class="ti ti-flag" aria-hidden="true"></i><span>Strategie</span></button>
         <button class="nav-sub ${STATE.view==='performance'?'active':''}" data-nav="performance"><i class="ti ti-chart-bar" aria-hidden="true"></i><span>Performance</span></button>
         <div class="nav-group-label">Beheer</div>
+        ${magAdministratie() ? navItem('administratie','dossier','Administratie') : ''}
         ${navItem('boekhouders','building','Boekhouders')}
         ${navItem('teams','team','Teams')}
         ${navItem('klanten','users','Klanten')}
@@ -2591,6 +2787,7 @@ function render(){
       ${sidebarFootHTML()}
     </div>
     <div class="main">
+      ${testBalkHTML()}
       <div class="topbar">
         <div>
           <div class="page-title">${pageTitle()}</div>
@@ -2630,7 +2827,7 @@ function navItem(view, icon, label, badge){
   return `<button class="nav-item ${STATE.view===view?'active':''}" data-nav="${view}">${ICONS[icon]}<span>${label}</span>${badge?`<span class="nav-badge">${badge}</span>`:''}</button>`;
 }
 function pageTitle(){
-  return {dashboard:'Overzicht', strategie:'Bedrijfssysteem · Strategie', performance:'Bedrijfssysteem · Performance', mijnwerk:'Mijn Werk', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', inventarisatie:'Admin'}[STATE.view];
+  return {dashboard:'Overzicht', strategie:'Bedrijfssysteem · Strategie', performance:'Bedrijfssysteem · Performance', mijnwerk:'Mijn Werk', boekhouders:'Boekhouders', teams:'Teams', klanten:'Klanten', aanlevering:'Aanlevering & Banksaldo', loonheffing:'Loonheffingen', autolijst:'Autolijst', instellingen:'Instellingen', notion:'Notion', archief:'Archief-uploader', kennisbank:'Opleiding', msteams:'Teams-chat', outlook:'Outlook', administratie:'Administratie', inventarisatie:'Admin'}[STATE.view];
 }
 function pageSub(){
   return {
@@ -2641,6 +2838,7 @@ function pageSub(){
     boekhouders:'Klantportefeuille per boekhouder',
     teams:'Teamindeling en openstaande deadlines per team',
     klanten:'Alle klanten met deadlinestatus per categorie',
+    administratie:'Klanten beëindigen per datum en definitief verwijderen — alleen voor wie daar bevoegdheid voor heeft',
     aanlevering:'Openstaand banksaldo, aan te leveren stukken en herinneringen',
     loonheffing:`Maandelijkse loonaangifte-taken en voortgang per collega · ${RAW_KLANTEN.filter(k=>k.doetLoonaangifte).length} klant(en) totaal`,
     autolijst:`Auto's per klant met automatische bijtelling- en btw-correctieberekening · ${AUTOS.length} auto('s)`,
@@ -2663,6 +2861,7 @@ function viewHTML(){
   if(STATE.view==='boekhouders') return boekhoudersHTML();
   if(STATE.view==='teams') return teamsHTML();
   if(STATE.view==='klanten') return klantenHTML();
+  if(STATE.view==='administratie') return magAdministratie() ? administratieHTML() : dashboardHTML();
   if(STATE.view==='aanlevering') return isAdmin() ? aanleveringHTML() : dashboardHTML();
   if(STATE.view==='loonheffing') return loonheffingHTML();
   if(STATE.view==='autolijst') return autolijstHTML();
@@ -2810,6 +3009,174 @@ function archiefMapSelectsHTML(item, idx){
   }
   return blokken.join('');
 }
+/* ===================== AUTOMATISCH EEN KLANTMAP AANMAKEN =====================
+   Bij een nieuwe klant wordt in SharePoint ("General/AB- ZAKELIJKE KLANTEN") automatisch een
+   dossiermap aangemaakt, met dezelfde indeling als het sjabloon @@BASISMAP dat daar staat.
+
+   Bewust NIET de hele @@BASISMAP kopiëren: dat sjabloon bevat ook 2024/2025 en een map PARTICULIER
+   die voor een nieuwe klant leeg blijven, en de map CORREPONDENTIE (met een typefout). We bouwen de
+   mappen dus zelf op — huidig + volgend jaar, ALGEMEEN met CORRESPONDENTIE goed geschreven — en
+   kopiëren alleen de twee intake-Excels uit @@BASISMAP mee.
+
+   Naamgeving, afgeleid uit de 682 bestaande mappen die aan een klantnummer gekoppeld konden worden:
+   HOOFDLETTERS, met de rechtsvorm erachter als die er nog niet in staat, en het klantnummer tussen
+   haakjes — bijv. "10xGROWTH B.V. (624)". */
+const KLANTMAP_INTAKE_PAD = ['ALGEMEEN','VAST DOSSIER'];
+
+function archiefVormLabel(vorm){
+  const v = String(vorm||'').toUpperCase().replace(/[^A-Z]/g,'');
+  if(v === 'BV' || v === 'BBVB') return 'B.V.';        // 'BV', 'B.V.' en de vervuilde waarde 'bBV/b'
+  if(v === 'VOF') return 'V.O.F.';
+  return '';                                           // eenmanszaak/maatschap krijgen geen toevoeging
+}
+function archiefMapnaamVoorKlant(klant){
+  let naam = String(klant.naam||'').trim().toUpperCase();
+  const vorm = archiefVormLabel(klant.vorm);
+  if(vorm){
+    /* Staat de rechtsvorm al achter de naam, dan knippen we die eraf en zetten we hem in de nette
+       schrijfwijze terug. Zo komen "Rommel bv", "Rommel B.V." en "Rommel" alle drie uit op
+       "ROMMEL B.V." en krijgt niemand een map met "B.V. B.V." erachter. */
+    naam = naam.replace(/[\s.,-]*\b(B\.?\s?V\.?|V\.?\s?O\.?\s?F\.?|N\.?\s?V\.?)\s*$/,'').trim();
+    naam = `${naam} ${vorm}`;
+  }
+  const nr = String(klant.extId||'').trim();
+  const schoon = (nr ? `${naam} (${nr})` : naam).replace(/[\\\/:*?"<>|]/g,'').replace(/\s+/g,' ').trim();
+  return schoon;
+}
+/* Bestaat er al een map voor dit klantnummer of deze naam? Voorkomt een tweede map naast een
+   bestaande, bijvoorbeeld als een klant per ongeluk twee keer wordt aangemaakt. */
+function archiefBestaandeKlantmap(klant){
+  const mappen = ARCHIEF.klantmappen || [];
+  const nr = String(klant.extId||'').trim();
+  if(nr){
+    const opNummer = mappen.find(m=>m.nummer === nr);
+    if(opNummer) return opNummer;
+  }
+  const kaal = s => String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const doel = kaal(archiefMapnaamVoorKlant(klant).replace(/\s*\(\d+\)\s*$/,''));
+  return mappen.find(m=>kaal(m.naam.replace(/\s*\(\d+\)\s*$/,'')) === doel) || null;
+}
+async function archiefMaakMap(driveId, parentId, naam){
+  if(!testMagSchrijvenSharePoint()) throw new Error('Proefstand: er wordt in de testversie geen map aangemaakt in SharePoint.');
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${parentId}/children`, {
+    method:'POST',
+    body: JSON.stringify({ name: naam, folder: {}, '@microsoft.graph.conflictBehavior': 'replace' })
+  }, false);
+  return res.id;
+}
+/* De twee intake-Excels uit het sjabloon meekopiëren. Mislukt dit, dan is dat geen reden om de hele
+   mapaanmaak als mislukt te bestempelen — de mappen staan er dan gewoon. */
+async function archiefKopieerIntakeBestanden(driveId, doelMapId){
+  const basis = (ARCHIEF.klantmappen||[]).find(m=>m.naam === '@@BASISMAP');
+  if(!basis) return 0;
+  let mapId = basis.id;
+  for(const deel of KLANTMAP_INTAKE_PAD){
+    const res = await graphFetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${mapId}/children?$top=200&$select=id,name,folder`, {}, false);
+    const hit = (res.value||[]).find(x=>x.folder && x.name === deel);
+    if(!hit) return 0;
+    mapId = hit.id;
+  }
+  const res = await graphFetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${mapId}/children?$top=200&$select=id,name,file`, {}, false);
+  const bestanden = (res.value||[]).filter(x=>x.file);
+  let n = 0;
+  for(const b of bestanden){
+    try{
+      // /copy is asynchroon: 202 + een monitor-URL. We wachten er niet op — het bestand verschijnt
+      // vanzelf in de map, meestal binnen een paar seconden.
+      await graphFetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${b.id}/copy`, {
+        method:'POST',
+        body: JSON.stringify({ parentReference: { driveId, id: doelMapId }, name: b.name })
+      }, false);
+      n++;
+    }catch(e){ /* één bestand mislukt is niet fataal */ }
+  }
+  return n;
+}
+/* Maakt de volledige dossiermap aan. Geeft {status:'ok'|'bestond'|'fout', ...} terug; gooit nooit,
+   zodat het aanmaken van de klant zelf hier nooit op stukloopt. */
+async function archiefMaakKlantmap(klant){
+  const naam = archiefMapnaamVoorKlant(klant);
+  try{
+    const cfg = await archiefVindRoot(false);
+    if(!ARCHIEF.klantmappen) await archiefLaadKlantmappen(false);
+    const bestaand = archiefBestaandeKlantmap(klant);
+    if(bestaand){
+      return { status:'bestond', naam: bestaand.naam, id: bestaand.id, ts:new Date().toISOString() };
+    }
+    const rootId = await archiefMaakMap(cfg.driveId, cfg.rootId, naam);
+    const jaar = TODAY.getFullYear();
+    for(const j of [jaar, jaar+1]){
+      const jaarId = await archiefMaakMap(cfg.driveId, rootId, String(j));
+      await archiefMaakMap(cfg.driveId, jaarId, 'AANGIFTEN');
+      const finId = await archiefMaakMap(cfg.driveId, jaarId, 'FINANCIEEL');
+      await archiefMaakMap(cfg.driveId, finId, 'JP');
+    }
+    const algId = await archiefMaakMap(cfg.driveId, rootId, 'ALGEMEEN');
+    await archiefMaakMap(cfg.driveId, algId, 'CONTRACTEN');
+    await archiefMaakMap(cfg.driveId, algId, 'CORRESPONDENTIE');
+    await archiefMaakMap(cfg.driveId, algId, 'OVERDRACHT');
+    const vastId = await archiefMaakMap(cfg.driveId, algId, 'VAST DOSSIER');
+    let intake = 0;
+    try{ intake = await archiefKopieerIntakeBestanden(cfg.driveId, vastId); }catch(e){}
+    // lijst in het geheugen bijwerken zodat de archief-uploader de nieuwe map meteen kent
+    if(ARCHIEF.klantmappen){
+      const m = String(klant.extId||'').trim().match(/\d+/);
+      ARCHIEF.klantmappen.push({ id: rootId, naam, nummer: m ? m[0] : null });
+      ARCHIEF.klantmappen.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+    }
+    return { status:'ok', naam, id: rootId, intake, ts:new Date().toISOString() };
+  }catch(e){
+    return { status:'fout', naam, fout: String(e && e.message ? e.message : e).slice(0,200), ts:new Date().toISOString() };
+  }
+}
+/* Wordt aangeroepen direct na het aanmaken van een klant. Blokkeert het toevoegen nooit: is er geen
+   Microsoft-login of gaat er iets mis, dan staat de klant er gewoon en verschijnt op de klantkaart
+   een melding met de knop "Map alsnog aanmaken". */
+async function klantmapAanmakenVoor(klant, opts){
+  const stil = !!(opts && opts.stil);
+  if(!SYNC.account){
+    klant.archiefMap = { status:'fout', naam: archiefMapnaamVoorKlant(klant),
+      fout:'Niet ingelogd met Microsoft — log in bij Instellingen en maak de map alsnog aan.',
+      ts:new Date().toISOString() };
+    persistMeta();
+    if(!stil) toast('Klant toegevoegd. De dossiermap is niet aangemaakt: je bent niet ingelogd met Microsoft.', {duration:8000});
+    return klant.archiefMap;
+  }
+  if(!stil) toast(`Dossiermap "${archiefMapnaamVoorKlant(klant)}" wordt aangemaakt…`);
+  const uit = await archiefMaakKlantmap(klant);
+  klant.archiefMap = uit;
+  persistMeta();
+  if(uit.status === 'ok'){
+    logActiviteit(`Dossiermap aangemaakt in SharePoint: "${uit.naam}"`);
+    if(!stil) toast(`Dossiermap "${uit.naam}" aangemaakt in AB- ZAKELIJKE KLANTEN.`, {duration:6000});
+  } else if(uit.status === 'bestond'){
+    logActiviteit(`Dossiermap bestond al: "${uit.naam}"`);
+    if(!stil) toast(`Er stond al een map "${uit.naam}" — die is aan deze klant gekoppeld.`, {duration:7000});
+  } else {
+    logActiviteit(`Dossiermap NIET aangemaakt voor "${klant.naam}": ${uit.fout}`);
+    if(!stil) toast(`Klant toegevoegd, maar de dossiermap is niet aangemaakt: ${uit.fout}`, {duration:9000});
+  }
+  try{ if(STATE.panelKlant === klant.id) refreshPanel(klant); }catch(e){}
+  return uit;
+}
+
+/* Melding op de klantkaart over de dossiermap. Verschijnt alleen als er over deze klant iets bekend
+   is (dus niet bij de 711 klanten die al bestonden voordat dit werd ingebouwd), en alleen als er iets
+   misging — bij een geslaagde aanmaak is een blijvende melding alleen maar ruis. */
+function klantmapBlokHTML(klant){
+  const m = klant.archiefMap;
+  if(!m || m.status !== 'fout') return '';
+  return `<div style="display:flex; gap:14px; align-items:flex-start; background:var(--amber-bg); border:1px solid var(--amber-brd); border-radius:12px; padding:14px 16px; margin-bottom:16px;">
+    <div style="width:34px; height:34px; border-radius:50%; background:#c9770a; color:#fff; display:flex; align-items:center; justify-content:center; flex:none;"><i class="ti ti-folder-off" style="font-size:18px;" aria-hidden="true"></i></div>
+    <div style="flex:1;">
+      <div style="font-size:13px; font-weight:600; color:#7a4a06;">Dossiermap nog niet aangemaakt</div>
+      <div style="font-size:12px; color:#8a5a12; margin-top:2px; line-height:1.6;">${escHtml(m.fout||'')}</div>
+      <div style="font-size:11px; color:#8a5a12; margin-top:6px;">Zou worden: <b>${escHtml(m.naam||archiefMapnaamVoorKlant(klant))}</b> in AB- ZAKELIJKE KLANTEN.</div>
+      <button class="btn sm" data-klantmap-opnieuw="${klant.id}" style="margin-top:10px;"><i class="ti ti-folder-plus" aria-hidden="true"></i> Map alsnog aanmaken</button>
+    </div>
+  </div>`;
+}
+
 /* Privé-stand: uploads naar de eigen OneDrive van de ingelogde gebruiker (het "huisje" met je
    naam in Finder). Volledig gescheiden van het klantenarchief — collega's kunnen er niet bij. */
 async function archiefPriveInit(allowInteractive){
@@ -4963,7 +5330,7 @@ function lhTakenDefinitie(heeftDga){ return heeftDga ? LH_TAKEN_DGA : LH_TAKEN_G
 // alleen als het vinkje 'salarisdossierWerknemer' bij de klant aanstaat (staat standaard aan).
 function lhTakenVoorKlant(klant){
   const def = lhTakenDefinitie(klant.heeftDga);
-  if(klant.heeftDga) return def;
+  if(klant.heeftDga) return klant.salarisdossierDga === true ? def.concat([LH_TAAK_SALARISDOSSIER]) : def;
   if(klant.salarisdossierWerknemer === false) return def.filter(t=>t.naam !== 'Salarisdossier werknemer');
   return def;
 }
@@ -5141,6 +5508,20 @@ function advanceDate(datum, herhaling){
   const y = dt.getFullYear(), m = String(dt.getMonth()+1).padStart(2,'0'), day = String(dt.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
+/* Wat er met een deadline gebeurt zodra hij is afgerond. Stond eerder op drie plekken los
+   (klantkaart, bulkbewerking, loonheffingperiode); nu op één plek, zodat de n.v.t.-regel voor
+   beeindigde klanten er niet op twee van de drie in sluipt en op de derde vergeten wordt. */
+function deadlineNaAfronden(klant, entry){
+  if(!entry || entry.na) return;
+  if(klantBeeindigd(klant)){
+    entry.na = true;            // geen werk meer voor deze klant: niet doorschuiven maar n.v.t.
+    entry.status = null;
+    return;
+  }
+  const herh = entry.herhaling || 'geen';
+  if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
+  else { entry.status = 'ingediend'; }
+}
 function completeLhPeriode(klant, door){
   const f = syncLhTaken(klant);
   const entry = f.dl.LH;
@@ -5148,9 +5529,7 @@ function completeLhPeriode(klant, door){
   if(entry && !entry.na){
     logEntry.voorgaandeDatum = entry.datum;
     logEntry.voorgaandeStatus = entry.status===undefined ? null : entry.status;
-    const herh = entry.herhaling || 'geen';
-    if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
-    else { entry.status = 'ingediend'; }
+    deadlineNaAfronden(klant, entry);
   }
   f.lh.log.push(logEntry);
   if(f.lh.log.length > 500) f.lh.log = f.lh.log.slice(-500);
@@ -5243,6 +5622,10 @@ function migrateData(){
       if(k.toekomstigeKlant===undefined) k.toekomstigeKlant=false;
       if(k.toekomstNotitie===undefined) k.toekomstNotitie='';
       if(k.salarisdossierWerknemer===undefined) k.salarisdossierWerknemer=true;
+      if(k.salarisdossierDga===undefined) k.salarisdossierDga=false;
+      if(k.beeindigdPer===undefined) k.beeindigdPer='';
+      if(k.taal!=='en') k.taal='nl';
+      if(k.boekhoudingVanaf===undefined) k.boekhoudingVanaf='';
       if(k.opHoldReden===undefined) k.opHoldReden='';
       if(k.kvkLaatsteControle===undefined) k.kvkLaatsteControle=null;
       k.ib = normaliseerIbData(k.ib);
@@ -5447,7 +5830,8 @@ function migrateData(){
   if(!KENNISBANK || typeof KENNISBANK !== 'object') KENNISBANK = { categorieen:[], artikelen:[] };
   if(!Array.isArray(KENNISBANK.categorieen)) KENNISBANK.categorieen = [];
   if(!Array.isArray(KENNISBANK.artikelen)) KENNISBANK.artikelen = [];
-  if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], documentenVersturenActief:false };
+  if(!RECHTEN || typeof RECHTEN !== 'object') RECHTEN = { adminEmails:['benjamin@administratiebox.nl'], lhBevoegdeBhIds:[], administratieBhIds:[], documentenVersturenActief:false };
+  if(!Array.isArray(RECHTEN.administratieBhIds)) RECHTEN.administratieBhIds = [];
   if(!Array.isArray(RECHTEN.adminEmails)) RECHTEN.adminEmails = ['benjamin@administratiebox.nl'];
   if(!Array.isArray(RECHTEN.lhBevoegdeBhIds)) RECHTEN.lhBevoegdeBhIds = [];
   if(!Array.isArray(RECHTEN.taakToewijzers)) RECHTEN.taakToewijzers = [];
@@ -5830,7 +6214,7 @@ function renderKpiCharts(){
 function afdVanBh(bhId){ return AFDELINGEN.find(a=>a.leden.includes(bhId)) || null; }
 function afdOf(id){ return AFDELINGEN.find(a=>a.id===id) || null; }
 function zonderAfdeling(){ return BOEKHOUDERS.filter(b=>!afdVanBh(b.id)); }
-function afdKlanten(a){ return RAW_KLANTEN.filter(k=>a.leden.includes(k.bh)); }
+function afdKlanten(a){ return actieveKlanten().filter(k=>a.leden.includes(k.bh)); }
 function kpiOpSomVoorAfdeling(a){
   const som = { inbox:0, bankmutaties:0, jaarrekeningen:0, klanten:0, btwQ1:0, btwQ2:0, btwQ3:0, btwQ4:0 };
   a.leden.forEach(id=>{ const d = kpiOpVoorBh(id); Object.keys(som).forEach(k=>som[k]+=(d[k]||0)); });
@@ -7431,7 +7815,7 @@ function mijnWerkHTML(){
 function dashboardHTML(){
   const teamFilter = STATE.dashboardTeamFilter;
   const klantInTeam = (k)=>{ if(!teamFilter) return true; const b = bh(k.bh); return !!(b && b.team===teamFilter); };
-  const klantenGefilterd = teamFilter ? RAW_KLANTEN.filter(klantInTeam) : RAW_KLANTEN;
+  const klantenGefilterd = actieveKlanten().filter(klantInTeam);
 
   const rows = allDeadlineRows().filter(r=>klantInTeam(r.klant));
   const cnt = {actie:0, nadert:0, schema:0, ingediend:0};
@@ -7699,7 +8083,10 @@ function teamsHTML(){
 
 /* ============================= VIEW: KLANTEN ============================= */
 function klantenHTML(){
-  let list = RAW_KLANTEN.slice();
+  /* Beëindigde klanten staan niet in de gewone lijst maar in hun eigen blok helemaal onderaan
+     (zie beeindigdeKlantenHTML). Ze tellen ook niet mee in de chips en de kop. */
+  const lopend = RAW_KLANTEN.filter(k=>!klantBeeindigd(k));
+  let list = lopend.slice();
   if(STATE.bhFilter) list = list.filter(k=>k.bh===STATE.bhFilter);
   if(STATE.statusFilter) list = list.filter(k=>worstStatus(k)===STATE.statusFilter);
   if(STATE.search){
@@ -7712,8 +8099,8 @@ function klantenHTML(){
   const bhVoor = (id)=>{ if(!bhCache.has(id)) bhCache.set(id, bh(id)); return bhCache.get(id); };
 
   // Tellingen voor status-chips
-  const tellingen = {alle: RAW_KLANTEN.length, actie:0, nadert:0, schema:0, ingediend:0};
-  RAW_KLANTEN.forEach(k=>{ const w = worstStatus(k); if(tellingen[w]!==undefined) tellingen[w]++; });
+  const tellingen = {alle: lopend.length, actie:0, nadert:0, schema:0, ingediend:0};
+  lopend.forEach(k=>{ const w = worstStatus(k); if(tellingen[w]!==undefined) tellingen[w]++; });
 
   const chip = (val, label, count, kleurCls)=>{
     const actief = STATE.statusFilter===val;
@@ -7730,7 +8117,7 @@ function klantenHTML(){
   return `
   <div class="section">
     <div class="section-head">
-      <span class="hint">${RAW_KLANTEN.length} klanten · ${BOEKHOUDERS.length} boekhouders · <span title="Aantal klanten met een omzetbelastingnummer, waaruit het fiscaal nummer wordt afgeleid.">${RAW_KLANTEN.filter(k=>k.obNummer).length} met fiscaal nummer</span></span>
+      <span class="hint">${lopend.length} klanten · ${BOEKHOUDERS.length} boekhouders · <span title="Aantal klanten met een omzetbelastingnummer, waaruit het fiscaal nummer wordt afgeleid.">${lopend.filter(k=>k.obNummer).length} met fiscaal nummer</span>${beeindigdeKlanten().length ? ` · ${beeindigdeKlanten().length} beëindigd` : ''}</span>
       <div style="display:flex; gap:8px; align-items:center;">
         <div class="view-toggle">
           <button data-klanten-view="tabel" class="${STATE.klantenView==='tabel'?'is-active':''}" title="Tabelweergave"><i class="ti ti-list" aria-hidden="true"></i></button>
@@ -7818,7 +8205,45 @@ function klantenHTML(){
       ${list.length===0?'<div class="empty-state">Geen klanten gevonden.</div>':''}`}
     </div>
   </div>
-  ${kvkBewakingHTML()}`;
+  ${kvkBewakingHTML()}
+  ${beeindigdeKlantenHTML()}`;
+}
+/* Beëindigde klanten: helemaal onderaan de Klantenlijst, na de KvK-bewaking. Ze staan hier zodat
+   lopend werk nog afgemaakt kan worden; een afgeronde deadline schuift niet door maar wordt n.v.t.
+   (zie deadlineNaAfronden). Het blok verdwijnt vanzelf als er geen beëindigde klanten zijn. */
+function beeindigdeKlantenHTML(){
+  const lijst = beeindigdeKlanten().slice().sort((a,b)=>{
+    const da = String(b.beeindigdPer||'').localeCompare(String(a.beeindigdPer||''));
+    return da !== 0 ? da : a.naam.localeCompare(b.naam,'nl');
+  });
+  if(!lijst.length) return '';
+  const nogWerk = lijst.filter(klantHeeftOpenDeadline).length;
+  return `<div class="section" style="margin-top:18px;">
+    <div class="section-head">
+      <h3>Beëindigde klanten</h3>
+      <span class="hint">${lijst.length} klant(en)${nogWerk ? ` · bij ${nogWerk} staat nog werk open` : ' · alles afgerond'}</span>
+    </div>
+    <div class="section-body pad">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6; max-width:70ch;">
+        Deze klanten zijn beëindigd en tellen nergens meer mee. Ze staan hier zodat lopend werk nog
+        afgemaakt kan worden: een deadline die je afrondt schuift niet door naar de volgende periode
+        maar gaat naar n.v.t.${magAdministratie() ? ' Beheren doe je op de pagina Administratie.' : ''}
+      </div>
+      <table>
+        <thead><tr><th style="width:80px;">Nr.</th><th style="width:250px;">Klant</th><th style="width:120px;">Beëindigd per</th><th>OB</th><th>VPB</th><th>LH</th><th>JR</th><th style="width:110px;"></th></tr></thead>
+        <tbody>${lijst.map(k=>`<tr class="row-click" data-open-klant="${k.id}">
+          <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${escHtml(k.extId||'—')}</td>
+          <td><div class="klant-name">${escHtml(k.naam)}</div><div class="klant-meta">${escHtml(bh(k.bh).naam)}</div></td>
+          <td style="font-size:12px; white-space:nowrap;">${admDatumNL(k.beeindigdPer)}</td>
+          <td>${badge(effDL(k,'OB'))}</td>
+          <td>${badge(effDL(k,'VPB'))}</td>
+          <td>${badge(effDL(k,'LH'))}</td>
+          <td>${badge(effDL(k,'JR'))}</td>
+          <td style="text-align:right;"><button class="btn sm ghost" data-open-klant="${k.id}">Openen <i class="ti ti-arrow-right" aria-hidden="true"></i></button></td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 /* KvK-bewaking: zonder KvK API-koppeling (die vereist een geregistreerd developer-account met eigen
    API-key) is er geen automatische controle mogelijk op uitschrijving/statuswijziging. Dit is het
@@ -7878,7 +8303,7 @@ function kvkBewakingHTML(){
 
 /* ============================= VIEW: AANLEVERING & SALDO ============================= */
 function aanleveringHTML(){
-  let list = RAW_KLANTEN.slice();
+  let list = actieveKlanten();
   if(STATE.bhFilter) list = list.filter(k=>k.bh===STATE.bhFilter);
   if(STATE.search){
     const q = STATE.search.toLowerCase();
@@ -8286,7 +8711,14 @@ function loonheffingOverzichtHTML(list, heeftDga, titel){
   const bekeken = lhBekekenMaand();
   const isHuidigeMaand = bekeken === huidigeMaandKey();
   const bewerkbaar = magLhBewerken();
-  const takenDef = lhTakenDefinitie(heeftDga);
+  /* Kolommen van deze tabel. Bij de DGA-tabel komt de 5e kolom "Salarisdossier werknemer" er alleen
+     bij als minstens één DGA-klant in deze lijst die uitzondering aan heeft staan; de overige
+     DGA-klanten krijgen in die kolom een streepje (net als bij geen-DGA klanten zonder taak 5). */
+  const takenDef = (function(){
+    const basis = lhTakenDefinitie(heeftDga);
+    if(!heeftDga) return basis;
+    return list.some(k=>k && k.salarisdossierDga === true) ? basis.concat([LH_TAAK_SALARISDOSSIER]) : basis;
+  })();
   const kolomAantal = 4 + takenDef.length; // Nr. + Werkgever + taken + Periodes + Volgende deadline
 
   // Open klanten in deze maand: periodeMaand == bekeken maand. In de huidige maand tellen ook
@@ -8647,7 +9079,12 @@ function isSalarisadministratieBh(naam){
 function loonheffingHTML(){
   const bekekenMaandBanners = LH_MAAND_BANNERS.filter(b=>b.maand===lhBekekenMaand());
   const maandBannersHtml = bekekenMaandBanners.map(b=>`<div class="banner" style="background:var(--amber-bg); border-color:var(--amber-brd); color:#8a4b06; font-weight:700; margin-bottom:10px;"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(b.tekst)}</div>`).join('');
-  let list = RAW_KLANTEN.filter(k=>k.doetLoonaangifte);
+  let list = RAW_KLANTEN.filter(k=>{
+    if(!k.doetLoonaangifte) return false;
+    if(!klantBeeindigd(k)) return true;
+    const lh = effDL(k,'LH');          // beëindigd: alleen tonen zolang de loonaangifte nog openstaat
+    return !!(lh && !lh.na);
+  });
   if(STATE.search){
     const q = STATE.search.toLowerCase();
     list = list.filter(k=>k.naam.toLowerCase().includes(q) || bh(k.bh).naam.toLowerCase().includes(q));
@@ -8700,6 +9137,1010 @@ function loonheffingHTML(){
   ${!list.length ? `<div class="section"><div class="empty-state">Nog geen klanten met loonaangifte gemarkeerd. Zet het vinkje "Wij doen de loonaangifte" aan bij een klant (in het klantdetail of bij het toevoegen van een klant) om deze hier te laten verschijnen.</div></div>` : ''}`;
 }
 
+
+/* ===================== STANDAARDTEKSTEN E-MAIL =====================
+   Zie het project-document standaardteksten-email.md voor de besluiten achter deze teksten. */
+/* De vijf standaardteksten zoals aangeleverd door Benjamin op 28-08-2026, in beide talen.
+   Elke tekst bestaat uit blokken; blokken met 'optioneel' krijgen een vinkje in de e-mailsectie.
+   'standaard' kan true/false zijn of 'auto:ib' / 'auto:vpb' / 'auto:lh' — dan bepaalt het
+   klantdossier of het blok voorgevinkt staat. 'plak' bepaalt of het blok met een lege regel
+   (alinea) of direct eronder (regel, voor lijstitems) aan het vorige blok wordt geplakt. */
+const STANDAARDTEKST_AFSLUITING = {"nl": "Met vriendelijke groet,\n{{afzender}}\nAdministratieBox B.V.", "en": "Kind regards,\n{{afzender}}\nAdministratieBox B.V."};
+const STANDAARDTEKSTEN_BASIS = [
+ {
+  "id": "machtigingen-aangevraagd",
+  "naam": "Aangevraagde machtigingen",
+  "onderwerp": {
+   "nl": "Aangevraagde machtigingen",
+   "en": "Requested machtigingen"
+  },
+  "bijlagen": [],
+  "blokken": [
+   {
+    "id": "tekst",
+    "nl": "Beste,\n\nWij hebben ondertussen voor jou bij de Belastingdienst verschillende machtigingen aangevraagd. Binnenkort kun je deze per post van hen ontvangen.\n\nWij hebben alle pagina's nodig waarboven staat: 'Formulier registratie intermediair goedkeuren'.\nZou je deze na ontvangst z.s.m. aan ons willen sturen? Je kunt ze uploaden in AdministratieBox of ons een kopie per post sturen, net wat je zelf het gemakkelijkst vindt.\n\nAlvast dank voor je medewerking.",
+    "en": "Dear,\n\nWe have requested several 'Machtigingen' from the Belastingdienst. These will be sent to you by mail within short.\n\nWe only need the pages that state at the top: 'Formulier registratie intermediair goedkeuren'.\nWould you please be so kind as to forward a copy of these documents to us upon receipt? Simply upload them in AdministratieBox or send us a copy by mail, whichever is easiest for you.\n\nThanks in advance for your kind cooperation.",
+    "plak": "alinea"
+   }
+  ]
+ },
+ {
+  "id": "beginbalans",
+  "naam": "Op te vragen stukken inzake beginbalans",
+  "onderwerp": {
+   "nl": "Op te vragen stukken inzake beginbalans",
+   "en": "Request for Documents Regarding Opening Balance"
+  },
+  "bijlagen": [],
+  "blokken": [
+   {
+    "id": "intro",
+    "nl": "Beste,\n\nMet ingang van {{startmaand}} verrichten wij de boekhouding voor jou. Voor de volledigheid van de administratie is het voor ons van belang om een juiste startpositie te hebben. Daarvoor hebben wij de eindcijfers nodig per {{beginbalansdatum}}. Hiervoor ontvangen wij graag de volgende documenten:",
+    "en": "Dear,\n\nStarting from {{startmaand}}, we will be handling your bookkeeping. To ensure the completeness of the administration, it is important for us to have an accurate starting position. Therefore, we need the final figures as of {{beginbalansdatum}}. Kindly provide us with the following documents:",
+    "plak": "alinea"
+   },
+   {
+    "id": "lijst",
+    "nl": "- Kolommenbalans t/m {{beginbalansdatum}}\n- Verlies en winstoverzicht t/m {{beginbalansdatum}}\n- Openstaande debiteurenlijst t/m {{beginbalansdatum}}\n- Openstaande crediteurenlijst t/m {{beginbalansdatum}}\n- Grootboekkaartenoverzicht\n- Afschrijvingsstaat t/m {{beginbalansdatum}} (indien van toepassing)",
+    "en": "- Kolommenbalans t/m {{beginbalansdatum}}\n- Verlies en winstoverzicht t/m {{beginbalansdatum}}\n- Openstaande debiteurenlijst t/m {{beginbalansdatum}}\n- Openstaande crediteurenlijst t/m {{beginbalansdatum}}\n- Grootboekkaartenoverzicht\n- Afschrijvingsstaat t/m {{beginbalansdatum}} (indien van toepassing)",
+    "plak": "alinea"
+   },
+   {
+    "id": "bank",
+    "nl": "- Eindstand bank per {{beginbalansdatum}}",
+    "en": "- Bank balance as per {{beginbalansdatum}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Eindstand bank",
+    "standaard": true
+   },
+   {
+    "id": "jaarrekening",
+    "nl": "- Jaarrekening {{jaarrekeningjaar}}",
+    "en": "- Jaarrekening {{jaarrekeningjaar}}",
+    "plak": "regel"
+   },
+   {
+    "id": "slot",
+    "nl": "Je kunt deze documenten sturen aan je vaste boekhouder, {{boekhouder}}: {{boekhouderEmail}}\n\nAls er onduidelijkheden zijn of vragen/opmerkingen horen we het graag.",
+    "en": "You can send these documents to your designated bookkeeper, {{boekhouder}}: {{boekhouderEmail}}\n\nIf there are any uncertainties or questions/comments, please let us know.",
+    "plak": "alinea"
+   }
+  ]
+ },
+ {
+  "id": "welkom",
+  "naam": "Welkom — aanvullende gegevens aanleveren",
+  "onderwerp": {
+   "nl": "Actie vereist - Welkom, graag aanvullende gegevens aanleveren",
+   "en": "Action required: Welcome, please provide us with additional information"
+  },
+  "bijlagen": [
+   "Excel-lijst (+ pdf)",
+   "Document KM-registratie"
+  ],
+  "blokken": [
+   {
+    "id": "intro",
+    "nl": "Beste,\n\nAllereerst welkom en wij hopen op een hele fijne samenwerking namens team AdministratieBox B.V. Hieronder vind je belangrijke vragen en informatie om de samenwerking goed op te starten.",
+    "en": "Dear,\n\nFirst of all, we are pleased to welcome you as our customer. The AdministratieBox B.V. team are looking forward to entering into a good business relationship with you.\nMentioned below you will find important questions and information in order to start off this cooperation smoothly.",
+    "plak": "alinea"
+   },
+   {
+    "id": "boekhouder",
+    "nl": "Vaste boekhouder\n- Jouw vaste boekhouder is mijn collega {{boekhouder}}, bij wie je terecht kunt voor al je boekhoudkundige zaken. {{boekhouder}} zal zich binnenkort per mail en app nader aan je voorstellen.\n- Graag de in deze mail gevraagde documenten en informatie mailen aan mij, {{afzender}} (naar info@administratiebox.nl) of uploaden in de app.",
+    "en": "- Your designated bookkeeper is my colleague {{boekhouder}}, who will be your point of contact for all accounting matters. {{boekhouder}} will introduce himself/herself to you via email and app shortly.\n- Please send the documents and information requested in this email to me, {{afzender}}, either by email (to info@administratiebox.nl) or by uploading them in the app.",
+    "plak": "alinea"
+   },
+   {
+    "id": "documenten",
+    "nl": "Documenten aanleveren\nBijgaand ontvang je een Excel lijst (ook als pdf voor als je geen Excel kunt openen). Graag ontvang ik deze terug met aanvulling door jou. Voor ons dossier ook graag de gevraagde documenten z.s.m. aanleveren.",
+    "en": "Documents and information required\nEnclosed you will find an Excel list (also provided as a pdf-document in case the Excel does not open). We would like to receive the list back from you, completed with the requested information. For our files also kindly provide us with the required documents as soon as possible.",
+    "plak": "alinea"
+   },
+   {
+    "id": "km",
+    "nl": "Kilometerregistratie\nIn de bijlage ontvang je ook een document KM-registratie, dat je kunt gebruiken om je zakelijk gereden kilometers in je priveauto bij te houden.",
+    "en": "Kilometer registration\nAlso a document [KM registratie-zakelijk] has been enclosed, that you can adjust and use to register the work-related kilometers you may drive in your personal car.",
+    "plak": "alinea"
+   },
+   {
+    "id": "bank",
+    "nl": "Zakelijke bankrekening koppelen\nZodra je zakelijke rekening is bevestigd, graag deze koppelen. Je gaat daarvoor in het menu van AdministratieBox naar [Bank] en klikt rechtsboven op de knop [Rekening toevoegen], je selecteert de juiste bank en volgt verder gewoon de stappen.",
+    "en": "Connect your business bank account\nAs soon as your business bank account has been confirmed, please connect this in your AdministratieBox account. Simply log in in AdministratieBox, in the menu go to [Bank], at the right hand top corner click the button [Rekening toevoegen], select the correct bank and follow the instructions.",
+    "plak": "alinea"
+   },
+   {
+    "id": "loonadministratie",
+    "nl": "Loonadministratie\nMet betrekking tot (het opzetten van) je loonadministratie zal onze salarisadministratie (salaris@administratiebox.nl) contact met je opnemen.",
+    "en": "Loonadministratie\nWith respect to your [loonadministratie] our salarisadministratie (salaris@administratiebox.nl) will contact you.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Loonadministratie",
+    "standaard": "auto:lh"
+   },
+   {
+    "id": "eindcijfers",
+    "nl": "Eindcijfers\nOver het aanleveren van de eindcijfers t/m {{beginbalansdatum}} ontvang je binnenkort een aparte mail.",
+    "en": "Eindcijfers\nWith respect to the financial records until {{beginbalansdatum}} you will receive a separate e-mail within short.",
+    "plak": "alinea"
+   },
+   {
+    "id": "facturen",
+    "nl": "Facturen uploaden\nGraag z.s.m. alle zakelijke facturen uploaden in AdministratieBox (AB).",
+    "en": "Upload your business invoices\nPlease upload all business-related invoices in AdministratieBox (AB) as soon as possible.",
+    "plak": "alinea"
+   },
+   {
+    "id": "werk-kop",
+    "nl": "Eerste werkzaamheden\nDe eerste werkzaamheden die wij voor je gaan verrichten zijn:",
+    "en": "Initial activities\nThe initial activities we will perform for you are:",
+    "plak": "alinea"
+   },
+   {
+    "id": "werk-ob",
+    "nl": "- Aangifte omzetbelasting {{obPeriode}}",
+    "en": "- Aangifte omzetbelasting {{obPeriode}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte omzetbelasting",
+    "standaard": true
+   },
+   {
+    "id": "werk-jr",
+    "nl": "- Jaarrekening {{jaar}}",
+    "en": "",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Jaarrekening",
+    "standaard": true
+   },
+   {
+    "id": "werk-ib",
+    "nl": "- Aangifte inkomstenbelasting over {{jaar}}",
+    "en": "- Aangifte inkomstenbelasting over {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte inkomstenbelasting",
+    "standaard": "auto:ib"
+   },
+   {
+    "id": "werk-vpb",
+    "nl": "- Aangifte vennootschapsbelasting over {{jaar}}",
+    "en": "- Aangifte vennootschapsbelasting over {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte vennootschapsbelasting",
+    "standaard": "auto:vpb"
+   },
+   {
+    "id": "werk-oss",
+    "nl": "- OSS-aangifte {{ossPeriode}}",
+    "en": "",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "OSS-aangifte",
+    "standaard": false
+   },
+   {
+    "id": "werk-lh",
+    "nl": "- Aangifte loonheffingen {{lhMaand}}",
+    "en": "- Salarisadministratie {{lhMaand}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Loonheffingen / salarisadministratie",
+    "standaard": "auto:lh"
+   },
+   {
+    "id": "urencriterium",
+    "nl": "Bijhouden gewerkte zakelijke uren (urenregistratie)\nVoor bepaalde soorten ondernemersaftrek, zoals zelfstandigenaftrek, geldt het urencriterium van 1225 uren per kalenderjaar.\nOm aan te tonen of je aan het urencriterium voldoet, moet je je gewerkte uren voor je bedrijf goed bijhouden (in een agenda of in een Excellijst). Noteer elke dag hoeveel tijd je aan je bedrijf hebt gewerkt.\nAls de Belastingdienst je tijdens een controle hiernaar vraagt, kun je daarmee je gewerkte uren voor je onderneming onderbouwen. De verantwoordelijkheid hiervoor ligt bij jou.\nZie voor meer informatie over het urencriterium de website van de Belastingdienst:\nhttps://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/zakelijk/winst/inkomstenbelasting/inkomstenbelasting_voor_ondernemers/voorwaarden_urencriterium",
+    "en": "Registration of your business hours [urenregistratie]\nFor certain types of business deductions, such as [zelfstandigenaftrek], the Belastingdienst use a yearly [urencriterium] of 1225 hours per each calendar year.\nIn order to prove whether you meet the [urencriterium], you have to register all hours that you work for your business (in a diary or Excel-list). We advise you to update this list daily. Should the Belastingdienst - during a check-up - ask you if you meet the [urencriterium], you can use the list for proof. This [urenregistratie] is fully your responsibility.\nFor more information about this, please check the website of the Belastingdienst:\nhttps://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/zakelijk/winst/inkomstenbelasting/inkomstenbelasting_voor_ondernemers/voorwaarden_urencriterium",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Urencriterium",
+    "standaard": "auto:ib"
+   },
+   {
+    "id": "slot",
+    "nl": "Als er onduidelijkheden zijn of vragen/opmerkingen horen we het graag. Mail of bel gerust.",
+    "en": "If anything is unclear or if you have any questions or comments, please let us know: send us your email or give us a call.",
+    "plak": "alinea"
+   }
+  ]
+ },
+ {
+  "id": "beeindiging",
+  "naam": "Beëindiging abonnement",
+  "onderwerp": {
+   "nl": "Belangrijk: bevestiging beëindiging abonnement en openstaande acties",
+   "en": "Confirmation of Subscription Termination"
+  },
+  "bijlagen": [
+   "Overzicht openstaande facturen",
+   "Overzicht niet-verwerkte banktransacties",
+   "Creditnota"
+  ],
+  "blokken": [
+   {
+    "id": "intro",
+    "nl": "Beste,\n\nHierbij ontvang je de formele bevestiging van je beëindiging van je abonnement bij ons per {{einddatum}}.\nJammer dat je stopt, maar ik ga er van uit dat je een vaste baan hebt gevonden.\n\nOnderaan deze mail vind je een overzicht van de laatste werkzaamheden die we voor je gaan verrichten.",
+    "en": "Dear,\n\nHereby, you receive the formal confirmation of the termination of your subscription with us as of {{einddatum}}.\n\nAt the bottom of this email, you will find an overview of the final tasks we will carry out for you.",
+    "plak": "alinea"
+   },
+   {
+    "id": "facturen-ab",
+    "nl": "Openstaande facturen AdministratieBox\nIn de bijlage ontvang je het overzicht van onze openstaande facturen. Je hebt hierover al eerder per mail onze betalingsherinnering ontvangen. We verzoeken om betaling per omgaande, zodat je weer toegang tot je account krijgt en je de benodigde acties ter afronding van je abonnement bij ons goed kunt oppakken.",
+    "en": "Outstanding AdministratieBox invoices\nAttached, you will find an overview of our outstanding invoices. You have already received our payment reminder about these by email. We kindly ask you to pay by return, so that you regain access to your account and can properly deal with the actions needed to finalise your subscription with us.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Openstaande facturen AdministratieBox",
+    "standaard": false
+   },
+   {
+    "id": "bankkoppeling",
+    "nl": "Bankkoppeling\nOm deze laatste werkzaamheden voor je te kunnen verrichten is het noodzakelijk dat de bankkoppeling in elk geval actief is tot de beëindigingsdatum van je abonnement. Omdat je bankkoppeling op dit moment al is verlopen, moet je deze weer koppelen. Om je zakelijke bankrekening te verlengen ga je in het menu van AdministratieBox naar [Bank] en klikt dan rechts naast [Bank koppelen] op de 3 puntjes. Daar kun je kiezen voor [Bankkoppeling verlengen] en je volgt verder gewoon de stappen.",
+    "en": "Bank connection\nTo complete these final tasks for you, it is essential that the bank connection remains active until the termination date of your subscription. Since your bank connection has already expired or will expire soon, you need to reconnect it.\nTo extend your business bank connection, go to the AdministratieBox menu, select [Bank], and then click on the three dots next to [Bank Connection]/[Expired]. There, you can select [Extend Bank Connection] and follow the steps.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Bankkoppeling verlengen",
+    "standaard": true
+   },
+   {
+    "id": "transacties",
+    "nl": "Niet-verwerkte banktransacties\nIn de bijlage ontvang je een overzicht van de niet-verwerkte banktransacties. Om je boekhouding goed te kunnen afronden is het noodzakelijk dat je van alle niet-verwerkte bankmutaties de bonnen en facturen uploadt, zodat deze op tijd door onze boekhouders kunnen worden verwerkt.\nGraag de ontbrekende facturen en bonnen zo snel mogelijk aanleveren:\n1. Via App (telefoon): log in op de AdministratieBox App op je smartphone. Ga naar de homepage. Daar zie je hoeveel transacties er zijn met ontbrekende informatie. Klik op het aantal transacties. Je komt dan bij de betreffende transacties uit. Daar kun je bij de betreffende transactie de factuur toevoegen of een opmerking toevoegen. Bij opmerking toevoegen kun je kiezen voor 2 standaard opmerkingen: \"geen bon of factuur\" of \"prive betaling\". Of vul je eigen opmerking toe.\n2. Via WebApp (computer): log via je computer in op je account van AdministratieBox. Klik aan de linkerkant van je scherm in het menu op [Bank], selecteer je betaalrekening en klik bovenaan in je scherm op [Niet verwerkt].",
+    "en": "Unprocessed bank transactions\nAttached, you will find an overview of the unprocessed bank transactions. To properly finalize your bookkeeping, it is necessary to upload the receipts and invoices for all unprocessed bank transactions, so our accountants can process them in time.\nPlease submit the missing invoices and receipts as soon as possible:\n1. Via App (mobile phone): log in to the AdministratieBox App on your smartphone. Go to the homepage, where you will see the number of transactions with missing information. Click on this number to access the relevant transactions. You can then add the invoice to the respective transaction or add a comment. When adding a comment, you can choose from two standard options: \"No receipt or invoice\" or \"Private payment\", or you can enter your own comment.\n2. Via WebApp (computer): log into your AdministratieBox account on your computer. Click on [Bank] in the menu on the left side of your screen, select your payment account, and then click [Unprocessed] at the top of your screen.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Niet-verwerkte banktransacties",
+    "standaard": true
+   },
+   {
+    "id": "facturen-klant",
+    "nl": "Openstaande inkoopfacturen/verkoopfacturen\nEr staan nog enkele inkoop- en verkoopfacturen open, zie bijgaande schermafbeeldingen. We horen graag van je of deze al zijn voldaan.",
+    "en": "Outstanding invoices\nPlease note that there are still some purchase/sales invoices outstanding. We would like to hear from you whether these invoices have already been paid.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Openstaande in-/verkoopfacturen",
+    "standaard": false
+   },
+   {
+    "id": "creditnota",
+    "nl": "Creditnota\nOmdat je per abuis de factuur voor de maand {{maand}} hebt ontvangen, terwijl je abonnement tot {{einddatum}} loopt, ontvang je in de bijlage de creditnota hiervoor.",
+    "en": "Credit note\nBecause you received the invoice for {{maand}} by mistake, while your subscription runs until {{einddatum}}, you will find the credit note for this attached.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Creditnota",
+    "standaard": false
+   },
+   {
+    "id": "werk-kop",
+    "nl": "De laatste werkzaamheden die wij voor je verrichten zijn:",
+    "en": "Final tasks we will complete for you:",
+    "plak": "alinea"
+   },
+   {
+    "id": "werk-ob",
+    "nl": "- Aangifte omzetbelasting {{obPeriode}}",
+    "en": "- VAT return for {{obPeriode}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte omzetbelasting",
+    "standaard": true
+   },
+   {
+    "id": "werk-jr",
+    "nl": "- Jaarrekening {{jaar}}",
+    "en": "- Annual accounts for {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Jaarrekening",
+    "standaard": true
+   },
+   {
+    "id": "werk-ib",
+    "nl": "- Aangifte inkomstenbelasting over {{jaar}} (wij vragen t.z.t. uitstel voor je aan)",
+    "en": "- Income tax return for {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte inkomstenbelasting",
+    "standaard": "auto:ib"
+   },
+   {
+    "id": "werk-vpb",
+    "nl": "- Aangifte vennootschapsbelasting over {{jaar}}",
+    "en": "- Corporate tax return for {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Aangifte vennootschapsbelasting",
+    "standaard": "auto:vpb"
+   },
+   {
+    "id": "werk-oss",
+    "nl": "- OSS-aangifte {{ossPeriode}}",
+    "en": "",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "OSS-aangifte",
+    "standaard": false
+   },
+   {
+    "id": "werk-lh",
+    "nl": "- Salarisadministratie {{lhMaand}}",
+    "en": "",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Salarisadministratie",
+    "standaard": "auto:lh"
+   },
+   {
+    "id": "kvk",
+    "nl": "KvK beëindiging\nAls je stopt met je onderneming, dan dien je deze ook uit te schrijven bij de KvK. Dit kun je doen d.m.v. de volgende link: https://www.kvk.nl/inschrijven-en-wijzigen/uitschrijven/\nDe KvK geeft dit dan ook aan de Belastingdienst door, zodat je voor de toekomst geen aangifte omzetbelasting meer hoeft in te dienen.\nGraag ontvangen we een kopie van je uitschrijving bij de KvK en van eventuele correspondentie van de Belastingdienst.",
+    "en": "Deregistration at the Chamber of Commerce (KvK)\nIf you are ending your business, you also need to deregister it at the Chamber of Commerce. You can do so via the following link: https://www.kvk.nl/inschrijven-en-wijzigen/uitschrijven/\nThe KvK will pass this on to the Belastingdienst, so that you no longer have to file VAT returns in the future.\nPlease send us a copy of your deregistration at the KvK and of any correspondence from the Belastingdienst.",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "KvK-uitschrijving",
+    "standaard": true
+   },
+   {
+    "id": "ib-gegevens",
+    "nl": "IB {{jaar}}\nDaarnaast hebben we voor het voorbereiden van je IB-aangifte over {{jaar}} ook de volgende gegevens nog van je nodig:\n- Kilometerregistratie\n- Financieel jaaroverzicht van je zakelijke rekening\n- Overzicht van gedane giften\n- Eventuele zorgkosten die je zelf hebt betaald en die niet zijn vergoed (let op: het eigen risico en zorgverzekeringspremies zijn niet aftrekbaar)\n- Eventueel informatie over leningen en andere schulden\n- Eventueel betaalde premies voor lijfrente of arbeidsongeschiktheidsverzekeringen (AOV)",
+    "en": "Income tax return {{jaar}}\nIn addition, to prepare your income tax return for {{jaar}} we still need the following information from you:\n- Kilometre registration\n- Annual financial statement of your business account\n- Overview of donations made\n- Any medical costs you paid yourself that were not reimbursed (please note: the compulsory excess and health insurance premiums are not deductible)\n- Any information about loans and other debts\n- Any premiums paid for annuities or disability insurance (AOV)",
+    "plak": "alinea",
+    "optioneel": true,
+    "label": "Op te vragen IB-gegevens",
+    "standaard": "auto:ib"
+   },
+   {
+    "id": "slot",
+    "nl": "Wij wensen je veel succes voor de toekomst.",
+    "en": "We wish you all the best for the future.",
+    "plak": "alinea"
+   }
+  ]
+ },
+ {
+  "id": "machtigingen-intrekken",
+  "naam": "Machtigingen andere intermediair intrekken",
+  "onderwerp": {
+   "nl": "Machtigingen andere intermediair intrekken",
+   "en": "Revoking Authorizations for Another Intermediary"
+  },
+  "bijlagen": [],
+  "blokken": [
+   {
+    "id": "intro",
+    "nl": "Beste,\n\nEerder vroegen wij voor jou bij de Belastingdienst verschillende machtigingen aan. Enkele daarvan zijn afgekeurd, omdat deze nog bij je vorige intermediair liggen.\nWil je contact met je vorige boekhouder zoeken en deze vragen om de machtigingen in te trekken?\nEventueel kun je dit ook zelf doen. Hieronder vind je een link om snel en gemakkelijk met behulp van je DigiD de machtigingen van je vorige intermediair in te trekken:\nhttps://machtigen.digipoort.logius.nl/intrekkingsportaal/inloggen\n\nHet gaat om onderstaande machtigingen:",
+    "en": "Dear,\n\nPreviously, we requested various authorizations for you from the Dutch Tax Authorities (Belastingdienst). Some of these were rejected because they are still assigned to your previous intermediary.\n\nCould you please contact your previous accountant and ask them to revoke these authorizations?\n\nAlternatively, you can also revoke them yourself. Below, you will find a link to easily and quickly revoke your previous intermediary's authorizations using your DigiD:\nhttps://machtigen.digipoort.logius.nl/intrekkingsportaal/inloggen\n\nThe authorizations in question are:",
+    "plak": "alinea"
+   },
+   {
+    "id": "m-ibvia",
+    "nl": "- IB/VIA doorlopende machtiging",
+    "en": "- IB/VIA doorlopende machtiging",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "IB/VIA doorlopend",
+    "standaard": true
+   },
+   {
+    "id": "m-sbtdoor",
+    "nl": "- SBT doorlopend / Serviceberichten toeslagen doorlopend",
+    "en": "- SBT doorlopend / Serviceberichten toeslagen doorlopend",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "SBT doorlopend",
+    "standaard": true
+   },
+   {
+    "id": "m-via",
+    "nl": "- VIA machtiging IB {{jaar}}",
+    "en": "- VIA machtiging IB {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "VIA machtiging IB {{jaar}}",
+    "standaard": true
+   },
+   {
+    "id": "m-sbanext",
+    "nl": "- SBA machtiging IB {{jaar_plus}} / Serviceberichten aanslagen {{jaar_plus}}",
+    "en": "- SBA machtiging IB {{jaar_plus}} / Serviceberichten aanslagen {{jaar_plus}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "SBA aanslagen {{jaar_plus}}",
+    "standaard": true
+   },
+   {
+    "id": "m-sbanu",
+    "nl": "- SBA machtiging IB {{jaar}} / Serviceberichten aanslagen {{jaar}}",
+    "en": "- SBA machtiging IB {{jaar}} / Serviceberichten aanslagen {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "SBA aanslagen {{jaar}}",
+    "standaard": true
+   },
+   {
+    "id": "m-sbtnext",
+    "nl": "- SBT machtiging Toeslagen {{jaar_plus}} / Serviceberichten toeslagen {{jaar_plus}}",
+    "en": "- SBT machtiging Toeslagen {{jaar_plus}} / Serviceberichten toeslagen {{jaar_plus}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "SBT toeslagen {{jaar_plus}}",
+    "standaard": true
+   },
+   {
+    "id": "m-sbtnu",
+    "nl": "- SBT machtiging Toeslagen {{jaar}} / Serviceberichten toeslagen {{jaar}}",
+    "en": "- SBT machtiging Toeslagen {{jaar}} / Serviceberichten toeslagen {{jaar}}",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "SBT toeslagen {{jaar}}",
+    "standaard": true
+   },
+   {
+    "id": "m-vpb",
+    "nl": "- Vpb doorlopend",
+    "en": "- Vpb doorlopend",
+    "plak": "regel",
+    "optioneel": true,
+    "label": "Vpb doorlopend",
+    "standaard": true
+   },
+   {
+    "id": "slot",
+    "nl": "Graag horen wij het van je zodra de machtigingen zijn ingetrokken, zodat wij ze dan opnieuw voor je kunnen aanvragen.",
+    "en": "Please let us know as soon as the authorizations have been revoked so that we can request them again for you.",
+    "plak": "alinea"
+   }
+  ]
+ }
+];
+
+/* De teksten leven als meta-record 'standaardteksten' in de gedeelde database, zodat een wijziging
+   meteen voor alle collega's geldt. Bij een lege of kapotte waarde vallen we terug op de basisset. */
+let STANDAARDTEKSTEN = JSON.parse(JSON.stringify(STANDAARDTEKSTEN_BASIS));
+function stTeksten(){ return Array.isArray(STANDAARDTEKSTEN) && STANDAARDTEKSTEN.length ? STANDAARDTEKSTEN : STANDAARDTEKSTEN_BASIS; }
+function stTekst(id){ return stTeksten().find(t=>t.id===id) || null; }
+
+const ST_MAANDEN_NL = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+const ST_MAANDEN_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function stTaalVanKlant(klant){ return (klant && klant.taal === 'en') ? 'en' : 'nl'; }
+
+/* Uit één klantveld "Boekhouding vanaf" (JJJJ-MM) volgen drie dingen tegelijk:
+     startmaand        -> "juli 2026"
+     beginbalansdatum  -> "30-06-2026"  (laatste dag van de maand ervóór)
+     jaarrekeningjaar  -> startjaar - 1
+   Nagerekend op alle vier de voorbeelden die Benjamin aanleverde (april 2026, juli 2026,
+   januari 2026, januari 2027) — klopt steeds. */
+function stDatumsUitStart(startJJJJMM, taal){
+  const m = String(startJJJJMM||'').match(/^(\d{4})-(\d{2})$/);
+  if(!m) return { startmaand:'', beginbalansdatum:'', jaarrekeningjaar:'' };
+  const jaar = Number(m[1]), maand = Number(m[2]);
+  const eind = new Date(jaar, maand-1, 0);   // dag 0 van de startmaand = laatste dag ervóór
+  const dd = String(eind.getDate()).padStart(2,'0');
+  const mm = String(eind.getMonth()+1).padStart(2,'0');
+  const namen = taal==='en' ? ST_MAANDEN_EN : ST_MAANDEN_NL;
+  return {
+    startmaand: `${namen[maand-1]} ${jaar}`,
+    beginbalansdatum: `${dd}-${mm}-${eind.getFullYear()}`,
+    jaarrekeningjaar: String(jaar-1),
+  };
+}
+function stDatumNL(iso){
+  if(!iso) return '';
+  const d = String(iso).split('-');
+  return d.length===3 ? `${d[2]}-${d[1]}-${d[0]}` : iso;
+}
+/* Alle invulvelden voor deze klant. Onbekende waarden blijven leeg in plaats van dat er "undefined"
+   in een mail naar een klant belandt; de e-mailsectie waarschuwt over lege velden. */
+function stVelden(klant, taal){
+  const b = bh(klant.bh) || {};
+  const d = stDatumsUitStart(klant.boekhoudingVanaf, taal);
+  const jaarNu = TODAY.getFullYear();
+  const ob = effDL(klant,'OB'), lh = effDL(klant,'LH');
+  return {
+    klantnaam: klant.naam || '',
+    contactpersoon: klant.contact || '',
+    boekhouder: b.naam || '',
+    boekhouderEmail: b.email || '',
+    afzender: (typeof gebruikersNaam === 'function' ? gebruikersNaam() : '') || '',
+    startmaand: d.startmaand,
+    beginbalansdatum: d.beginbalansdatum,
+    jaarrekeningjaar: d.jaarrekeningjaar,
+    jaar: String(jaarNu - 1),
+    jaar_plus: String(jaarNu),
+    maand: (taal==='en' ? ST_MAANDEN_EN : ST_MAANDEN_NL)[TODAY.getMonth()],
+    einddatum: stDatumNL(klant.beeindigdPer) || '',
+    obPeriode: (ob && !ob.na && ob.datum) ? stDatumNL(ob.datum) : '',
+    lhMaand: (lh && !lh.na && lh.datum) ? stDatumNL(lh.datum) : '',
+    ossPeriode: '',
+  };
+}
+function stVulIn(tekst, velden){
+  return String(tekst||'').replace(/\{\{(\w+)\}\}/g, (heel, naam)=>{
+    const w = velden[naam];
+    return (w === undefined || w === null) ? heel : String(w);
+  });
+}
+/* Welke velden in deze tekst gebruikt worden maar leeg zijn. Wordt in de e-mailsectie getoond,
+   zodat je niet per ongeluk "aan je vaste boekhouder, :" verstuurt. */
+function stLegeVelden(tekst, velden){
+  const gebruikt = new Set();
+  String(tekst||'').replace(/\{\{(\w+)\}\}/g, (h,n)=>{ gebruikt.add(n); return h; });
+  return [...gebruikt].filter(n=>!String(velden[n]||'').trim());
+}
+/* Standaardstand van een optioneel blok voor deze klant. */
+function stBlokStandaard(blok, klant){
+  const s = blok.standaard;
+  if(s === 'auto:lh')  return !!klant.doetLoonaangifte;
+  if(s === 'auto:vpb') return archiefVormLabel(klant.vorm) === 'B.V.';
+  if(s === 'auto:ib')  return archiefVormLabel(klant.vorm) !== 'B.V.';
+  return s !== false;
+}
+function stStandaardStand(tekst, klant){
+  const uit = {};
+  (tekst.blokken||[]).forEach(b=>{ if(b.optioneel) uit[b.id] = stBlokStandaard(b, klant); });
+  return uit;
+}
+/* Stelt de mail samen uit de aangevinkte blokken. Blokken met plak:'regel' komen direct onder het
+   vorige blok (lijstitems), de rest met een lege regel ertussen. Een blok dat in deze taal leeg is
+   valt weg — zo mist de Engelse welkomstmail bijvoorbeeld bewust de regel "Jaarrekening". */
+function stStelSamen(tekst, taal, klant, stand){
+  const velden = stVelden(klant, taal);
+  const delen = [];
+  (tekst.blokken||[]).forEach(b=>{
+    if(b.optioneel && !stand[b.id]) return;
+    const ruw = String(b[taal]||'').trim();
+    if(!ruw) return;
+    delen.push({ plak: b.plak==='regel' ? 'regel' : 'alinea', tekst: stVulIn(ruw, velden) });
+  });
+  let body = '';
+  delen.forEach((d,i)=>{ body += (i===0 ? '' : (d.plak==='regel' ? '\n' : '\n\n')) + d.tekst; });
+  const afsl = stVulIn(STANDAARDTEKST_AFSLUITING[taal] || STANDAARDTEKST_AFSLUITING.nl, velden);
+  body = body + '\n\n' + afsl;
+  return {
+    onderwerp: stVulIn((tekst.onderwerp||{})[taal] || (tekst.onderwerp||{}).nl || tekst.naam, velden),
+    body,
+    velden,
+    leeg: stLegeVelden(body, velden),
+  };
+}
+/* Een mailto:-link kapt af rond 2000 tekens URL. Boven deze grens raadt het dashboard het
+   Outlook-concept aan (volledige tekst + bijlagen) in plaats van de gewone Outlook-knop. */
+const ST_MAILTO_GRENS = 1800;
+function stPastInMailto(mail){
+  return encodeURIComponent(mail.body).length + encodeURIComponent(mail.onderwerp).length < 1900;
+}
+function stOpenMailto(klant, mail){
+  const url = `mailto:${encodeURIComponent(klant.email||'')}`
+    + `?subject=${encodeURIComponent(mail.onderwerp)}`
+    + `&body=${encodeURIComponent(mail.body)}`;
+  window.open(url, '_blank');
+}
+/* Zet een echt concept in de Outlook-postbus van de ingelogde gebruiker, met de volledige tekst.
+   Gebruikt Mail.ReadWrite, dat al in GRAPH_SCOPES zit. Bijlagen moet je zelf toevoegen. */
+async function stMaakOutlookConcept(klant, mail){
+  const html = '<div style="font-family:Calibri,Arial,sans-serif; font-size:11pt;">'
+    + escHtml(mail.body).replace(/\n/g,'<br>') + '</div>';
+  const res = await graphFetch('https://graph.microsoft.com/v1.0/me/messages', {
+    method:'POST',
+    body: JSON.stringify({
+      subject: mail.onderwerp,
+      body: { contentType:'HTML', content: html },
+      toRecipients: klant.email ? [{ emailAddress:{ address: klant.email } }] : [],
+    })
+  }, true);
+  return res;   // bevat id en webLink
+}
+
+/* ===================== INVENTARIS IMPORTEREN =====================
+   Vult de inventarisatie aan uit een csv- of Excel-lijst. Bewust in twee stappen: eerst een
+   voorbeeld van wat er gaat gebeuren (nieuw / bijgewerkt / overgeslagen), pas daarna toepassen.
+   Zo zie je een verkeerd gekozen bestand vóórdat er 200 items in staan. */
+const INV_KOLOMMEN = {
+  boekhouder:  ['boekhouder','medewerker','collega','naam medewerker','toegewezen aan','gebruiker','eigenaar'],
+  naam:        ['item','naam','apparaat','artikel','omschrijving item','product'],
+  omschrijving:['omschrijving','toelichting','details','specificatie'],
+  serienummer: ['serienummer','serienr','serie','serial','serial number','sn'],
+  uitgegevenOp:['uitgegeven','uitgegeven op','datum','uitgiftedatum','sinds'],
+  notities:    ['notities','notitie','opmerking','opmerkingen'],
+  teruggegeven:['teruggegeven','ingeleverd','retour'],
+  teruggegevenOp:['teruggegeven op','ingeleverd op','retourdatum'],
+};
+function invKolomVinden(rij, veld){
+  const kandidaten = INV_KOLOMMEN[veld] || [];
+  const sleutels = Object.keys(rij);
+  for(const k of sleutels){
+    const kaal = String(k).toLowerCase().replace(/[^a-z ]/g,'').trim();
+    if(kandidaten.includes(kaal)) return k;
+  }
+  return null;
+}
+function invJaNee(waarde){
+  const w = String(waarde||'').trim().toLowerCase();
+  return ['ja','j','yes','y','true','1','x'].includes(w);
+}
+/* Boekhouder zoeken op naam of e-mail; hoofdletters en extra spaties maken niet uit. */
+function invZoekBoekhouder(waarde){
+  const w = String(waarde||'').trim().toLowerCase();
+  if(!w) return null;
+  return BOEKHOUDERS.find(b =>
+    String(b.naam||'').trim().toLowerCase() === w ||
+    String(b.email||'').trim().toLowerCase() === w
+  ) || BOEKHOUDERS.find(b => String(b.naam||'').trim().toLowerCase().startsWith(w)) || null;
+}
+/* Bestaat dit item al? Serienummer is leidend (uniek per apparaat); anders boekhouder + itemnaam. */
+function invBestaandItem(bhId, naam, serienummer){
+  const sn = String(serienummer||'').trim().toLowerCase();
+  if(sn){
+    const opSn = INVENTARIS_ITEMS.find(i => String(i.serienummer||'').trim().toLowerCase() === sn);
+    if(opSn) return opSn;
+  }
+  const n = String(naam||'').trim().toLowerCase();
+  return INVENTARIS_ITEMS.find(i => i.bhId === bhId && String(i.naam||'').trim().toLowerCase() === n) || null;
+}
+function invAnalyseer(rijen){
+  const plan = { nieuw:[], bijwerken:[], fouten:[], kolommen:{} };
+  if(!rijen.length){ plan.fouten.push({regel:0, reden:'Het bestand bevat geen rijen.'}); return plan; }
+  Object.keys(INV_KOLOMMEN).forEach(v=>{ plan.kolommen[v] = invKolomVinden(rijen[0], v); });
+  if(!plan.kolommen.naam){
+    plan.fouten.push({regel:0, reden:'Geen kolom met de itemnaam gevonden. Verwacht een kolom "Item" of "Naam".'});
+    return plan;
+  }
+  rijen.forEach((rij, i)=>{
+    const lees = (veld)=> plan.kolommen[veld] ? String(rij[plan.kolommen[veld]]||'').trim() : '';
+    const naam = lees('naam');
+    if(!naam) return;                       // lege regel: stil overslaan
+    const bhRuw = lees('boekhouder');
+    const b = invZoekBoekhouder(bhRuw);
+    if(bhRuw && !b){
+      plan.fouten.push({regel:i+2, reden:`Boekhouder "${bhRuw}" staat niet in het dashboard.`, item:naam});
+      return;
+    }
+    const serienummer = lees('serienummer');
+    const data = {
+      bhId: b ? b.id : '',
+      naam,
+      omschrijving: lees('omschrijving'),
+      serienummer,
+      uitgegevenOp: invoerNaarDatum(lees('uitgegevenOp')) || '',
+      notities: lees('notities'),
+      teruggegeven: invJaNee(lees('teruggegeven')),
+      teruggegevenOp: invoerNaarDatum(lees('teruggegevenOp')) || null,
+    };
+    const bestaand = invBestaandItem(data.bhId, naam, serienummer);
+    if(bestaand) plan.bijwerken.push({ id: bestaand.id, oud: bestaand, data, regel:i+2 });
+    else plan.nieuw.push({ data, regel:i+2 });
+  });
+  return plan;
+}
+function invPasToe(plan){
+  let n = 0, b = 0;
+  plan.nieuw.forEach(({data})=>{
+    const d = Object.assign({}, data);
+    if(!d.uitgegevenOp) d.uitgegevenOp = new Date().toISOString().slice(0,10);
+    const item = addInventarisItem(d);
+    if(data.teruggegeven){ item.teruggegeven = true; item.teruggegevenOp = data.teruggegevenOp || d.uitgegevenOp; }
+    n++;
+  });
+  plan.bijwerken.forEach(({id, data})=>{
+    const schoon = {};
+    // alleen velden overnemen die in het bestand ook echt iets bevatten, zodat een lege kolom
+    // bestaande gegevens niet wist
+    ['naam','omschrijving','serienummer','notities'].forEach(v=>{ if(data[v]) schoon[v] = data[v]; });
+    if(data.bhId) schoon.bhId = data.bhId;
+    if(data.uitgegevenOp) schoon.uitgegevenOp = data.uitgegevenOp;
+    schoon.teruggegeven = data.teruggegeven;
+    schoon.teruggegevenOp = data.teruggegeven ? (data.teruggegevenOp || null) : null;
+    updateInventarisItem(id, schoon);
+    b++;
+  });
+  persistMeta();
+  logActiviteit(`Inventaris geïmporteerd: ${n} nieuw, ${b} bijgewerkt`);
+  return {n, b};
+}
+function invVoorbeeldCsv(){
+  const regels = [
+    'Boekhouder;Item;Omschrijving;Serienummer;Uitgegeven op;Notities;Teruggegeven;Teruggegeven op',
+    (BOEKHOUDERS[0]?BOEKHOUDERS[0].naam:'Naam collega') + ';Laptop Dell XPS 13;incl. oplader en muis;ABC123456;01-03-2026;;nee;',
+    (BOEKHOUDERS[0]?BOEKHOUDERS[0].naam:'Naam collega') + ';iPhone 14;;DEF987654;15-01-2026;met hoesje;ja;01-08-2026',
+  ];
+  const blob = new Blob(['﻿' + regels.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'inventaris-voorbeeld.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function invImportHTML(){
+  const plan = STATE.invImportPlan;
+  if(!plan) return '';
+  const kolomLijst = Object.entries(plan.kolommen).filter(([,v])=>v).map(([k,v])=>`${k} ← <b>${escHtml(v)}</b>`).join(' · ');
+  const rij = (r, soort)=>`<tr>
+    <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${r.regel}</td>
+    <td><b>${escHtml(r.data.naam)}</b>${r.data.serienummer?`<div class="klant-meta">${escHtml(r.data.serienummer)}</div>`:''}</td>
+    <td style="font-size:12px;">${r.data.bhId ? escHtml(bh(r.data.bhId).naam) : '<span style="color:var(--muted);">niet toegewezen</span>'}</td>
+    <td style="font-size:12px;">${escHtml(r.data.omschrijving||'—')}</td>
+    <td style="font-size:12px;">${r.data.uitgegevenOp ? fmtDate(r.data.uitgegevenOp) : '<span style="color:var(--muted);">vandaag</span>'}</td>
+    <td style="font-size:12px;">${r.data.teruggegeven ? 'teruggegeven' : 'in bezit'}</td>
+    <td><span class="badge ${soort==='nieuw'?'green':'gray'}">${soort==='nieuw'?'nieuw':'bijwerken'}</span></td>
+  </tr>`;
+  const totaal = plan.nieuw.length + plan.bijwerken.length;
+  return `<div class="section" style="margin-top:14px;">
+    <div class="section-head"><h3>Import controleren</h3><span class="hint">${totaal} regel(s) klaar${plan.fouten.length?` · ${plan.fouten.length} overgeslagen`:''}</span></div>
+    <div class="section-body pad">
+      ${kolomLijst ? `<div style="font-size:11px; color:var(--muted); margin-bottom:12px;">Herkende kolommen: ${kolomLijst}</div>` : ''}
+      ${plan.fouten.length ? `<div style="border:1px solid var(--amber-brd); background:var(--amber-bg); border-radius:8px; padding:11px 13px; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:700; margin-bottom:5px;">${plan.fouten.length} regel(s) worden overgeslagen</div>
+        <div style="font-size:11px; color:#7a4a06; line-height:1.7;">
+          ${plan.fouten.slice(0,8).map(f=>`Regel ${f.regel}${f.item?` (${escHtml(f.item)})`:''}: ${escHtml(f.reden)}`).join('<br>')}
+          ${plan.fouten.length>8?`<br>… en nog ${plan.fouten.length-8}`:''}
+        </div>
+      </div>` : ''}
+      ${totaal ? `<div style="max-height:420px; overflow:auto; border:1px solid var(--border); border-radius:8px;">
+        <table>
+          <thead><tr><th style="width:60px;">Regel</th><th>Item</th><th>Boekhouder</th><th>Omschrijving</th><th>Uitgegeven</th><th>Status</th><th style="width:90px;"></th></tr></thead>
+          <tbody>
+            ${plan.nieuw.map(r=>rij(r,'nieuw')).join('')}
+            ${plan.bijwerken.map(r=>rij(r,'bijwerken')).join('')}
+          </tbody>
+        </table>
+      </div>` : `<div class="empty-state" style="padding:18px; font-size:12px;">Er staat niets in dit bestand dat geïmporteerd kan worden.</div>`}
+      <div style="display:flex; gap:8px; margin-top:12px; align-items:center;">
+        ${totaal ? `<button class="btn sm primary" data-inv-import-toepassen>${plan.nieuw.length} toevoegen${plan.bijwerken.length?`, ${plan.bijwerken.length} bijwerken`:''}</button>` : ''}
+        <button class="btn sm ghost" data-inv-import-annuleren>Annuleren</button>
+        <span style="font-size:11px; color:var(--muted);">Bijwerken laat velden die in het bestand leeg zijn ongemoeid.</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ===================== BEHEER STANDAARDTEKSTEN (ADMIN-PAGINA) =====================
+   Eén centrale lijst voor alle klanten, met een tabblad per taal. Wat je hier aanpast geldt meteen
+   voor iedereen zodra de gedeelde database is bijgewerkt. */
+function stBeheerTaal(){ return STATE.stBeheerTaal === 'en' ? 'en' : 'nl'; }
+function stTekstLengteVoorbeeld(tekst, taal){
+  /* Ruwe lengte-indicatie: alle blokken die standaard aanstaan, zonder klantgegevens ingevuld. */
+  return (tekst.blokken||[])
+    .filter(b=>!b.optioneel || b.standaard !== false)
+    .map(b=>String(b[taal]||''))
+    .filter(Boolean).join('\n\n').length;
+}
+function stBeheerHTML(){
+  const taal = stBeheerTaal();
+  const teksten = stTeksten();
+  const tab = (t,label)=>{
+    const a = taal===t;
+    return `<button data-st-beheer-taal="${t}" style="padding:8px 16px; font-size:12px; font-weight:${a?'700':'500'}; border:none; background:none; cursor:pointer; color:${a?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${a?'var(--primary)':'transparent'}; margin-bottom:-1px;">${label}</button>`;
+  };
+  const rijen = teksten.map(t=>{
+    const lengte = stTekstLengteVoorbeeld(t, taal);
+    const lang = lengte > ST_MAILTO_GRENS;
+    const heeftNl = (t.blokken||[]).some(b=>String(b.nl||'').trim());
+    const heeftEn = (t.blokken||[]).some(b=>String(b.en||'').trim());
+    const open = STATE.stBeheerOpen === t.id;
+    const optioneel = (t.blokken||[]).filter(b=>b.optioneel).length;
+    const rij = `<tr>
+      <td><div class="klant-name">${escHtml(t.naam)}</div><div class="klant-meta">${(t.blokken||[]).length} blokken${optioneel?` · ${optioneel} optioneel`:''}</div></td>
+      <td style="text-align:center; color:${heeftNl?'var(--green)':'var(--red)'};">${heeftNl?'✓':'—'}</td>
+      <td style="text-align:center; color:${heeftEn?'var(--green)':'var(--red)'};">${heeftEn?'✓':'—'}</td>
+      <td style="font-size:12px;">${(t.bijlagen||[]).length ? escHtml(t.bijlagen.join(' · ')) : '<span style="color:var(--muted);">geen</span>'}</td>
+      <td style="text-align:right; font-variant-numeric:tabular-nums; font-size:12px; ${lang?'color:#854f0b; font-weight:700;':''}">${lengte.toLocaleString('nl-NL')}</td>
+      <td style="text-align:right;"><button class="btn sm ghost" data-st-beheer-open="${t.id}">${open?'Sluiten':'Bewerken'}</button></td>
+    </tr>`;
+    if(!open) return rij;
+    const velden = (t.blokken||[]).map(b=>`
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:11px; font-weight:700; color:var(--muted); margin-bottom:4px;">
+          ${escHtml(b.label || b.id)}${b.optioneel?' <span style="font-weight:500; text-transform:none;">(optioneel blok)</span>':''}
+        </label>
+        <textarea data-st-blok-veld="${t.id}|${b.id}" rows="${Math.min(14, Math.max(2, String(b[taal]||'').split('\n').length+1))}"
+          style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:12px; font-family:inherit; line-height:1.55; resize:vertical;">${escHtml(b[taal]||'')}</textarea>
+      </div>`).join('');
+    return rij + `<tr><td colspan="6" style="background:var(--bg); padding:16px 18px;">
+      <div style="max-width:820px;">
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--muted); margin-bottom:4px;">Onderwerp</label>
+          <input type="text" data-st-onderwerp="${t.id}" value="${escHtml((t.onderwerp||{})[taal]||'')}" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+        </div>
+        ${velden}
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn sm primary" data-st-beheer-opslaan="${t.id}">Opslaan</button>
+          <button class="btn sm ghost" data-st-beheer-open="">Annuleren</button>
+          <span style="font-size:11px; color:var(--muted); margin-left:6px;">Wijzigingen gelden voor alle klanten zodra je collega's synchroniseren.</span>
+        </div>
+      </div>
+    </td></tr>`;
+  }).join('');
+
+  return `<div class="section-body pad">
+    <div style="display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--border);">
+      ${tab('nl','Nederlands')}${tab('en','English')}
+    </div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6; max-width:74ch;">
+      Deze teksten kan iedere boekhouder kiezen bij <b>E-mails</b> op de klantkaart. De velden tussen
+      accolades worden per klant ingevuld: <code>{{klantnaam}}</code> <code>{{contactpersoon}}</code>
+      <code>{{boekhouder}}</code> <code>{{boekhouderEmail}}</code> <code>{{afzender}}</code>
+      <code>{{startmaand}}</code> <code>{{beginbalansdatum}}</code> <code>{{jaarrekeningjaar}}</code>
+      <code>{{jaar}}</code> <code>{{jaar_plus}}</code> <code>{{maand}}</code> <code>{{einddatum}}</code>
+      <code>{{obPeriode}}</code> <code>{{lhMaand}}</code>. Een blok dat je in een taal leeg laat, valt in
+      die taal uit de mail.
+    </div>
+    <table>
+      <thead><tr><th>Tekst</th><th style="width:60px; text-align:center;">NL</th><th style="width:60px; text-align:center;">EN</th><th>Bijlagen</th><th style="width:90px; text-align:right;">Lengte</th><th style="width:110px;"></th></tr></thead>
+      <tbody>${rijen}</tbody>
+    </table>
+    <div style="font-size:11px; color:#854f0b; margin-top:10px;">Oranje lengte = past niet in een gewone Outlook-link; die teksten gaan via een concept in Outlook.</div>
+  </div>`;
+}
+
+/* ============================= VIEW: ADMINISTRATIE =============================
+   Beheerderspagina voor de levenscyclus van een klant: beeindigen per datum, weer terugzetten en
+   definitief verwijderen. Bewust een aparte pagina en een aparte bevoegdheid (RECHTEN.administratieBhIds),
+   los van de Admin-pagina: hier staan onomkeerbare acties die niets met de rest van het beheer te maken
+   hebben. Wie geen bevoegdheid heeft ziet het menu-item niet en krijgt bij een directe link het
+   Overzicht te zien. */
+function admDatumNL(iso){
+  if(!iso) return '';
+  const d = String(iso).split('-');
+  return d.length===3 ? `${d[2]}-${d[1]}-${d[0]}` : iso;
+}
+/* Korte samenvatting van wat er nog openstaat, zodat je vóór het beeindigen ziet wat er nog loopt. */
+function admOpenDeadlines(k){
+  const f = STORE[k.id];
+  const bron = (f && f.dl) ? f.dl : k.dl;
+  if(!bron) return [];
+  const uit = [];
+  ['OB','VPB','LH','JR'].forEach(t=>{
+    const e = bron[t];
+    if(e && !e.na) uit.push(`${t} ${e.datum ? admDatumNL(e.datum) : ''}`.trim());
+  });
+  (bron.overige||[]).forEach(o=>{ if(o && !o.na) uit.push(`${o.naam||'Overig'} ${o.datum ? admDatumNL(o.datum) : ''}`.trim()); });
+  return uit;
+}
+/* Wat verdwijnt er als deze klant wordt verwijderd? Wordt letterlijk in het bevestigingsscherm
+   genoemd, zodat niemand op goed geluk op "verwijderen" drukt. */
+function admVerliesOverzicht(k){
+  const f = STORE[k.id] || {};
+  const delen = [];
+  const dls = admOpenDeadlines(k).length;
+  if(dls) delen.push(`${dls} openstaande deadline${dls===1?'':'s'}`);
+  const notities = (f.items||[]).length + ((f.notities||'').trim() ? 1 : 0);
+  if(notities) delen.push(`${notities} notitie${notities===1?'':'s'}`);
+  const autos = (typeof AUTOS!=='undefined' ? AUTOS.filter(a=>a.klant===k.id).length : 0);
+  if(autos) delen.push(`${autos} auto${autos===1?'':"'s"}`);
+  const lhLog = (f.lh && f.lh.log ? f.lh.log.length : 0);
+  if(lhLog) delen.push('de volledige loonheffing-geschiedenis');
+  const docs = ['akkoordLog','vpbAkkoordLog','fiscaleEenheidLog','betalingsuitstelLog'].some(v=>(f[v]||[]).length);
+  if(docs) delen.push('alle documentgeschiedenis');
+  return delen;
+}
+function admTabKnop(sleutel, label, aantal){
+  const actief = (STATE.admTab||'actief') === sleutel;
+  return `<button data-adm-tab="${sleutel}" style="padding:8px 16px; font-size:12px; font-weight:${actief?'700':'500'}; border:none; background:none; cursor:pointer; color:${actief?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${actief?'var(--primary)':'transparent'}; margin-bottom:-1px;">${label} <span style="opacity:.6;">${aantal}</span></button>`;
+}
+function administratieHTML(){
+  const tab = STATE.admTab === 'beeindigd' ? 'beeindigd' : 'actief';
+  const beeindigd = beeindigdeKlanten();
+  const lopend = RAW_KLANTEN.filter(k=>!klantBeeindigd(k));
+  let lijst = (tab === 'beeindigd' ? beeindigd : lopend).slice();
+  if(STATE.admBhFilter) lijst = lijst.filter(k=>k.bh===STATE.admBhFilter);
+  if(STATE.admZoek){
+    const q = STATE.admZoek.toLowerCase();
+    lijst = lijst.filter(k=>String(k.naam).toLowerCase().includes(q) || String(k.extId||'').toLowerCase().includes(q));
+  }
+  lijst.sort((a,b)=>a.naam.localeCompare(b.naam,'nl'));
+  const bhOpties = BOEKHOUDERS.slice().sort((a,b)=>a.naam.localeCompare(b.naam,'nl'))
+    .map(b=>`<option value="${b.id}" ${STATE.admBhFilter===b.id?'selected':''}>${escHtml(b.naam)}</option>`).join('');
+
+  const beeindigForm = (k)=>`<tr style="background:var(--bg);">
+    <td colspan="4" style="padding:14px 12px;">
+      <div style="border:1px solid var(--border); border-radius:9px; background:var(--card); padding:13px 15px; max-width:640px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:9px;">${escHtml(k.naam)} beëindigen</div>
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:9px;">
+          <label style="font-size:12px; font-weight:700;">Beëindigd per</label>
+          <input type="date" id="admBeeindigDatum" value="${k.beeindigdPer || datumISOVandaag()}" style="padding:6px 9px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+        </div>
+        <div style="font-size:11px; color:var(--muted); line-height:1.65; margin-bottom:11px;">
+          Tot die datum verandert er niets. Daarna verdwijnt ${escHtml(k.naam)} uit de gewone lijsten en
+          telt hij nergens meer mee, maar blijft hij zichtbaar zolang er nog een deadline openstaat —
+          anders kun je het lopende werk niet afmaken. Zodra zo'n deadline wordt afgerond schuift hij
+          niet door naar de volgende periode maar gaat hij naar <b>n.v.t.</b>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn sm primary" data-adm-beeindig-ok="${k.id}">Beëindigen</button>
+          <button class="btn sm ghost" data-adm-annuleer>Annuleren</button>
+        </div>
+      </div>
+    </td></tr>`;
+
+  const verwijderForm = (k)=>{
+    const verlies = admVerliesOverzicht(k);
+    return `<tr style="background:var(--bg);">
+    <td colspan="5" style="padding:14px 12px;">
+      <div style="border:1px solid var(--red-brd); border-radius:9px; background:var(--red-bg); padding:14px 16px; max-width:660px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:6px; color:var(--red);">${escHtml(k.naam)} definitief verwijderen?</div>
+        <div style="font-size:12px; color:var(--red); line-height:1.65; margin-bottom:11px;">
+          De klant verdwijnt uit het dashboard, ook bij je collega's.${verlies.length ? ` Weg zijn dan: ${verlies.join(', ')}.` : ''}
+          Dit kan niet ongedaan worden gemaakt.
+        </div>
+        <label style="font-size:11px; color:var(--red); display:block; margin-bottom:5px;">Typ de klantnaam om te bevestigen:</label>
+        <input type="text" id="admVerwijderBevestig" placeholder="${escHtml(k.naam)}" autocomplete="off" style="width:300px; max-width:100%; padding:7px 10px; border:1px solid var(--red-brd); border-radius:7px; font-size:12px; margin-bottom:11px;">
+        <div style="display:flex; gap:8px;">
+          <button class="btn sm" data-adm-verwijder-ok="${k.id}" style="background:var(--red); color:#fff; border:none;">Definitief verwijderen</button>
+          <button class="btn sm ghost" data-adm-annuleer>Annuleren</button>
+        </div>
+      </div>
+    </td></tr>`;
+  };
+
+  const rijenActief = lijst.map(k=>{
+    const open = admOpenDeadlines(k);
+    const gepland = klantBeeindigingGepland(k);
+    const rij = `<tr>
+      <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${escHtml(k.extId||'—')}</td>
+      <td><div class="klant-name">${escHtml(k.naam)}${gepland ? ` <span title="Wordt beëindigd op ${admDatumNL(k.beeindigdPer)}" style="margin-left:6px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#854f0b; background:var(--amber-bg); border-radius:999px; padding:1px 8px; vertical-align:middle; white-space:nowrap;">stopt ${admDatumNL(k.beeindigdPer)}</span>` : ''}</div><div class="klant-meta">${escHtml(bh(k.bh).naam)}</div></td>
+      <td style="font-size:12px;">${open.length ? open.map(escHtml).join(' · ') : '<span style="color:var(--muted);">niets open</span>'}</td>
+      <td style="text-align:right; white-space:nowrap;">${gepland
+        ? `<button class="btn sm ghost" data-adm-beeindig="${k.id}">Datum wijzigen</button> <button class="btn sm ghost" data-adm-heractiveer="${k.id}">Toch niet</button>`
+        : `<button class="btn sm ghost" data-adm-beeindig="${k.id}">Beëindigen</button>`}</td>
+    </tr>`;
+    return rij + (STATE.admBeeindigKlant===k.id ? beeindigForm(k) : '');
+  }).join('');
+
+  const rijenBeeindigd = lijst.map(k=>{
+    const open = admOpenDeadlines(k);
+    const rij = `<tr>
+      <td style="color:var(--muted); font-variant-numeric:tabular-nums;">${escHtml(k.extId||'—')}</td>
+      <td><div class="klant-name">${escHtml(k.naam)}</div><div class="klant-meta">${escHtml(bh(k.bh).naam)}</div></td>
+      <td style="font-size:12px; white-space:nowrap;">${admDatumNL(k.beeindigdPer)}</td>
+      <td style="font-size:12px;">${open.length ? open.map(escHtml).join(' · ') : '<span style="color:var(--muted);">alles afgerond — alle deadlines n.v.t.</span>'}</td>
+      <td style="text-align:right; white-space:nowrap;">
+        <button class="btn sm ghost" data-adm-heractiveer="${k.id}">Weer actief</button>
+        <button class="btn sm ghost" data-adm-verwijder="${k.id}" style="color:var(--red);">Verwijderen</button>
+      </td>
+    </tr>`;
+    return rij + (STATE.admVerwijderKlant===k.id ? verwijderForm(k) : '');
+  }).join('');
+
+  const leeg = tab==='beeindigd'
+    ? 'Nog geen beëindigde klanten.'
+    : 'Geen klanten gevonden met deze zoekopdracht of dit filter.';
+
+  return `
+  <div class="section">
+    <div class="section-head">
+      <h3>Administratie</h3>
+      <span class="hint">${RAW_KLANTEN.length} klanten · ${lopend.length} lopend, ${beeindigd.length} beëindigd</span>
+    </div>
+    <div class="section-body pad">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:14px; line-height:1.6; max-width:70ch;">
+        Hier zet je een klant op beëindigd per een datum, of verwijder je een klant definitief uit het
+        dashboard. Verwijderen werkt door naar je collega's en kan niet ongedaan worden gemaakt.
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--border);">
+        ${admTabKnop('actief','Lopend', lopend.length)}
+        ${admTabKnop('beeindigd','Beëindigd', beeindigd.length)}
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+        <input type="text" id="admZoek" value="${escHtml(STATE.admZoek||'')}" placeholder="Zoek op naam of klantnummer…" style="flex:1; min-width:200px; max-width:320px; padding:8px 11px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+        <select id="admBhFilter" style="padding:8px 11px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="">Alle boekhouders</option>${bhOpties}
+        </select>
+      </div>
+      ${lijst.length ? `<table>
+        <thead><tr>
+          <th style="width:80px;">Nr.</th>
+          <th style="width:250px;">Klant</th>
+          ${tab==='beeindigd' ? '<th style="width:120px;">Beëindigd per</th>' : ''}
+          <th>${tab==='beeindigd' ? 'Nog af te ronden' : 'Openstaande deadlines'}</th>
+          <th style="width:${tab==='beeindigd'?'210':'190'}px;"></th>
+        </tr></thead>
+        <tbody>${tab==='beeindigd' ? rijenBeeindigd : rijenActief}</tbody>
+      </table>` : `<div class="empty-state" style="padding:22px; font-size:12px;">${leeg}</div>`}
+    </div>
+  </div>`;
+}
 
 /* ============================= VIEW: AUTOLIJST ============================= */
 function autoBedragCel(bedrag){
@@ -8893,7 +10334,7 @@ function bijtellingBeheerHTML(){
 /* Admin-pagina: secties zijn inklapbaar en herschikbaar met de pijltjes in de sectiekop.
    Volgorde en open/dicht zijn een persoonlijke voorkeur en worden per browser bewaard in
    localStorage (hoeft niet mee in de gedeelde sync). */
-const ADMIN_SECTIES = ['bevoegdheid','documenten','deadlines','aanlevering','opleiding','api','logboek','inventaris','opschonen'];
+const ADMIN_SECTIES = ['bevoegdheid','standaardteksten','documenten','deadlines','aanlevering','opleiding','api','logboek','inventaris','opschonen'];
 function adminPaneelPrefs(){
   let p = {};
   try{ p = JSON.parse(localStorage.getItem('cd_admin_paneel')||'{}') || {}; }catch(e){ p = {}; }
@@ -9022,7 +10463,26 @@ function adminHTML(){
           <button class="btn sm primary" data-save-toewijs-access>Toewijs-bevoegdheid opslaan</button>
         </div>
       </div>
+      <div style="border-top:1px solid var(--border); margin-top:16px; padding-top:14px;">
+        <h4 style="margin:0 0 6px; font-size:13px;">Administratiepagina</h4>
+        <p style="font-size:12px; color:var(--muted); margin:0 0 12px;">Vink aan wie bij de pagina <b>Administratie</b> mag: klanten beëindigen per datum en definitief verwijderen. Wie niet is aangevinkt ziet het menu-item helemaal niet. Dit staat los van de beheerdersrechten — een aangevinkte collega krijgt alleen die ene pagina, niet deze Admin-pagina. Beheerders mogen er altijd bij.</p>
+        ${BOEKHOUDERS.length ? `<div class="check-kolommen">` : ''}${BOEKHOUDERS.length ? BOEKHOUDERS.map(b=>`
+          <label style="display:flex; align-items:center; gap:8px; font-size:12px; padding:6px 0;">
+            <input type="checkbox" data-adm-access-check value="${b.id}" ${(RECHTEN.administratieBhIds||[]).includes(b.id)?'checked':''}>
+            <span style="width:10px; height:10px; border-radius:50%; background:${b.kleur}; display:inline-block; flex-shrink:0;"></span>
+            ${b.naam}${b.email? ' · '+b.email : ''}
+          </label>`).join('') : `<div class="hint">Nog geen boekhouders toegevoegd.</div>`}${BOEKHOUDERS.length ? `</div>` : ''}
+        <div style="margin-top:10px;">
+          <button class="btn sm primary" data-save-adm-access>Administratie-bevoegdheid opslaan</button>
+        </div>
+      </div>
     </div>` : ''}
+  </div>`,
+
+    standaardteksten: ()=>`
+  <div class="section"${marge('standaardteksten')}>
+    ${kop('standaardteksten','Standaardteksten e-mail', `<span class="hint">${stTeksten().length} teksten · 2 talen</span>`)}
+    ${isOpen('standaardteksten') ? stBeheerHTML() : ''}
   </div>`,
 
     documenten: ()=>`
@@ -9053,9 +10513,12 @@ function adminHTML(){
           <option value="in_bezit" ${filter==='in_bezit'?'selected':''}>Alleen in bezit</option>
           <option value="alles" ${filter==='alles'?'selected':''}>Inclusief teruggegeven</option>
         </select>
+        <label class="btn sm" style="cursor:pointer;" title="Vul de inventarisatie aan uit een csv- of Excel-lijst"><i class="ti ti-upload" aria-hidden="true"></i> Importeren<input type="file" id="invImportUpload" accept=".csv,.xlsx,.xls" style="display:none;"></label>
+        <button class="btn sm ghost" data-inv-voorbeeld title="Download een voorbeeldbestand met de juiste kolommen">Voorbeeldbestand</button>
         <button class="btn sm primary" data-add-inventaris-btn>+ Item toevoegen</button>`)}
   </div>
   ${isOpen('inventaris') ? `
+  ${invImportHTML()}
   ${STATE.showAddInventaris ? (()=>{
     const editing = STATE.editInventaris ? INVENTARIS_ITEMS.find(i=>i.id===STATE.editInventaris) : null;
     const v = (field)=> editing ? (editing[field]||'') : '';
@@ -9869,6 +11332,8 @@ function akkoordverklaringHTML(klant){
   const vandaag = fmtDatumLang(new Date());
   const jaar = ib.boekjaar || String(new Date().getFullYear()-1);
   const stip = (n)=> '.'.repeat(n);
+  /* Breed genoeg voor het langste label ("Opgemaakt d.d.:"), met een vaste tussenruimte zodat
+     label en waarde elkaar in de PDF nooit raken. */
   const labelKolom = '150px';
   const labelRij = (label, waarde)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${waarde}</div></div>`;
   return `
@@ -9892,9 +11357,10 @@ function akkoordverklaringHTML(klant){
 
     <div style="margin-left:${labelKolom}; font-weight:700; text-decoration:underline; font-size:10.5pt; margin-bottom:18px;">AKKOORDVERKLARING AANGIFTEN INKOMSTENBELASTING</div>
 
-    ${labelRij('Betreft:', 'Akkoordverklaring aangifte inkomstenbelasting.')}
-    ${labelRij('Terzake van:', `Aangifte inkomstenbelasting over boekjaar ${jaar}.`)}
-    <div style="margin-left:${labelKolom}; margin-bottom:16px;">Opgemaakt d.d. ${vandaag}</div>
+    ${labelRij('Betreft:', 'Akkoordverklaring aangifte inkomstenbelasting')}
+    ${labelRij('Terzake van:', `de aangifte inkomstenbelasting over boekjaar ${jaar}`)}
+    ${labelRij('Opgemaakt d.d.:', vandaag)}
+    <div style="margin-bottom:16px;"></div>
 
     ${labelRij('Fiscaalnummer:', fiscaalRegel)}
     <div style="margin-bottom:12px;"></div>
@@ -9961,6 +11427,8 @@ function vpbAkkoordverklaringHTML(klant){
   const vandaag = fmtDatumLang(new Date());
   const jaar = vpb.boekjaar || String(new Date().getFullYear()-1);
   const stip = (n)=> '.'.repeat(n);
+  /* Breed genoeg voor het langste label ("Opgemaakt d.d.:"), met een vaste tussenruimte zodat
+     label en waarde elkaar in de PDF nooit raken. */
   const labelKolom = '150px';
   const labelRij = (label, waardeRegels)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${Array.isArray(waardeRegels)?waardeRegels.join('<br>'):waardeRegels}</div></div>`;
   return `
@@ -9984,8 +11452,9 @@ function vpbAkkoordverklaringHTML(klant){
 
     <div style="margin-left:${labelKolom}; font-weight:700; text-decoration:underline; font-size:10.5pt; margin-bottom:18px;">AKKOORDVERKLARING AANGIFTE VENNOOTSCHAPSBELASTING</div>
 
-    ${labelRij('Betreft:', ['Akkoordverklaring aangifte vennootschapsbelasting.', 'Akkoordverklaring deponering publicatiestukken in het handelsregister.'])}
-    ${labelRij('Terzake van:', [`Aangifte vennootschapsbelasting over boekjaar ${jaar}.`, `Opgemaakt d.d. ${vandaag}.`])}
+    ${labelRij('Betreft:', 'Akkoordverklaring aangifte vennootschapsbelasting en deponering van de publicatiestukken in het handelsregister')}
+    ${labelRij('Terzake van:', `de aangifte vennootschapsbelasting over boekjaar ${jaar}`)}
+    ${labelRij('Opgemaakt d.d.:', vandaag)}
     <div style="margin-bottom:12px;"></div>
     ${labelRij('Fiscaalnummer:', effVpbFiscaalnummer(klant))}
     <div style="margin-bottom:12px;"></div>
@@ -10200,7 +11669,7 @@ function betalingsuitstelValidatie(klant){
   if(!bu) return 'Geen gegevens ingevuld voor deze klant. Vul deze eerst in bij "Bewerken".';
   const ontbreekt = [];
   if(!bu.soortAangifte) ontbreekt.push('soort aangifte');
-  if(!bu.periode) ontbreekt.push('periode');
+  if(!buPeriodeTekst(bu)) ontbreekt.push('kwartaal en jaar');
   if(!effObNummer(klant, bu.omzetbelastingnummer)) ontbreekt.push('omzetbelastingnummer');
   if(!bu.datumOorspronkelijkeAangifte) ontbreekt.push('datum oorspronkelijke aangifte');
   if(!bu.datumSuppletieaangifte) ontbreekt.push('datum suppletieaangifte');
@@ -10215,8 +11684,10 @@ function betalingsuitstelHTML(klant){
   const bu = klant.betalingsuitstel;
   const kantoor = belastingkantoor(bu.kantoorId);
   const vandaag = fmtDatumLang(new Date());
-  const labelKolom = '150px';
-  const labelRij = (label, waarde)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700;">${label}</div><div>${waarde}</div></div>`;
+  /* 150px was te smal: het vetgedrukte "Omzetbelastingnummer:" is bij 10,5pt Arial ruim 155px breed en
+     liep daardoor in de PDF tegen de waarde aan. 195px + een vaste tussenruimte houdt beide kolommen vrij. */
+  const labelKolom = '195px';
+  const labelRij = (label, waarde)=> `<div style="display:flex; margin-bottom:4px;"><div style="width:${labelKolom}; flex-shrink:0; font-weight:700; padding-right:10px; box-sizing:border-box; white-space:nowrap;">${label}</div><div>${waarde}</div></div>`;
   return `
   <div style="font-family: Arial, Helvetica, sans-serif; font-size:10.5pt; color:#1a1a1a; line-height:1.5; padding:40px 48px; width:718px; box-sizing:border-box; background:#fff;">
     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:30px;">
@@ -10610,30 +12081,144 @@ function emailKaartHTML(opts){
     </div>
   </div>`;
 }
-/* Eigen sectie "E-mails" onder "Documenten" op de klantkaart, voor brieven aan de Belastingdienst die
-   niet automatisch verstuurd worden (alleen downloaden) — zie emailKaartHTML() hierboven. */
+/* ===================== SECTIE "E-MAILS" OP DE KLANTKAART =====================
+   Kies een standaardtekst, zie meteen wat er verstuurd gaat worden, en open het in Outlook.
+   Er wordt nooit automatisch verzonden: jij leest na en drukt zelf op Verzenden.
+   Korte teksten gaan via een gewone Outlook-link (net als de herinneringsknop). Lange teksten
+   passen daar niet in — die worden als concept in je Outlook-postbus gezet. */
+function stKiesTekst(klant){
+  const teksten = stTeksten();
+  const gekozen = STATE.stTekstId && teksten.find(t=>t.id===STATE.stTekstId);
+  return gekozen || teksten[0] || null;
+}
+function stHuidigeTaal(klant){
+  return STATE.stTaal === 'en' || STATE.stTaal === 'nl' ? STATE.stTaal : stTaalVanKlant(klant);
+}
+function stHuidigeStand(klant, tekst){
+  if(!STATE.stStand || STATE.stStandVoor !== (klant.id + '|' + tekst.id)){
+    STATE.stStand = stStandaardStand(tekst, klant);
+    STATE.stStandVoor = klant.id + '|' + tekst.id;
+  }
+  return STATE.stStand;
+}
+function stTaalTabHTML(taal, label, actief){
+  return `<button data-st-taal="${taal}" style="padding:7px 14px; font-size:12px; font-weight:${actief?'700':'500'}; border:none; background:none; cursor:pointer; color:${actief?'var(--text)':'var(--muted)'}; border-bottom:2px solid ${actief?'var(--primary)':'transparent'}; margin-bottom:-1px;">${label}</button>`;
+}
 function emailsSectieHTML(klant){
-  const fe = klant.fiscaleEenheid || defaultFiscaleEenheid();
-  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
-  const feLog = STORE[klant.id].fiscaleEenheidLog || [];
-  const bu = klant.betalingsuitstel || defaultBetalingsuitstel();
-  const buLog = STORE[klant.id].betalingsuitstelLog || [];
+  const teksten = stTeksten();
+  const tekst = stKiesTekst(klant);
+  if(!tekst) return '';
+  const taal = stHuidigeTaal(klant);
+  const stand = stHuidigeStand(klant, tekst);
+  const mail = stStelSamen(tekst, taal, klant, stand);
+  const past = stPastInMailto(mail);
+  const optioneel = (tekst.blokken||[]).filter(b=>b.optioneel && String(b[taal]||'').trim());
+  const velden = mail.velden;
+  const klantTaal = stTaalVanKlant(klant);
+
+  const opties = teksten.map(t=>`<option value="${t.id}" ${t.id===tekst.id?'selected':''}>${escHtml(t.naam)}</option>`).join('');
+  const blokVinkjes = optioneel.length ? `
+    <div style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px;">
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:9px;">Welke onderdelen gaan mee?</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px 16px; font-size:12px;">
+        ${optioneel.map(b=>`<label style="display:flex; gap:7px; align-items:flex-start;">
+          <input type="checkbox" data-st-blok="${b.id}" ${stand[b.id]?'checked':''} style="margin-top:2px;">
+          <span>${escHtml(stVulIn(b.label||b.id, velden))}</span></label>`).join('')}
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:9px;">Voorgevinkt op basis van dit klantdossier. Wat je uitvinkt valt uit de mail.</div>
+    </div>` : '';
+
+  const waarschuwing = mail.leeg.length ? `
+    <div style="border:1px solid var(--amber-brd); background:var(--amber-bg); border-radius:8px; padding:10px 13px; margin-bottom:12px; font-size:11px; color:#7a4a06; line-height:1.6;">
+      <b>Nog niet ingevuld:</b> ${mail.leeg.map(n=>`<code>{{${escHtml(n)}}}</code>`).join(' ')}.
+      Die plekken blijven zo in de mail staan. Vul ze aan bij "Bewerken" of pas de tekst in Outlook aan.
+    </div>` : '';
+
+  const lengteMelding = past ? '' : `
+    <div style="border:1px solid var(--amber-brd); background:var(--amber-bg); border-radius:8px; padding:11px 13px; margin-bottom:12px;">
+      <div style="font-size:12px; font-weight:700; margin-bottom:5px;">Deze tekst is te lang voor een gewone Outlook-link</div>
+      <div style="font-size:11px; color:#7a4a06; line-height:1.6;">
+        ${mail.body.length.toLocaleString('nl-NL')} tekens; een gewone link kapt af rond ${ST_MAILTO_GRENS.toLocaleString('nl-NL')}.
+        Gebruik <b>Concept klaarzetten in Outlook</b> — dat zet de volledige tekst in je Concepten-map.
+      </div>
+    </div>`;
+
+  const bijlagen = (tekst.bijlagen||[]).length ? `
+    <div style="border:1px solid var(--border); border-radius:8px; padding:11px 13px; margin-bottom:12px; font-size:11px; color:var(--muted); line-height:1.6;">
+      <b style="color:var(--text);">Bijlagen zelf toevoegen:</b> ${tekst.bijlagen.map(escHtml).join(' · ')}.
+      Outlook kan een bestand niet vanuit het dashboard meekrijgen — voeg ze toe in het concept voordat je verstuurt.
+    </div>` : '';
+
   return `<div class="panel-section">
     <h4>E-mails</h4>
     <div class="inner">
+      <div style="display:flex; gap:6px; margin-bottom:12px; border-bottom:1px solid var(--border); align-items:flex-end;">
+        ${stTaalTabHTML('nl','Nederlands', taal==='nl')}
+        ${stTaalTabHTML('en','English', taal==='en')}
+        <span style="margin-left:auto; font-size:11px; color:var(--muted); padding-bottom:8px;">taal van deze klant: ${klantTaal==='en'?'English':'Nederlands'}</span>
+      </div>
+      <select id="stTekstKeuze" style="width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; margin-bottom:12px;">${opties}</select>
+      ${blokVinkjes}
+      <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:12px;">
+        <div style="padding:9px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px;">
+          <div style="width:74px; flex:none; font-size:11px; font-weight:700; color:var(--muted);">Aan</div>
+          <div style="font-size:12px;">${klant.email ? escHtml(klant.email) : '<span style="color:var(--red);">geen e-mailadres bij deze klant</span>'}${klant.contact?` <span style="color:var(--muted);">— ${escHtml(klant.contact)}</span>`:''}</div>
+        </div>
+        <div style="padding:9px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px;">
+          <div style="width:74px; flex:none; font-size:11px; font-weight:700; color:var(--muted);">Onderwerp</div>
+          <div style="font-size:12px;">${escHtml(mail.onderwerp)}</div>
+        </div>
+        <div style="padding:9px 12px; display:flex; gap:10px;">
+          <div style="width:74px; flex:none; font-size:11px; font-weight:700; color:var(--muted); padding-top:2px;">Bericht</div>
+          <div style="font-size:12px; line-height:1.6; white-space:pre-wrap; max-height:260px; overflow:auto; flex:1;">${escHtml(mail.body)}</div>
+        </div>
+      </div>
+      ${waarschuwing}
+      ${lengteMelding}
+      ${bijlagen}
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        ${past
+          ? `<button class="btn sm primary" data-st-outlook><i class="ti ti-mail-forward" aria-hidden="true"></i> Openen in Outlook</button>`
+          : `<button class="btn sm primary" data-st-concept><i class="ti ti-mail-plus" aria-hidden="true"></i> Concept klaarzetten in Outlook</button>`}
+        ${past ? `<button class="btn sm ghost" data-st-concept><i class="ti ti-mail-plus" aria-hidden="true"></i> Als concept klaarzetten</button>` : ''}
+        <button class="btn sm ghost" data-st-kopieer><i class="ti ti-copy" aria-hidden="true"></i> Tekst kopiëren</button>
+      </div>
+      <div style="font-size:11px; color:var(--muted); background:var(--green-bg); border:1px solid var(--border); border-radius:8px; padding:9px 11px;">
+        Het dashboard verstuurt nooit zelf. De mail komt klaar te staan in Outlook; jij leest na en drukt op Verzenden.
+      </div>
+    </div>
+  </div>
+  ${brievenBelastingdienstHTML(klant)}`;
+}
+/* De twee brieven aan de Belastingdienst blijven downloads: die worden geprint, ondertekend en per
+   post verstuurd (besluit Benjamin, 28-08-2026). Ze horen daarom niet bij de standaardteksten
+   hierboven, maar in een eigen blok. */
+function brievenBelastingdienstHTML(klant){
+  const fe = klant.fiscaleEenheid || defaultFiscaleEenheid();
+  const dochter = RAW_KLANTEN.find(k=>k.id===fe.dochterKlantId);
+  const feLog = (STORE[klant.id]||{}).fiscaleEenheidLog || [];
+  const bu = klant.betalingsuitstel || defaultBetalingsuitstel();
+  const buLog = (STORE[klant.id]||{}).betalingsuitstelLog || [];
+  return `<div class="panel-section">
+    <h4>Brieven aan de Belastingdienst</h4>
+    <div class="inner">
+      <div style="font-size:11px; color:var(--muted); margin-bottom:10px; line-height:1.6;">
+        Deze twee worden niet gemaild maar gedownload: printen, ondertekenen en per post naar het gekozen belastingkantoor.
+      </div>
       ${emailKaartHTML({
         titel: `Verzoek fiscale eenheid BTW-subnummers${dochter ? ' — ' + klant.naam + ' & ' + dochter.naam : ''}`,
-        uitleg: `Brief aan de Belastingdienst om een fiscale eenheid omzetbelasting met subnummers aan te vragen voor ${klant.naam} en de gekoppelde dochteronderneming (zie "Bewerken"). Wordt niet automatisch verstuurd — download, print, onderteken en verstuur zelf per post naar het gekozen belastingkantoor.`,
+        uitleg: `Brief om een fiscale eenheid omzetbelasting met subnummers aan te vragen voor ${klant.naam} en de gekoppelde dochteronderneming (zie "Bewerken").`,
         downloadAttr: 'data-fe-download', log: feLog, logLabel: 'Verzoek fiscale eenheid BTW',
       })}
       ${emailKaartHTML({
         titel: `Verzoek betalingsuitstel${bu.periode ? ' — ' + bu.soortAangifte + ' ' + bu.periode : ''}`,
-        uitleg: `Brief aan de Belastingdienst om betalingsuitstel te vragen na een suppletieaangifte (zie "Bewerken"). Wordt niet automatisch verstuurd — download, print, onderteken en verstuur zelf per post naar het gekozen belastingkantoor.`,
+        uitleg: `Brief om betalingsuitstel te vragen na een suppletieaangifte (zie "Bewerken").`,
         downloadAttr: 'data-bu-download', log: buLog, logLabel: 'Verzoek betalingsuitstel',
       })}
     </div>
   </div>`;
 }
+
 function panelHTML(klant){
   let f = STORE[klant.id];
   if(!f){ migrateData(); f = STORE[klant.id]; } // herstel ontbrekend STORE-record i.p.v. crashen
@@ -10657,6 +12242,16 @@ function panelHTML(klant){
     </div>
   </div>
   <div class="panel-body">
+    ${(klantBeeindigd(klant) || klantBeeindigingGepland(klant)) ? `<div style="display:flex; gap:14px; align-items:center; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:13px 16px; margin-bottom:16px;">
+      <div style="width:34px; height:34px; border-radius:50%; background:var(--muted); color:#fff; display:flex; align-items:center; justify-content:center; flex:none;"><i class="ti ti-clock-pause" style="font-size:18px;" aria-hidden="true"></i></div>
+      <div style="flex:1;">
+        <div style="font-size:13px; font-weight:600;">${klantBeeindigd(klant) ? `Beëindigd per ${admDatumNL(klant.beeindigdPer)}` : `Wordt beëindigd per ${admDatumNL(klant.beeindigdPer)}`}</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:1px;">${klantBeeindigd(klant)
+          ? 'Deze klant telt nergens meer mee. Openstaande deadlines kun je nog gewoon afronden; ze schuiven daarna niet door maar gaan naar n.v.t.'
+          : 'Tot die datum verandert er niets. Daarna verdwijnt de klant uit de gewone lijsten.'}</div>
+      </div>
+    </div>` : ''}
+    ${klantmapBlokHTML(klant)}
     ${heeftUrgenteHerinneringNodig(klant) ? `<div style="display:flex; gap:14px; align-items:center; background:var(--red-bg); border:1px solid var(--red-brd); border-radius:12px; padding:14px 16px; margin-bottom:16px;">
       <div style="width:36px; height:36px; border-radius:50%; background:var(--red); color:#fff; display:flex; align-items:center; justify-content:center; flex:none;"><i class="ti ti-alert-triangle" style="font-size:20px;" aria-hidden="true"></i></div>
       <div style="flex:1;">
@@ -10685,9 +12280,11 @@ function panelHTML(klant){
         </label>
         <div style="font-size:11px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Bepaalt de takenlijst en tijdsvensters bij Loonheffingen (DGA-klanten bovenaan, geen-DGA onderaan).</div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
-          <input type="checkbox" id="salarisdossierToggle" ${klant.salarisdossierWerknemer!==false?'checked':''}> Salarisdossier werknemer
+          <input type="checkbox" id="salarisdossierToggle" ${(klant.heeftDga ? klant.salarisdossierDga===true : klant.salarisdossierWerknemer!==false)?'checked':''}> Salarisdossier werknemer
         </label>
-        <div style="font-size:11px; color:var(--muted); margin-top:6px; margin-bottom:10px;">Alleen relevant voor geen-DGA klanten: bepaalt of taak 5 ("Salarisdossier werknemer") in de takenlijst staat. Uitvinken = geen 5e bolletje bij deze klant.</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:6px; margin-bottom:10px;">${klant.heeftDga
+          ? 'Bij DGA-klanten staat deze taak standaard <b>uit</b>. Aanvinken geeft deze klant als uitzondering toch een 5e bolletje "Salarisdossier werknemer" in de takenlijst.'
+          : 'Bij geen-DGA klanten staat deze taak standaard <b>aan</b>. Uitvinken = geen 5e bolletje bij deze klant.'}</div>
         <label style="display:flex; align-items:center; gap:8px; font-size:12px;">
           <input type="checkbox" id="toekomstToggle" ${klant.toekomstigeKlant?'checked':''}> Toekomstige klant
         </label>
@@ -10931,7 +12528,17 @@ function betalingsuitstelFormSectionHTML(bu){
   return `<div class="panel-section"><div class="panel-section-head"><i class="ti ti-clock-pause" aria-hidden="true"></i><span class="t">Verzoek betalingsuitstel</span></div><div class="inner">
     <div style="font-size:11px; color:var(--muted); margin-bottom:8px;">Gegevens voor een verzoek om betalingsuitstel aan de Belastingdienst, bijv. na een suppletieaangifte (zie "E-mails" op de klantkaart). Dit document wordt alleen gedownload, niet automatisch verstuurd — de brief-datum wordt wel altijd automatisch ingevuld.</div>
     <div class="field-row"><label>Soort aangifte</label><input type="text" id="editBuSoort" value="${(bu.soortAangifte||'').replace(/"/g,'&quot;')}" placeholder="bijv. omzetbelasting"></div>
-    <div class="field-row"><label>Periode</label><input type="text" id="editBuPeriode" value="${(bu.periode||'').replace(/"/g,'&quot;')}" placeholder="bijv. 2e kwartaal 2025"></div>
+    <div class="field-row"><label>Periode</label>
+      <select id="editBuKwartaal" style="width:150px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+        <option value="">— kwartaal —</option>
+        ${BU_KWARTALEN.map(k=>`<option value="${k.waarde}" ${String(bu.periodeKwartaal||'')===k.waarde?'selected':''}>${k.label}</option>`).join('')}
+      </select>
+      <select id="editBuJaar" style="width:110px; margin-left:8px; padding:8px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+        <option value="">— jaar —</option>
+        ${buJaarOpties().map(j=>`<option value="${j}" ${String(bu.periodeJaar||'')===j?'selected':''}>${j}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field-row"><label></label><div style="font-size:11px; color:var(--muted);">Komt in de brief als: <b id="buPeriodeVoorbeeld">${buPeriodeTekst(bu) || '—'}</b></div></div>
     <div class="field-row"><label>Omzetbelastingnr.</label><input type="text" id="editBuOb" value="${(bu.omzetbelastingnummer||'').replace(/"/g,'&quot;')}" placeholder="bijv. NL123456789B01"></div>
     <div class="field-row"><label>Datum oorspr. aangifte</label><input type="text" id="editBuDatumOrig" value="${(bu.datumOorspronkelijkeAangifte||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
     <div class="field-row"><label>Datum suppletieaangifte</label><input type="text" id="editBuDatumSuppletie" value="${(bu.datumSuppletieaangifte||'').replace(/"/g,'&quot;')}" placeholder="DD-MM-JJJJ" style="max-width:130px;"></div>
@@ -11034,6 +12641,17 @@ function editKlantFormHTML(klant){
       ${klant.obNummer ? `<div style="font-size:11px; color:var(--muted); margin:-4px 0 10px 160px;">Fiscaal nummer hieruit: <b>${fiscaalNummerUitOb(klant.obNummer)||'—'}</b>${fiscaalNummerUitOb(klant.obNummer) && !elfproefOk(fiscaalNummerUitOb(klant.obNummer)) ? ` <span style="color:var(--amber);">· komt niet door de elfproef, controleer het nummer</span>` : ''}</div>` : ''}
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="editKlantContact" value="${klant.contact||''}"></div>
       <div class="field-row"><label>E-mail</label><input type="text" id="editKlantEmail" value="${klant.email||''}"></div>
+      <div class="field-row"><label>Taal correspondentie</label>
+        <select id="editKlantTaal" style="width:170px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          <option value="nl" ${klant.taal!=='en'?'selected':''}>Nederlands</option>
+          <option value="en" ${klant.taal==='en'?'selected':''}>English</option>
+        </select>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin:-4px 0 10px 160px;">Bepaalt welke versie van de standaardteksten voorstaat bij "E-mails". Per mail nog om te schakelen.</div>
+      <div class="field-row"><label>Boekhouding vanaf</label><input type="month" id="editKlantBoekhoudingVanaf" value="${escHtml(klant.boekhoudingVanaf||'')}" style="width:170px; padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;"></div>
+      ${klant.boekhoudingVanaf ? (function(){ const d = stDatumsUitStart(klant.boekhoudingVanaf,'nl');
+        return `<div style="font-size:11px; color:var(--muted); margin:-4px 0 10px 160px;">Hieruit volgt: startmaand <b>${escHtml(d.startmaand)}</b> · beginbalans per <b>${escHtml(d.beginbalansdatum)}</b> · jaarrekening <b>${escHtml(d.jaarrekeningjaar)}</b></div>`; })()
+        : `<div style="font-size:11px; color:var(--muted); margin:-4px 0 10px 160px;">Nodig voor de mail "Op te vragen stukken inzake beginbalans" — daaruit worden de startmaand, de beginbalansdatum en het jaarrekeningjaar afgeleid.</div>`}
       ${magLhBewerken() ? `<div class="field-row"><label>E-mail loonheffing</label><input type="text" id="editKlantLhEmail" value="${klant.lhEmail||''}" placeholder="alleen als dit afwijkt van het algemene adres"></div>
       <div style="font-size:11px; color:var(--muted); margin-top:-4px; margin-bottom:6px;">Optioneel: wordt alléén getoond op de Loonheffingen-pagina. Leeg laten = overal het algemene e-mailadres. (Dit veld is alleen zichtbaar voor medewerkers met loonheffing-rechten.)</div>` : ''}
       <div class="field-row"><label>WhatsApp / telefoon</label><input type="text" id="editKlantTel" value="${klant.tel||''}"></div>
@@ -11080,7 +12698,8 @@ function addKlantFormHTML(){
       <div class="field-row"><label>Naam*</label><input type="text" id="newKlantNaam" placeholder="Bedrijfsnaam B.V."></div>
       <div class="field-row"><label>Rechtsvorm</label><select id="newKlantVorm" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;"><option value="BV">BV</option><option value="Eenmanszaak">Eenmanszaak</option></select></div>
       <div class="field-row"><label>Boekhouder*</label><select id="newKlantBh" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">${bhOptions || '<option value="">Voeg eerst een boekhouder toe</option>'}</select></div>
-      <div class="field-row"><label>Klantnr. (AdministratieBox)</label><input type="text" id="newKlantExtId" placeholder="bv. 1147"></div>
+      <div class="field-row"><label>Klantnr.*</label><input type="text" id="newKlantExtId" placeholder="bv. 1147"></div>
+      <div style="font-size:11px; color:var(--muted); margin:-4px 0 10px;">Verplicht: het klantnummer komt tussen haakjes achter de naam van de dossiermap in SharePoint te staan.</div>
       <div class="field-row"><label>KvK-nummer</label><input type="text" id="newKlantKvk"></div>
       <div class="field-row"><label>Omzetbelastingnr.</label><input type="text" id="newKlantOb" placeholder="NL123456789B01"></div>
       <div class="field-row"><label>Contactpersoon</label><input type="text" id="newKlantContact"></div>
@@ -11209,14 +12828,28 @@ function openAddKlantPanel(silent){
   document.querySelector('[data-save-new-klant]').addEventListener('click', ()=>{
     const naam = document.getElementById('newKlantNaam').value.trim();
     const bhId = document.getElementById('newKlantBh').value;
+    const extId = document.getElementById('newKlantExtId').value.trim();
     if(!naam){ toast('Vul een klantnaam in.'); return; }
     if(!bhId){ toast('Voeg eerst een boekhouder toe.'); return; }
+    /* Het klantnummer is verplicht sinds de dossiermap automatisch wordt aangemaakt: de mapnaam
+       eindigt op "(nummer)" en zonder nummer is die map later niet meer terug te vinden. */
+    if(!extId){
+      toast('Vul een klantnummer in — dat komt in de naam van de dossiermap te staan.');
+      const veld = document.getElementById('newKlantExtId'); if(veld) veld.focus();
+      return;
+    }
+    const dubbel = RAW_KLANTEN.find(k=>String(k.extId||'').trim() === extId);
+    if(dubbel){
+      toast(`Klantnummer ${extId} is al in gebruik bij "${dubbel.naam}".`, {duration:7000});
+      const veld = document.getElementById('newKlantExtId'); if(veld) veld.focus();
+      return;
+    }
     const dateOrEmpty = (v)=> invoerNaarDatum(v);
-    addKlant({
+    const nieuweKlant = addKlant({
       naam, vorm:document.getElementById('newKlantVorm').value, bh:bhId,
       kvk:document.getElementById('newKlantKvk').value.trim(),
       obNummer: normaliseerObNummer((document.getElementById('newKlantOb')||{}).value||''),
-      extId:document.getElementById('newKlantExtId').value.trim(),
+      extId,
       contact:document.getElementById('newKlantContact').value.trim(),
       email:document.getElementById('newKlantEmail').value.trim(),
       tel:document.getElementById('newKlantTel').value.trim(),
@@ -11227,11 +12860,14 @@ function openAddKlantPanel(silent){
       doetLoonaangifte:document.getElementById('newKlantLoonaangifte').checked,
       heeftDga:document.getElementById('newKlantDga').checked,
       salarisdossierWerknemer:document.getElementById('newKlantSalarisdossier').checked,
+      salarisdossierDga:false,
       staatOpHold:document.getElementById('newKlantOpHold').checked,
     });
     STATE.showAddKlant=false;
     toast('Klant toegevoegd: '+naam);
     render();
+    // De dossiermap wordt op de achtergrond aangemaakt; het toevoegen zelf wacht daar niet op.
+    if(nieuweKlant) klantmapAanmakenVoor(nieuweKlant);
   });
 }
 function openAddBhPanel(silent){
@@ -11353,6 +12989,10 @@ function attachEditKlantHandlers(klant){
     klant.extId = document.getElementById('editKlantExtId').value.trim();
     klant.contact = document.getElementById('editKlantContact').value.trim();
     klant.email = document.getElementById('editKlantEmail').value.trim();
+    const taalVeld = document.getElementById('editKlantTaal');
+    if(taalVeld) klant.taal = taalVeld.value === 'en' ? 'en' : 'nl';
+    const bvVeld = document.getElementById('editKlantBoekhoudingVanaf');
+    if(bvVeld) klant.boekhoudingVanaf = bvVeld.value.trim();
     const lhEmailVeld = document.getElementById('editKlantLhEmail');
     if(lhEmailVeld) klant.lhEmail = lhEmailVeld.value.trim();
     klant.tel = document.getElementById('editKlantTel').value.trim();
@@ -11419,7 +13059,9 @@ function attachEditKlantHandlers(klant){
     if(!klant.betalingsuitstel) klant.betalingsuitstel = defaultBetalingsuitstel();
     const bu = klant.betalingsuitstel;
     bu.soortAangifte = document.getElementById('editBuSoort').value.trim();
-    bu.periode = document.getElementById('editBuPeriode').value.trim();
+    bu.periodeKwartaal = document.getElementById('editBuKwartaal').value;
+    bu.periodeJaar = document.getElementById('editBuJaar').value;
+    bu.periode = buPeriodeTekst(bu);
     bu.omzetbelastingnummer = document.getElementById('editBuOb').value.trim();
     bu.datumOorspronkelijkeAangifte = document.getElementById('editBuDatumOrig').value.trim();
     bu.datumSuppletieaangifte = document.getElementById('editBuDatumSuppletie').value.trim();
@@ -11718,6 +13360,96 @@ function attachHandlers(){
     STATE.statusFilter = el.dataset.statusChip;
     document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
   }));
+  // ── Testversie-balk ──
+  const testVerv = document.querySelector('[data-test-verversen]');
+  if(testVerv) testVerv.addEventListener('click', testVerseKopie);
+  const testLeeg = document.querySelector('[data-test-legen]');
+  if(testLeeg) testLeeg.addEventListener('click', testKopieWissen);
+  const testSp = document.querySelector('[data-test-sharepoint]');
+  if(testSp) testSp.addEventListener('change', ()=>{
+    try{ localStorage.setItem('cd_test_sharepoint', testSp.checked ? '1' : '0'); }catch(e){}
+    toast(testSp.checked
+      ? 'Let op: de testversie maakt nu ECHT mappen aan in SharePoint.'
+      : 'Proefstand aan — er worden geen mappen meer aangemaakt in SharePoint.', {duration:7000});
+  });
+
+  // ── Administratie-pagina ──
+  const admHerteken = ()=>{ document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); };
+  document.querySelectorAll('[data-adm-tab]').forEach(el=>bindOnce(el,'click',()=>{
+    STATE.admTab = el.getAttribute('data-adm-tab');
+    STATE.admBeeindigKlant = null; STATE.admVerwijderKlant = null;
+    admHerteken();
+  }));
+  const admZoek = document.getElementById('admZoek');
+  if(admZoek) admZoek.addEventListener('input', ()=>{
+    STATE.admZoek = admZoek.value;
+    admHerteken();
+    // focus + cursorpositie terugzetten, anders typt het veld na elke toets niet door
+    const nieuw = document.getElementById('admZoek');
+    if(nieuw){ nieuw.focus(); nieuw.setSelectionRange(nieuw.value.length, nieuw.value.length); }
+  });
+  const admBhFilter = document.getElementById('admBhFilter');
+  if(admBhFilter) admBhFilter.addEventListener('change', ()=>{ STATE.admBhFilter = admBhFilter.value; admHerteken(); });
+
+  document.querySelectorAll('[data-adm-beeindig]').forEach(el=>bindOnce(el,'click',()=>{
+    STATE.admBeeindigKlant = el.getAttribute('data-adm-beeindig');
+    STATE.admVerwijderKlant = null;
+    admHerteken();
+  }));
+  document.querySelectorAll('[data-adm-verwijder]').forEach(el=>bindOnce(el,'click',()=>{
+    STATE.admVerwijderKlant = el.getAttribute('data-adm-verwijder');
+    STATE.admBeeindigKlant = null;
+    admHerteken();
+  }));
+  document.querySelectorAll('[data-adm-annuleer]').forEach(el=>bindOnce(el,'click',()=>{
+    STATE.admBeeindigKlant = null; STATE.admVerwijderKlant = null;
+    admHerteken();
+  }));
+  document.querySelectorAll('[data-adm-beeindig-ok]').forEach(el=>bindOnce(el,'click',()=>{
+    if(!magAdministratie()) return;
+    const id = el.getAttribute('data-adm-beeindig-ok');
+    const k = RAW_KLANTEN.find(x=>x.id===id);
+    const veld = document.getElementById('admBeeindigDatum');
+    const datum = veld ? veld.value : '';
+    if(!k || !datum){ toast('Kies eerst een datum.'); return; }
+    k.beeindigdPer = datum;
+    STATE.admBeeindigKlant = null;
+    persistMeta();
+    logActiviteit(`Klant beëindigd per ${admDatumNL(datum)}: "${k.naam}"`);
+    admHerteken();
+    toast(`${k.naam} is beëindigd per ${admDatumNL(datum)}.`);
+  }));
+  document.querySelectorAll('[data-adm-heractiveer]').forEach(el=>bindOnce(el,'click',()=>{
+    if(!magAdministratie()) return;
+    const id = el.getAttribute('data-adm-heractiveer');
+    const k = RAW_KLANTEN.find(x=>x.id===id);
+    if(!k) return;
+    k.beeindigdPer = '';
+    persistMeta();
+    logActiviteit(`Beëindiging teruggedraaid: "${k.naam}" is weer actief`);
+    admHerteken();
+    toast(`${k.naam} staat weer op actief. Let op: deadlines die al op n.v.t. staan blijven n.v.t.`, {duration:7000});
+  }));
+  document.querySelectorAll('[data-adm-verwijder-ok]').forEach(el=>bindOnce(el,'click',()=>{
+    if(!magAdministratie()) return;
+    const id = el.getAttribute('data-adm-verwijder-ok');
+    const k = RAW_KLANTEN.find(x=>x.id===id);
+    if(!k) return;
+    const veld = document.getElementById('admVerwijderBevestig');
+    const getypt = (veld ? veld.value : '').trim().toLowerCase();
+    if(getypt !== String(k.naam).trim().toLowerCase()){
+      toast('De ingetypte naam komt niet overeen met de klantnaam.');
+      if(veld) veld.focus();
+      return;
+    }
+    const naam = k.naam;
+    logActiviteit(`Klant definitief verwijderd via Administratie: "${naam}"`);
+    deleteKlant(id);
+    STATE.admVerwijderKlant = null;
+    admHerteken();
+    toast(`${naam} is definitief verwijderd.`);
+  }));
+
   const filterTeamDashboard = document.getElementById('filterTeamDashboard');
   if(filterTeamDashboard) filterTeamDashboard.addEventListener('change', e=>{ STATE.dashboardTeamFilter=e.target.value; document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); });
   // ── Mijn Werk-handlers ──
@@ -12459,6 +14191,80 @@ function attachHandlers(){
     logActiviteit(`Loonheffingen: logboek-item verwijderd bij "${klant.naam}"`);
     toast('Logboek-item verwijderd.');
     document.getElementById('contentArea').innerHTML = viewHTML(); attachHandlers();
+  }));
+  // ── Inventaris importeren ──
+  const invUpload = document.getElementById('invImportUpload');
+  if(invUpload) invUpload.addEventListener('change', (e)=>{
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    toast('Bestand lezen…');
+    readTabularFile(file, (rijen, fout)=>{
+      if(fout){ toast(fout, {duration:8000}); return; }
+      STATE.invImportPlan = invAnalyseer(rijen||[]);
+      document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+      const p = STATE.invImportPlan;
+      toast(`${p.nieuw.length} nieuw, ${p.bijwerken.length} bij te werken${p.fouten.length?`, ${p.fouten.length} overgeslagen`:''} — controleer en bevestig.`, {duration:7000});
+    });
+  });
+  const invVb = document.querySelector('[data-inv-voorbeeld]');
+  if(invVb) invVb.addEventListener('click', invVoorbeeldCsv);
+  const invToe = document.querySelector('[data-inv-import-toepassen]');
+  if(invToe) invToe.addEventListener('click', ()=>{
+    if(!STATE.invImportPlan) return;
+    const {n, b} = invPasToe(STATE.invImportPlan);
+    STATE.invImportPlan = null;
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+    toast(`Inventaris bijgewerkt: ${n} toegevoegd, ${b} bijgewerkt.`, {duration:7000});
+  });
+  const invAnn = document.querySelector('[data-inv-import-annuleren]');
+  if(invAnn) invAnn.addEventListener('click', ()=>{
+    STATE.invImportPlan = null;
+    document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers();
+  });
+
+  // ── Beheer standaardteksten ──
+  const stBeheerHerteken = ()=>{ document.getElementById('contentArea').innerHTML=viewHTML(); attachHandlers(); };
+  document.querySelectorAll('[data-st-beheer-taal]').forEach(el=>bindOnce(el,'click',()=>{
+    STATE.stBeheerTaal = el.getAttribute('data-st-beheer-taal'); stBeheerHerteken();
+  }));
+  document.querySelectorAll('[data-st-beheer-open]').forEach(el=>bindOnce(el,'click',()=>{
+    const id = el.getAttribute('data-st-beheer-open');
+    STATE.stBeheerOpen = (id && STATE.stBeheerOpen !== id) ? id : null;
+    stBeheerHerteken();
+  }));
+  document.querySelectorAll('[data-st-beheer-opslaan]').forEach(el=>bindOnce(el,'click',()=>{
+    if(!isAdmin()) return;
+    const id = el.getAttribute('data-st-beheer-opslaan');
+    const taal = stBeheerTaal();
+    // op een kopie werken, zodat een halve mislukte opslag de teksten niet half bijwerkt
+    const kopie = JSON.parse(JSON.stringify(stTeksten()));
+    const t = kopie.find(x=>x.id===id);
+    if(!t) return;
+    const ondVeld = document.querySelector(`[data-st-onderwerp="${id}"]`);
+    if(ondVeld){ t.onderwerp = t.onderwerp || {}; t.onderwerp[taal] = ondVeld.value.trim(); }
+    document.querySelectorAll(`[data-st-blok-veld^="${id}|"]`).forEach(v=>{
+      const blokId = v.getAttribute('data-st-blok-veld').split('|')[1];
+      const b = (t.blokken||[]).find(x=>x.id===blokId);
+      if(b) b[taal] = v.value;
+    });
+    STANDAARDTEKSTEN = kopie;
+    STATE.stBeheerOpen = null;
+    persistMeta();
+    logActiviteit(`Standaardtekst bijgewerkt (${taal.toUpperCase()}): "${t.naam}"`);
+    stBeheerHerteken();
+    toast('Standaardtekst opgeslagen — komt door bij collega\'s zodra zij synchroniseren.');
+  }));
+
+  document.querySelectorAll('[data-save-adm-access]').forEach(el=>el.addEventListener('click',()=>{
+    if(!isAdmin()) return;
+    const ids = [];
+    document.querySelectorAll('[data-adm-access-check]').forEach(c=>{ if(c.checked) ids.push(c.getAttribute('value')); });
+    RECHTEN.administratieBhIds = ids;
+    logActiviteit('Bevoegdheid Administratiepagina gewijzigd');
+    persistMeta();
+    toast('Administratie-bevoegdheid opgeslagen — komt door bij collega\'s zodra zij synchroniseren.');
+    render();
   }));
   document.querySelectorAll('[data-save-toewijs-access]').forEach(el=>el.addEventListener('click',()=>{
     if(!isAdmin()) return;
@@ -13326,6 +15132,7 @@ function voegDossierSamen(keeperId, dupId){
     keeperKlant.staatOpHold = dupKlant.staatOpHold;
     keeperKlant.opHoldReden = dupKlant.opHoldReden;
     keeperKlant.salarisdossierWerknemer = dupKlant.salarisdossierWerknemer;
+    keeperKlant.salarisdossierDga = dupKlant.salarisdossierDga;
     if(D.lh) K.lh = JSON.parse(JSON.stringify(D.lh));
   }
   if(Array.isArray(D.items) && D.items.length){
@@ -13389,7 +15196,7 @@ function voerOpschoningUit(){
     }
     const id = nextId(RAW_KLANTEN,'k');
     const klant = { id, naam:c.naam, vorm:c.vorm||'Onbekend', bh: (BOEKHOUDERS[0]&&BOEKHOUDERS[0].id)||'', kvk:c.kvk, contact:c.contact, email:c.email, tel:c.tel,
-      doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', salarisdossierWerknemer:true, extId:c.nummer,
+      doetLoonaangifte:false, heeftDga:false, staatOpHold:false, opHoldReden:'', salarisdossierWerknemer:true, salarisdossierDga:false, beeindigdPer:'', taal:'nl', boekhoudingVanaf:'', extId:c.nummer,
       kvkLaatsteControle:null, ib: defaultIbData(), vpb: defaultVpbData(), fiscaleEenheid: defaultFiscaleEenheid(),
       betalingsuitstel: defaultBetalingsuitstel(), arbeidsovereenkomstDga: defaultArbeidsovereenkomstDga(),
       managementovereenkomstDga: defaultManagementovereenkomstDga(), dl:{ OB:NA(), VPB:NA(), LH:NA(), JR:NA(), overige:[] } };
@@ -13437,7 +15244,7 @@ function voerOpschoningUit(){
 ======================================================================================================== */
 
 const CF_URL = 'https://compliancebox-data.benjamin-092.workers.dev';
-const CF_KEY = 'compliance_dashboard_cf_v1';
+const CF_KEY = 'compliance_dashboard_cf_v1' + TEST_SUFFIX;
 
 /* De niet-klantgebonden onderdelen, elk als eigen meta-record zodat de agenda van de een niet de
    KPI's van de ander overschrijft. */
@@ -13463,6 +15270,7 @@ const CF_META = {
   notionCfg:        { lees: ()=>NOTION_CFG,         zet: v=>{ NOTION_CFG = v; } },
   afdelingen:       { lees: ()=>AFDELINGEN,         zet: v=>{ AFDELINGEN = v; } },
   strategie:        { lees: ()=>STRATEGIE,          zet: v=>{ STRATEGIE = v; } },
+  standaardteksten: { lees: ()=>STANDAARDTEKSTEN,   zet: v=>{ if(Array.isArray(v) && v.length) STANDAARDTEKSTEN = v; } },
 };
 
 let CF = {
@@ -13497,7 +15305,7 @@ function cfFp(s){
 }
 function cfLaad(){
   try{
-    const raw = localStorage.getItem(CF_KEY);
+    const raw = OPSLAG.getItem(CF_KEY);
     if(raw) CF = Object.assign(CF, JSON.parse(raw));
   }catch(e){}
   /* Migratie: oudere versies bewaarden in CF.verzonden de volledige record-JSON. Zet die eenmalig om
@@ -13531,7 +15339,7 @@ function meldOpslagVol(){
 }
 function cfBewaar(){
   try{
-    localStorage.setItem(CF_KEY, JSON.stringify({
+    OPSLAG.setItem(CF_KEY, JSON.stringify({
       actief: CF.actief, uitgezet: CF.uitgezet, laatste: CF.laatste, versies: CF.versies,
       verzonden: CF.verzonden, teVerwijderen: CF.teVerwijderen, fpVersie: 2,
     }));
@@ -13615,6 +15423,7 @@ function cfDuwLater(){
   cfDuwTimer = setTimeout(()=>{ cfDuw().catch(e=>console.error('Cloudflare-sync mislukt:', e)); }, 900);
 }
 async function cfDuw(){
+  if(TESTMODUS) return false;   // testmodus leest wel, schrijft nooit
   if(!CF.actief) return false;
   /* Staat er al een duw/haal in flight (bv. de 20s-poll), probeer dan zo dadelijk opnieuw i.p.v. de
      wijziging stil te laten liggen — anders kan een lokale bewerking ongesynct blijven en later door
@@ -13717,7 +15526,7 @@ async function cfHaal(toonMelding){
          wijkt die af van wat de collega net stuurde, dan NIET stil overschrijven: laat je eigen
          versie staan en duw hem — de server beslist dan wie wint en je krijgt bij verlies netjes de
          conflictmelding in plaats van geluidloos werk kwijt te raken. */
-      if(lokaal[id] !== undefined && cfFp(lokaal[id]) !== CF.verzonden[id] && lokaal[id] !== r.data){
+      if(!TESTMODUS && lokaal[id] !== undefined && cfFp(lokaal[id]) !== CF.verzonden[id] && lokaal[id] !== r.data){
         uitgesteld = true; return;
       }
       if(cfPasToe(r)) veranderd++;
@@ -14285,6 +16094,59 @@ function attachPanelHandlers(klant){
   }));
   document.querySelector('[data-close-panel]').addEventListener('click', closePanel);
 
+  // ── Sectie E-mails: standaardteksten ──
+  const stHerteken = ()=>refreshPanel(klant);
+  document.querySelectorAll('[data-st-taal]').forEach(el=>el.addEventListener('click', ()=>{
+    STATE.stTaal = el.getAttribute('data-st-taal'); stHerteken();
+  }));
+  const stKeuze = document.getElementById('stTekstKeuze');
+  if(stKeuze) stKeuze.addEventListener('change', ()=>{
+    STATE.stTekstId = stKeuze.value; STATE.stStand = null; STATE.stStandVoor = null; stHerteken();
+  });
+  document.querySelectorAll('[data-st-blok]').forEach(el=>el.addEventListener('change', ()=>{
+    const tekst = stKiesTekst(klant);
+    const stand = stHuidigeStand(klant, tekst);
+    stand[el.getAttribute('data-st-blok')] = el.checked;
+    stHerteken();
+  }));
+  const stMail = ()=>{
+    const tekst = stKiesTekst(klant);
+    return stStelSamen(tekst, stHuidigeTaal(klant), klant, stHuidigeStand(klant, tekst));
+  };
+  const stOutlookBtn = document.querySelector('[data-st-outlook]');
+  if(stOutlookBtn) stOutlookBtn.addEventListener('click', ()=>{
+    if(!klant.email){ toast('Deze klant heeft geen e-mailadres. Vul dat eerst in bij "Bewerken".'); return; }
+    stOpenMailto(klant, stMail());
+  });
+  const stConceptBtn = document.querySelector('[data-st-concept]');
+  if(stConceptBtn) stConceptBtn.addEventListener('click', async ()=>{
+    if(!SYNC.account){ toast('Log eerst in met Microsoft bij Instellingen — anders kan er geen concept in je Outlook worden gezet.', {duration:8000}); return; }
+    stConceptBtn.disabled = true;
+    const oud = stConceptBtn.innerHTML; stConceptBtn.textContent = 'Bezig…';
+    try{
+      const res = await stMaakOutlookConcept(klant, stMail());
+      toast('Concept staat klaar in je Outlook (map Concepten).', {duration:7000});
+      if(res && res.webLink) window.open(res.webLink, '_blank');
+    }catch(e){
+      toast('Concept aanmaken mislukt: ' + String(e && e.message ? e.message : e).slice(0,140), {duration:9000});
+    }finally{
+      stConceptBtn.disabled = false; stConceptBtn.innerHTML = oud;
+    }
+  });
+  const stKopieer = document.querySelector('[data-st-kopieer]');
+  if(stKopieer) stKopieer.addEventListener('click', async ()=>{
+    const m = stMail();
+    try{ await navigator.clipboard.writeText(m.onderwerp + '\n\n' + m.body); toast('Onderwerp en tekst gekopieerd.'); }
+    catch(e){ toast('Kopiëren lukte niet in deze browser.'); }
+  });
+
+  document.querySelectorAll('[data-klantmap-opnieuw]').forEach(el=>el.addEventListener('click', async ()=>{
+    const k = RAW_KLANTEN.find(x=>x.id===el.getAttribute('data-klantmap-opnieuw'));
+    if(!k) return;
+    el.disabled = true; el.textContent = 'Bezig…';
+    await klantmapAanmakenVoor(k);
+    refreshPanel(k);
+  }));
   const editBtn = document.querySelector('[data-edit-klant]');
   if(editBtn) editBtn.addEventListener('click', ()=>{ STATE.editKlant = klant.id; openPanel(klant.id); });
 
@@ -14293,10 +16155,7 @@ function attachPanelHandlers(klant){
     if(type==='LH'){
       completeLhPeriode(klant, huidigeGebruiker());
     } else {
-      const entry = STORE[klant.id].dl[type];
-      const herh = entry.herhaling || 'geen';
-      if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
-      else { entry.status = 'ingediend'; }
+      deadlineNaAfronden(klant, STORE[klant.id].dl[type]);
       persist();
     }
     refreshPanel(klant);
@@ -14325,7 +16184,8 @@ function attachPanelHandlers(klant){
   });
   const salarisdossierToggle = document.getElementById('salarisdossierToggle');
   if(salarisdossierToggle) salarisdossierToggle.addEventListener('change', (e)=>{
-    klant.salarisdossierWerknemer = e.target.checked;
+    if(klant.heeftDga) klant.salarisdossierDga = e.target.checked;
+    else klant.salarisdossierWerknemer = e.target.checked;
     syncLhTaken(klant); // takenlijst direct bijwerken (taak 5 erbij of eruit)
     persistMeta(); persist();
     toast(e.target.checked ? 'Taak "Salarisdossier werknemer" toegevoegd.' : 'Taak "Salarisdossier werknemer" weggehaald voor deze klant.');
@@ -14678,6 +16538,7 @@ try{
   tmStartGlobalePoll();
 }catch(e){ console.error('Apps auto-verbinden mislukt:', e); }
 setInterval(()=>{
+  if(TESTMODUS) return;
   if(CF.actief) return;   // de Cloudflare-poll hieronder neemt het dan over
   if(SYNC.enabled && !STATE.panelKlant && !STATE.showAddKlant && !STATE.showAddBh && !isTypingInField()){
     try{ fetchRemoteAndMerge(false).catch(e=>console.error('Sync mislukt (async):', e)); }
@@ -14691,6 +16552,7 @@ setInterval(()=>{
    Alleen als je daadwerkelijk ergens aan het typen bent (invoerveld of opmaak-editor) wachten we een
    rondje, zodat er nooit tekst onder je handen verdwijnt. */
 setInterval(()=>{
+  if(TESTMODUS) return;   // testkopie is een momentopname — alleen bijwerken via "Verse kopie ophalen"
   if(!CF.actief || !SYNC.account) return;
   /* Een open bewerk-/toevoegformulier beschermen; het gewone klantpaneel (alleen bekijken) mag wél
      live verversen. */
@@ -14700,6 +16562,7 @@ setInterval(()=>{
 }, 20000);
 /* Wie terugkeert naar dit tabblad wil meteen de actuele stand zien, niet pas na het volgende rondje. */
 document.addEventListener('visibilitychange', ()=>{
+  if(TESTMODUS) return;
   if(document.visibilityState !== 'visible') return;
   if(!CF.actief || !SYNC.account || heeftOpenFormulier() || isTypingInField()) return;
   try{ cfHaal(false).catch(e=>console.error('Cloudflare-ophalen mislukt (async):', e)); }
@@ -14896,10 +16759,7 @@ function bulkMarkeerIngediend(type){
     if(!klant || !f || !f.dl || !f.dl[type] || f.dl[type].na) return;
     if(type==='LH'){ completeLhPeriode(klant, huidigeGebruiker()); }
     else {
-      const entry = f.dl[type];
-      const herh = entry.herhaling || 'geen';
-      if(herh !== 'geen'){ entry.datum = advanceDate(entry.datum, herh); entry.status = null; }
-      else { entry.status = 'ingediend'; }
+      deadlineNaAfronden(klant, f.dl[type]);
     }
     n++;
   });
